@@ -116,8 +116,9 @@ describe('schema version 8', () => {
     await db.open();
     // The latest version: 9 adds only the sync bookkeeping stores (ADR-0049) and 10 only the recording
     // records (ADR-0068), 11 only the device-local Drive uploads (ADR-0072), so nothing else changes.
-    // ADR-0077: version 12 adds the call stores.
-    expect(db.verno).toBe(12);
+    // ADR-0077: version 12 adds the call stores. ADR-0116: version 13 adds only the device-local
+    // summaryFailures store.
+    expect(db.verno).toBe(13);
 
     // Everything is still there, word for word, apart from the fields the upgrade adds.
     for (const [store, items] of Object.entries(rows)) {

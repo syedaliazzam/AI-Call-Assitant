@@ -6,19 +6,33 @@
  *   the session, in this page, or stored by another page) and a changed set is summarised again;
  * - a new summary is asked for once (two callers share the request), sent without the CV, kept on
  *   the session, and logged without text; a failure gives null, never an error;
- * - the smart session details hold only the CV and the summary ('' when none).
+ * - the smart session details hold only the CV and the summary ('' when none);
+ * - ADR-0116: a server failure is remembered by fingerprint and the same documents are not asked for
+ *   again until a growing wait ends (2 min, 10 min, 1 h, 6 h); a success forgets it; sign-in and
+ *   network failures are not remembered; documentsSummaryStatus() reports 'unavailable' with the
+ *   retry time.
  * All text is invented.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  SUMMARY_RETRY_DELAYS_MS,
   documentsFingerprint,
+  documentsSummaryStatus,
   ensureDocumentsSummary,
+  remembersSummaryFailure,
   resetSummaryMemory,
   smartSessionContext,
   summarisedDocuments,
+  summaryRetryDelay,
   withDocumentsSummary,
+  type SummaryFailureStore,
 } from '@/core/documents/summary';
-import type { Session, StoredDocument, StoredDocumentsSummary } from '@/core/storage/types';
+import type {
+  Session,
+  StoredDocument,
+  StoredDocumentsSummary,
+  StoredSummaryFailure,
+} from '@/core/storage/types';
 
 /** An invented session. */
 const SESSION: Session = {
@@ -178,12 +192,191 @@ describe('ensureDocumentsSummary', () => {
     expect(
       await ensureDocumentsSummary(SESSION, DOCS, { fetchImpl: failing, load: async () => null }),
     ).toBeNull();
+    // ADR-0116: the 503 is remembered in this page; forget it so the offline case sends again.
+    resetSummaryMemory();
     const offline = vi.fn<typeof fetch>(async () => {
       throw new TypeError('offline');
     });
     expect(
       await ensureDocumentsSummary(SESSION, DOCS, { fetchImpl: offline, load: async () => null }),
     ).toBeNull();
+    expect(offline).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * An in-memory SummaryFailureStore.
+ *
+ * @returns The store and its records.
+ */
+function memoryFailures() {
+  const records = new Map<string, StoredSummaryFailure>();
+  const store: SummaryFailureStore = {
+    get: vi.fn(async (fingerprint: string) => records.get(fingerprint) ?? null),
+    put: vi.fn(async (failure: StoredSummaryFailure) => {
+      records.set(failure.fingerprint, failure);
+    }),
+    clear: vi.fn(async (fingerprint: string) => {
+      records.delete(fingerprint);
+    }),
+  };
+  return { store, records };
+}
+
+/**
+ * A fake fetch that answers /api/summary with an error status.
+ *
+ * @param status The HTTP status.
+ * @returns The fake, a vi.fn spy.
+ */
+function failingFetch(status: number) {
+  return vi.fn<typeof fetch>(async () => new Response('{"code":"internal"}', { status }));
+}
+
+describe('failed summaries (ADR-0116)', () => {
+  const MINUTE = 60_000;
+
+  it('waits 2 minutes, 10 minutes, 1 hour, then 6 hours after failures in a row', () => {
+    expect([1, 2, 3, 4, 9].map(summaryRetryDelay)).toEqual([
+      2 * MINUTE,
+      10 * MINUTE,
+      60 * MINUTE,
+      360 * MINUTE,
+      360 * MINUTE,
+    ]);
+    expect(SUMMARY_RETRY_DELAYS_MS).toHaveLength(4);
+  });
+
+  it('remembers server errors and refused documents, not sign-in, rate limits or the network', () => {
+    expect([500, 502, 503, 504, 400, 413].every(remembersSummaryFailure)).toBe(true);
+    expect([401, 403, 429].some(remembersSummaryFailure)).toBe(false);
+  });
+
+  it('remembers a 502 by fingerprint and sends nothing for the same documents until the wait ends', async () => {
+    const { store, records } = memoryFailures();
+    let now = 1_000_000;
+    const fetchImpl = failingFetch(502);
+    const deps = { fetchImpl, load: async () => null, failures: store, now: () => now };
+    expect(await ensureDocumentsSummary(SESSION, DOCS, deps)).toBeNull();
+    const fingerprint = await documentsFingerprint(summarisedDocuments(DOCS));
+    expect(records.get(fingerprint)).toEqual({
+      fingerprint,
+      failures: 1,
+      status: 502,
+      failedAt: 1_000_000,
+      retryAt: 1_000_000 + 2 * MINUTE,
+    });
+    // Opening, notes, Ask AI and Prepare inside the wait: no request, no cost.
+    now += MINUTE;
+    for (let i = 0; i < 4; i += 1) {
+      expect(await ensureDocumentsSummary(SESSION, DOCS, deps)).toBeNull();
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    // After the wait it asks again; a second failure waits longer.
+    now += 2 * MINUTE;
+    expect(await ensureDocumentsSummary(SESSION, DOCS, deps)).toBeNull();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(records.get(fingerprint)).toMatchObject({ failures: 2, retryAt: now + 10 * MINUTE });
+  });
+
+  it('honours a failure another page stored, and logs no text', async () => {
+    const { store, records } = memoryFailures();
+    const fingerprint = await documentsFingerprint(summarisedDocuments(DOCS));
+    records.set(fingerprint, {
+      fingerprint,
+      failures: 3,
+      status: 504,
+      failedAt: 10,
+      retryAt: 5_000,
+    });
+    const fetchImpl = fakeFetch();
+    const deps = { fetchImpl, load: async () => null, failures: store, now: () => 100 };
+    expect(await ensureDocumentsSummary(SESSION, DOCS, deps)).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    const logged = JSON.stringify(vi.mocked(console.info).mock.calls);
+    expect(logged).toContain('summary: waiting');
+    expect(logged).not.toContain('SECRET');
+  });
+
+  it('forgets the failure once the summary is written', async () => {
+    const { store, records } = memoryFailures();
+    const fingerprint = await documentsFingerprint(summarisedDocuments(DOCS));
+    records.set(fingerprint, { fingerprint, failures: 2, status: 502, failedAt: 1, retryAt: 50 });
+    const deps = {
+      fetchImpl: fakeFetch('## a.txt\n- Back.'),
+      load: async () => null,
+      save: async () => undefined,
+      failures: store,
+      now: () => 100,
+    };
+    expect(await ensureDocumentsSummary(SESSION, DOCS, deps)).toBe('## a.txt\n- Back.');
+    expect(records.has(fingerprint)).toBe(false);
+  });
+
+  it('does not remember a sign-in failure or an offline network', async () => {
+    const { store } = memoryFailures();
+    const offline = vi.fn<typeof fetch>(async () => {
+      throw new TypeError('offline');
+    });
+    for (const fetchImpl of [failingFetch(401), offline]) {
+      expect(
+        await ensureDocumentsSummary(SESSION, DOCS, {
+          fetchImpl,
+          load: async () => null,
+          failures: store,
+        }),
+      ).toBeNull();
+    }
+    expect(store.put).not.toHaveBeenCalled();
+  });
+
+  it('still waits in this page when the failure cannot be saved', async () => {
+    const store: SummaryFailureStore = {
+      get: async () => null,
+      put: async () => {
+        throw new Error('blocked');
+      },
+      clear: async () => undefined,
+    };
+    const fetchImpl = failingFetch(503);
+    const deps = { fetchImpl, load: async () => null, failures: store, now: () => 7 };
+    expect(await ensureDocumentsSummary(SESSION, DOCS, deps)).toBeNull();
+    expect(await ensureDocumentsSummary(SESSION, DOCS, deps)).toBeNull();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('documentsSummaryStatus (ADR-0116)', () => {
+  it("is 'none' with only a CV, 'ready' with a matching summary, 'pending' before any request", async () => {
+    const { store } = memoryFailures();
+    expect(await documentsSummaryStatus(SESSION, [CV], { failures: store })).toEqual({
+      state: 'none',
+    });
+    const fingerprint = await documentsFingerprint(summarisedDocuments(DOCS));
+    const summary = { fingerprint, text: 'kept', createdAt: 1 };
+    expect(
+      await documentsSummaryStatus({ ...SESSION, documentsSummary: summary }, DOCS, {
+        failures: store,
+      }),
+    ).toEqual({ state: 'ready' });
+    expect(await documentsSummaryStatus(SESSION, DOCS, { failures: store })).toEqual({
+      state: 'pending',
+    });
+  });
+
+  it("is 'unavailable', with the retry time, after a remembered failure for these documents", async () => {
+    const { store, records } = memoryFailures();
+    const fingerprint = await documentsFingerprint(summarisedDocuments(DOCS));
+    records.set(fingerprint, { fingerprint, failures: 2, status: 502, failedAt: 1, retryAt: 999 });
+    expect(await documentsSummaryStatus(SESSION, DOCS, { failures: store })).toEqual({
+      state: 'unavailable',
+      retryAt: 999,
+      failures: 2,
+    });
+    // A failure for other documents says nothing about these.
+    expect(await documentsSummaryStatus(SESSION, [doc('c', 3)], { failures: store })).toEqual({
+      state: 'pending',
+    });
   });
 });
 

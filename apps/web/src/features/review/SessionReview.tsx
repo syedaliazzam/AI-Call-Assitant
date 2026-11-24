@@ -14,6 +14,7 @@
  *             src/core/answer/unavailable.ts (notesFailureText), src/core/storage/sessions.ts
  *             (deleteSession), src/features/review/ReviewSections.tsx,
  *             src/features/review/ConversationSection.tsx, src/features/review/AskSection.tsx,
+ *             src/features/review/DocumentsSummaryNote.tsx (ADR-0116),
  *             src/features/session-setup/labels.ts, src/ui (Button, Dialog)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Session review), §7.4;
  *               day-05-overlay-screenshots-notes.md Stage 6
@@ -52,6 +53,7 @@ import { PageShell } from '@/ui/PageShell';
 import { AskSection } from './AskSection';
 import { CallsList, callDriveText, callLengthText, callNotesText } from './CallsList';
 import { ConversationSection } from './ConversationSection';
+import { DocumentsSummaryNote } from './DocumentsSummaryNote';
 import { NotesSection } from './ReviewSections';
 
 /** The session window's sections. */
@@ -459,6 +461,8 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
                     {review.documents.length === 0
                       ? 'None'
                       : review.documents.map((document) => document.name).join(', ')}
+                    {/* ADR-0116: says so when the documents summary could not be written. */}
+                    <DocumentsSummaryNote session={session} documents={review.documents} />
                   </dd>
                 </div>
                 <div>
