@@ -6,7 +6,8 @@
  *          and which microphone is chosen. Kept in localStorage: per-device conveniences, not session
  *          data. ADR-0085: the transcript panel is open by default (applied once to existing devices too)
  *          and then follows the user's own choice; the answer panel is not remembered (it opens by itself on
- *          the first answer of each call); and the split between the side-by-side panels.
+ *          the first answer of each call); and the split between the side-by-side panels. ADR-0113: the panels'
+ *          own width, as a share of the bars' width (the answer panel's corner grip sets it).
  * Used by: src/features/live/LiveAnswers.tsx, src/features/live/CompactLive.tsx,
  *          src/features/settings/OverlaySetting.tsx
  * Depends on: nothing (localStorage)
@@ -57,6 +58,23 @@ export const OVERLAY_SPLIT_KEY = 'kite.overlaySplit';
  * rest); a drag of the divider stays between these limits (each panel's minimum width is kept in CSS too).
  */
 export const OVERLAY_SPLIT = { min: 0.2, max: 0.7, default: 0.4 } as const;
+
+/** ADR-0113: the key for the panels' own width, as a share of the bars' width. */
+export const OVERLAY_PANELS_WIDTH_KEY = 'kite.overlayPanelsWidth';
+
+/**
+ * ADR-0113: the panels' width (the answer panel, or the transcript and the answer as one block) as a share
+ * of the bars' width: never wider than the bars (ADR-0113 keeps the answer within the bar, so the window
+ * never has to grow for it), and never under the smallest share a drag may store (the answer panel's button
+ * strip is also kept whole in CSS, whatever the share).
+ *
+ * ADR-0115: `default` is the answer panel's width when it is open alone and the user has never dragged its
+ * grip: 62 % of the bars' width, a reading column (until ADR-0115 it was 1, the bars' whole width). With the
+ * transcript beside it the block keeps the bars' whole width until a drag (overlay/panelWidth.ts
+ * panelsShare()): the transcript's 40 % split already leaves the answer about 60 %, and a 62 % block would
+ * fall under the 600 px side-by-side width and stack the two panels.
+ */
+export const OVERLAY_PANELS_WIDTH = { min: 0.2, max: 1, default: 0.62 } as const;
 
 /** v1.1.0: the key for the microphone chosen in the overlay's device list. */
 export const MIC_DEVICE_KEY = 'kite.micDevice';
@@ -198,6 +216,44 @@ export function setOverlaySplit(ratio: number): void {
  */
 export function clampSplit(ratio: number): number {
   return Math.min(OVERLAY_SPLIT.max, Math.max(OVERLAY_SPLIT.min, ratio));
+}
+
+/**
+ * ADR-0113: the panels' width as a share of the bars' width, as the user last set it with the answer panel's
+ * corner grip on this device.
+ *
+ * ADR-0115: null when nothing usable is stored (never dragged, unreadable, or storage blocked), so the page
+ * can pick the default for the panels open now (overlay/panelWidth.ts panelsShare()). Until ADR-0115 this
+ * returned the single default (1) instead.
+ *
+ * @returns A share inside OVERLAY_PANELS_WIDTH, or null when the user has not chosen one.
+ * Called from: CompactView.tsx; tests
+ */
+export function getOverlayPanelsWidth(): number | null {
+  const raw = read(OVERLAY_PANELS_WIDTH_KEY);
+  const value = Number(raw);
+  return raw !== null && Number.isFinite(value) ? clampPanelsWidth(value) : null;
+}
+
+/**
+ * ADR-0113: remembers the panels' width on this device (once a drag of the answer panel's corner ends).
+ *
+ * @param share The width as a share of the bars' width (kept inside OVERLAY_PANELS_WIDTH).
+ * Called from: CompactView.tsx; tests
+ */
+export function setOverlayPanelsWidth(share: number): void {
+  write(OVERLAY_PANELS_WIDTH_KEY, String(Math.round(clampPanelsWidth(share) * 1000) / 1000));
+}
+
+/**
+ * ADR-0113: keeps a panels' width share inside its limits.
+ *
+ * @param share The width as a share of the bars' width.
+ * @returns The share, clamped to OVERLAY_PANELS_WIDTH.min–max.
+ * Called from: getOverlayPanelsWidth(), setOverlayPanelsWidth(); overlay/panelWidth.ts
+ */
+export function clampPanelsWidth(share: number): number {
+  return Math.min(OVERLAY_PANELS_WIDTH.max, Math.max(OVERLAY_PANELS_WIDTH.min, share));
 }
 
 /**

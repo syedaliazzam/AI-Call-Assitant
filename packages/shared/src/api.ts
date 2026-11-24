@@ -286,6 +286,12 @@ export interface DocumentsSummaryResponse {
   usage: AnswerUsage;
   /** Server time for the request, in ms. */
   ms: number;
+  /**
+   * ADR-0116: true when the summary was cut short (the fast model reached its token limit, or the
+   * text was over MAX_DOCUMENTS_SUMMARY_CHARS); the summary then ends at its last complete line with
+   * a note saying so. Absent from a server older than ADR-0116.
+   */
+  cutOff?: boolean;
 }
 
 /**
@@ -676,6 +682,11 @@ export type AnswerEvent =
        * within 4 s), 'error' or 'empty'. Absent otherwise. ADR-0099: the same for a Gemini or GPT model.
        */
       fallback?: 'timeout' | 'error' | 'empty';
+      /**
+       * ADR-0112: present when the reply opened with a copied template line and the server stopped it
+       * there (no text was sent); the browser asks again once. Absent otherwise.
+       */
+      templated?: true;
     }
   | {
       /** Event name. */

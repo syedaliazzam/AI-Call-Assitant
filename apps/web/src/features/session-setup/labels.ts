@@ -19,8 +19,16 @@ import {
   type SessionType,
 } from '@/core/storage/types';
 
-/** Where the newest desktop installer is published (docs/user-guide; ADR-0028). */
-export const DESKTOP_DOWNLOAD_URL = 'https://github.com/Zainpak123/kite-releases/releases/latest';
+/**
+ * The Windows download: app/download/windows/route.ts redirects it to the newest installer (.exe) in the
+ * releases repository (ADR-0028), or to its release page when GitHub cannot be read. Links open it in
+ * the same tab: the download starts and the page stays, with no empty tab left behind.
+ */
+export const DESKTOP_DOWNLOAD_URL = '/download/windows';
+
+/** What to do after downloading, shown beside the download (people kept re-running the installer). */
+export const DESKTOP_INSTALL_ONCE_HINT =
+  'Run the installer once. After that, open Paramount AI from the Start menu or the Desktop icon. You can delete the downloaded file.';
 
 /**
  * ADR-0109: the one-line Mac installer (apps/web/public/install-mac.sh), run in Terminal. It checks the

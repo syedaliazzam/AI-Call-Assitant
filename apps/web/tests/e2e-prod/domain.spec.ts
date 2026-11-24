@@ -73,12 +73,14 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
       await expect(page.getByText('call.paramountintelligence.co').first()).toBeVisible();
       report(`${host} guide names the new address`, true);
       // Its links are real links, and no Markdown is left showing.
-      const releases = page.getByRole('link', { name: 'Paramount AI releases' });
-      await expect(releases).toHaveAttribute(
+      // The direct Windows download. A new window on purpose: in the desktop app the guide's links open
+      // in the system browser, which then downloads the file.
+      const download = page.getByRole('link', { name: 'download it for Windows' });
+      await expect(download).toHaveAttribute(
         'href',
-        'https://github.com/Zainpak123/kite-releases/releases/latest',
+        'https://call.paramountintelligence.co/download/windows',
       );
-      await expect(releases).toHaveAttribute('target', '_blank');
+      await expect(download).toHaveAttribute('target', '_blank');
       await expect(page.getByText('](')).toHaveCount(0);
       report(`${host} guide shows its link as a link`, true);
       await expect(page.getByText('Windows protected your PC')).toBeVisible();

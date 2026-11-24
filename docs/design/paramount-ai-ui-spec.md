@@ -372,7 +372,7 @@ Under it, the **live strip**: *"Listening…"* or the latest words.
 **Right: answers**
 - **Header:** `[Ctrl ←]` `[Ctrl →]` nav chips; on the right, **● Auto answer Off**, **Clear** `[Ctrl ⌫]`, collapse.
 - **Card:**
-  - the **question title** with a 2 px accent bar on its left;
+  - the **question title** with a 2 px accent bar on its left (ADR-0115: after a small, muted "Question:" label);
   - the bold answer line;
   - bullets;
   - Tip / coding sections (existing);

@@ -89,12 +89,8 @@ export function DesktopAppCard() {
           Don’t have it? Get it for Mac
         </button>
       ) : (
-        <a
-          href={DESKTOP_DOWNLOAD_URL}
-          target="_blank"
-          rel="noreferrer"
-          className={DOWNLOAD_LINK_CLASSES}
-        >
+        // ADR-0114: the installer itself (/download/windows), in the same tab.
+        <a href={DESKTOP_DOWNLOAD_URL} className={DOWNLOAD_LINK_CLASSES}>
           Don’t have it? Download for Windows
         </a>
       )}

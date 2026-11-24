@@ -11,7 +11,7 @@
  * Used by: app/(app)/sessions/[id]/desktop/page.tsx
  * Depends on: @kite/shared (the link), lucide-react, next/link, src/core/auth/desktopLink.ts,
  *             src/features/session-setup/labels.ts, src/features/shell/MacInstall.tsx, src/ui
- * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S9); ADR-0052, ADR-0092
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S9); ADR-0052, ADR-0092, ADR-0109, ADR-0114
  */
 'use client';
 
@@ -20,7 +20,7 @@ import { ArrowLeft, MonitorDown } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { requestLinkCode } from '@/core/auth/desktopLink';
-import { DESKTOP_DOWNLOAD_URL } from '@/features/session-setup/labels';
+import { DESKTOP_DOWNLOAD_URL, DESKTOP_INSTALL_ONCE_HINT } from '@/features/session-setup/labels';
 import { MAC_INSTALL_TITLE, MacInstallDialog, MacInstallLink } from '@/features/shell/MacInstall';
 import { Button, buttonClasses } from '@/ui/Button';
 import { useIsMac } from '@/ui/useIsMac';
@@ -110,20 +110,18 @@ export function DesktopHandoffPage({ sessionId }: DesktopHandoffPageProps) {
             {MAC_INSTALL_TITLE}
           </Button>
         ) : (
-          <a
-            href={DESKTOP_DOWNLOAD_URL}
-            target="_blank"
-            rel="noreferrer"
-            className={buttonClasses('primary', 'lg', 'w-full')}
-          >
-            Download for Windows
-          </a>
+          <>
+            {/* ADR-0114: the installer itself (/download/windows), in the same tab. */}
+            <a href={DESKTOP_DOWNLOAD_URL} className={buttonClasses('primary', 'lg', 'w-full')}>
+              Download for Windows
+            </a>
+            {/* The hint names the Start menu and the Desktop icon: Windows only. */}
+            <p className="text-helper text-ui-muted">{DESKTOP_INSTALL_ONCE_HINT}</p>
+          </>
         )}
         {mac ? (
           <a
             href={DESKTOP_DOWNLOAD_URL}
-            target="_blank"
-            rel="noreferrer"
             className="self-center rounded-control text-helper text-ui-muted underline underline-offset-4 hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
           >
             Need it for Windows?

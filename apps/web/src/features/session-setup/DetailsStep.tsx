@@ -2,7 +2,7 @@
  * File: apps/web/src/features/session-setup/DetailsStep.tsx
  * Purpose: Step 1 of the Create/Edit session wizard (spec S4): session type, "Paste a job link", company,
  *          role or topic, job description, then Context: CV / Resume and Documents, with a used / limit
- *          counter for the session's character cap (warnings above 280k, ADR-0067), and a collapsed Advanced section with Key terms at the
+ *          counter for the session's character cap (a warning only above 500k, ADR-0117), and a collapsed Advanced section with Key terms at the
  *          bottom. Switching type keeps the fields they share. v1.3.0 (ADR-0057): Contact name is no
  *          longer asked for or shown; a session that has one keeps it unchanged.
  * Used by: src/features/session-setup/SessionWizard.tsx
@@ -159,8 +159,9 @@ export function DetailsStep({
         <p className="text-[13px] text-ui-muted" data-testid="document-chars">
           {count(used)} / {count(MAX_SESSION_CHARS)} characters used
         </p>
-        {/* Above about 280k characters (ADR-0067); one more line when the session uses Sonnet. */}
-        {documentWarnings(used, draft.preferences.model).map((warning) => (
+        {/* ADR-0117: only above the 500,000-character limit (gate 2, extracted text); none under it,
+            whatever the files' sizes. The wizard's Next and Save stay off while it shows. */}
+        {documentWarnings(used).map((warning) => (
           <p key={warning} className="text-[13px] text-ui-warning" role="status">
             {warning}
           </p>

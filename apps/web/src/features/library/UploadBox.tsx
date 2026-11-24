@@ -5,13 +5,15 @@
  *          file that could not be read, on the page behind it. Files can also be dropped straight
  *          on the row, without opening the window.
  * Used by: src/features/library/LibraryPage.tsx
- * Depends on: src/ui (Button, Dialog, icons), ./useLibraryUpload.ts
+ * Depends on: src/core/documents/limits.ts (MAX_FILE_MB), src/ui (Button, Dialog, icons),
+ *             ./useLibraryUpload.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4; ADR-0029;
  *               docs/design/kite-ui-theme.md §6
  */
 'use client';
 
 import { useRef, useState, type DragEvent } from 'react';
+import { MAX_FILE_MB } from '@/core/documents/limits';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
 import { UploadIcon } from '@/ui/icons';
@@ -98,7 +100,7 @@ export function UploadBox({
           {label}
         </Button>
         <p className="min-w-0 flex-1 basis-48 text-[13px] text-ui-muted">
-          PDF, Word (.docx) or text, up to 20 MB each. Or drop files here.
+          PDF, Word (.docx) or text, up to {MAX_FILE_MB} MB each. Or drop files here.
         </p>
       </div>
 
@@ -125,8 +127,8 @@ export function UploadBox({
             Browse files
           </Button>
           <p className="text-[13px] text-ui-muted">
-            PDF, Word (.docx) or text, up to 20 MB each. Read on this computer; only the text is
-            kept.
+            PDF, Word (.docx) or text, up to {MAX_FILE_MB} MB each. Read on this computer; only the
+            text is kept.
           </p>
           <input
             ref={input}

@@ -39,6 +39,11 @@
  *                       19 Nov 2026, option B; off in the app)
  *            --spoken   ADR-0101: typed (chat) questions are sent as spoken voice questions (the prompt's
  *                       "spoken by the user (speech recognition…)" label)
+ *            --guard    ADR-0112: also check what the user sees after the server's template stop and the
+ *                       page's silent retry (one more request only for a reply the page asks again;
+ *                       scripts/lib/guard-view.ts). From 20 Nov 2026 a run the page asked again is graded
+ *                       on the retry (what the user sees); the discarded first reply is graded too, only
+ *                       for the "runs graded on the retry" line
  *            --model=<gemini-lite|gpt-luna|gemini-flash|gpt-terra>  ADR-0099: live answers from that
  *                       Gemini or GPT model (its id from KITE_MODEL_GEMINI_* / KITE_MODEL_OPENAI_*, its key
  *                       GEMINI_API_KEY / OPENAI_API_KEY), with the same prompt and latency settings as the
@@ -83,6 +88,8 @@ import {
   type AnswerRequest,
   type AnswerUsage,
   cleanPersonName,
+  containsTemplateLine,
+  leadingTemplateLine,
 } from '@kite/shared';
 import { buildClaimCorpus, checkClaims, needsClaimCheck } from '@/core/answer/claimCheck';
 import { findSimilarAnswer } from '@/core/answer/similar';
@@ -117,9 +124,12 @@ import { runAnswerCode, type CodeResult } from './lib/code-sandbox';
 import { requireKey } from './lib/require-key';
 import { createSpendMeter, type SpendMeter } from './lib/spend';
 import { estimateLine, parseEvalArgs, selectScenarios } from './lib/eval-options';
+import { guardCheck } from './lib/guard-view';
 import {
   saveEvalResults,
+  summariseRetryGrading,
   type ExperimentFlags,
+  type GuardCheck,
   type RunChecks,
   type RunDepth,
   type ScenarioResult,
@@ -371,12 +381,27 @@ interface ScenarioAnswer {
   text: string;
   /** What the hidden line said, or null when it had none. */
   meta: AnswerMeta | null;
-  /** ADR-0103: true when the raw reply contains the contract's placeholder ("[[type|for|source]]"). */
+  /**
+   * ADR-0103: true when the raw reply contains the contract's placeholder ("[[type|for|source]]").
+   * ADR-0112: any copied template line, first or last ("[[question|…]]"), by containsTemplateLine().
+   */
   placeholder: boolean;
   /** Token counts. */
   usage: AnswerUsage;
   /** ADR-0108: the CV match line was in the prompt; --experience-model=sonnet sent it to the smart model. */
   experiment: ExperimentFlags;
+  /** ADR-0112, --guard only: what the user would see after the guard. */
+  guard?: GuardCheck;
+  /**
+   * --guard, when the page asked again: the first reply the user never saw (its card text and hidden line).
+   * The answer above is then the retry's; this is graded too, only to report the difference.
+   */
+  discardedFirst?: {
+    /** Its card text, without hidden lines. */
+    text: string;
+    /** Its hidden line, or null when it had none or copied a template. */
+    meta: AnswerMeta | null;
+  };
 }
 
 /**
@@ -388,16 +413,15 @@ interface Experiment {
   options: PromptOptions;
   /** Option B: own-experience questions in interview, mock and blank sessions go to the smart model. */
   smartForExperience: boolean;
+  /**
+   * ADR-0112 (--guard): also check what the user would see after the live route's template stop and the
+   * page's silent retry (one more request only for a reply the page would ask again).
+   */
+  guard?: boolean;
 }
 
 /** No experiment: the prompt and model the app uses. */
 const NO_EXPERIMENT: Experiment = { options: {}, smartForExperience: false };
-
-/**
- * ADR-0103: the contract's placeholder copied into a reply, anywhere: "[[type|for|source]]", or the
- * same slots under another first word ("[[question|for|source]]").
- */
-const PLACEHOLDER = /\[\[\s*[a-z]+\s*\|\s*for\s*\|\s*source\s*\]\]/i;
 
 /**
  * ADR-0099: the third-party model a run's live answers come from (--model), with its key and model id.
@@ -559,37 +583,76 @@ async function answerScenario(
   // Ask AI stays on Claude, as in the app.
   const viaThird = third !== null && !page;
   const model = viaThird ? third.modelId : page || smartModel ? models.smart : models.fast;
-  let raw = '';
   const maxTokens = page ? KITE_CHAT_MAX_TOKENS : ANSWER_MAX_TOKENS;
-  const reply = viaThird
-    ? third.provider === 'gemini'
-      ? streamGeminiReply({ apiKey: third.apiKey, model: third.modelId, ...prompt, maxTokens })
-      : streamOpenAIReply({ apiKey: third.apiKey, model: third.modelId, ...prompt, maxTokens })
-    : streamReply({
-        model,
-        // ADR-0107: --model=sonnet answers on the smart tier's settings (the API refuses thinking off for it).
-        tier: page || model === models.smart ? 'smart' : 'fast',
-        ...prompt,
-        maxTokens,
-      });
-  let next = await reply.next();
-  for (; !next.done; next = await reply.next()) raw += next.value;
-  meter.add(model, next.value.usage);
-  const split = splitMetaLine(raw);
-  // ADR-0103: a copied placeholder as the first line is not a hidden line (its type is "type").
-  const realMeta = split.state === 'found' && !/^\s*\[\[\s*type\s*\|/i.test(raw);
+  /**
+   * One request with this prompt; its spend is counted.
+   *
+   * @returns The whole raw reply and its token counts.
+   */
+  const request_ = async (): Promise<{ raw: string; usage: AnswerUsage }> => {
+    let text = '';
+    const reply = viaThird
+      ? third.provider === 'gemini'
+        ? streamGeminiReply({ apiKey: third.apiKey, model: third.modelId, ...prompt, maxTokens })
+        : streamOpenAIReply({ apiKey: third.apiKey, model: third.modelId, ...prompt, maxTokens })
+      : streamReply({
+          model,
+          // ADR-0107: --model=sonnet answers on the smart tier's settings (the API refuses thinking off for it).
+          tier: page || model === models.smart ? 'smart' : 'fast',
+          ...prompt,
+          maxTokens,
+        });
+    let next = await reply.next();
+    for (; !next.done; next = await reply.next()) text += next.value;
+    meter.add(model, next.value.usage);
+    return { raw: text, usage: next.value.usage };
+  };
+  const first = await request_();
+  // ADR-0112, --guard: what the user would see (live answers only; the Ask AI page has no retry). The
+  // page's silent retry is a real second request, made only when the page would make it.
+  let retryRaw: string | null = null;
+  const guard =
+    experiment.guard && !page
+      ? await guardCheck(first.raw, async () => {
+          retryRaw = (await request_()).raw;
+          return retryRaw;
+        })
+      : undefined;
+  // 20 Nov 2026 (developer): when the page asked again, the user sees the retry, so the retry is what is
+  // graded and checked; the discarded first reply is kept only to report what grading it would have given.
+  const shownRaw: string = retryRaw ?? first.raw;
+  /**
+   * The card text and hidden line of one raw reply.
+   *
+   * @param raw The raw reply.
+   * @returns Its text without hidden lines, and its hidden line (null when none or a copied template).
+   */
+  const shown = (raw: string): { text: string; meta: AnswerMeta | null } => {
+    const split = splitMetaLine(raw);
+    // ADR-0103: a copied placeholder as the first line is not a hidden line (its type is "type").
+    // ADR-0112: nor is any other copied template ("[[concept|for|source]]"), by the rule the server stops on.
+    const realMeta = split.state === 'found' && leadingTemplateLine(raw) === null;
+    return {
+      text: withoutQuestionLine(split.state === 'found' ? split.rest : raw.trim()),
+      meta:
+        realMeta && split.state === 'found'
+          ? // ADR-0107: for a screen-only screenshot the route sets the user's chosen reader
+            // (withChosenTarget).
+            scenario.screenOnly && sent.target
+            ? { ...split.meta, target: sent.target }
+            : split.meta
+          : null,
+    };
+  };
   return {
-    text: withoutQuestionLine(split.state === 'found' ? split.rest : raw.trim()),
-    meta:
-      realMeta && split.state === 'found'
-        ? // ADR-0107: for a screen-only screenshot the route sets the user's chosen reader (withChosenTarget).
-          scenario.screenOnly && sent.target
-          ? { ...split.meta, target: sent.target }
-          : split.meta
-        : null,
-    placeholder: PLACEHOLDER.test(raw),
-    usage: next.value.usage,
+    // When the guard removed the card (the retry failed too), the user sees the notice and no answer: an
+    // empty answer is graded, never the templated text the page threw away.
+    ...(guard?.outcome === 'notice' ? { text: '', meta: null } : shown(shownRaw)),
+    placeholder: containsTemplateLine(shownRaw),
+    usage: first.usage,
     experiment: { cvMatchLine, smartModel },
+    ...(guard ? { guard } : {}),
+    ...(retryRaw !== null ? { discardedFirst: shown(first.raw) } : {}),
   };
 }
 
@@ -722,16 +785,33 @@ async function grade(
     text,
     '</answer>',
   ].join('\n');
-  const { value, usage } = await jsonReply({
-    model,
-    tier: 'smart',
-    system: graderSystem(rubric),
-    prompt,
-    schema: GRADE_SCHEMA,
-    maxTokens: 600,
-  });
-  meter.add(model, usage);
-  return value as Grade;
+  /**
+   * One grader request.
+   *
+   * @returns The grader's parsed reply and its token counts.
+   */
+  const ask = () =>
+    jsonReply({
+      model,
+      tier: 'smart',
+      system: graderSystem(rubric),
+      prompt,
+      schema: GRADE_SCHEMA,
+      maxTokens: 600,
+    });
+  let reply: Awaited<ReturnType<typeof ask>>;
+  try {
+    reply = await ask();
+  } catch (error) {
+    // 20 Nov 2026: a grader reply with no text (NO_JSON) stopped three full runs about a minute in; the same
+    // scenarios graded again passed. Ask once more, with the same settings, so one such reply does not lose
+    // the whole run; the scenario id is logged (never the answer). Any other error still stops the run.
+    if (!(error instanceof Error) || error.message !== 'NO_JSON') throw error;
+    console.log(`grader: no JSON for ${scenario.id}; asked once more`);
+    reply = await ask();
+  }
+  meter.add(model, reply.usage);
+  return reply.value as Grade;
 }
 
 /**
@@ -790,6 +870,7 @@ async function extraChecks(
     ...(code ? { code } : {}),
     ...(scenario.expectCode ? { codeRuns: (code?.ran ?? 0) > 0 && (code?.failed ?? 1) === 0 } : {}),
     ...(first ? { agreement: answerAgreement(first.text, text) } : {}),
+    ...(answer.guard ? { guard: answer.guard } : {}),
   };
 }
 
@@ -817,6 +898,24 @@ function summariseChecks(results: readonly ScenarioResult[]): string[] {
     ...line('Hidden line present', (checks) => checks.hiddenLine),
     ...line('No copied placeholder', (checks) =>
       checks.placeholder === undefined ? undefined : !checks.placeholder,
+    ),
+    // ADR-0112, --guard: what the user sees, not what the model wrote.
+    ...line('Guard: user sees no broken card', (checks) =>
+      checks.guard === undefined
+        ? undefined
+        : !(checks.guard.outcome === 'card' && checks.guard.templateVisible),
+    ),
+    ...line(
+      'Guard: first reply templated or empty, asked again',
+      (checks) => checks.guard?.retried,
+    ),
+    ...line('Guard: card removed with the notice', (checks) =>
+      checks.guard === undefined ? undefined : checks.guard.outcome === 'notice',
+    ),
+    ...line('Guard: card without its own hidden line ("Other")', (checks) =>
+      checks.guard === undefined
+        ? undefined
+        : checks.guard.outcome === 'card' && checks.guard.cardWithoutMeta,
     ),
     ...line('Question type as expected', (checks) => checks.typeOk),
     ...line('Answer line 12 words or fewer', (checks) =>
@@ -922,6 +1021,8 @@ async function main(): Promise<void> {
   const experiment: Experiment = {
     options: { cvMatchSignal: !process.argv.slice(2).includes('--no-cv-match') },
     smartForExperience: process.argv.slice(2).includes('--experience-model=sonnet'),
+    // ADR-0112: --guard, also check what the user sees after the server's stop and the page's retry.
+    guard: process.argv.slice(2).includes('--guard'),
   };
   // ADR-0093: cleaned as the app cleans it, so the prompt is the one a named call sends.
   const theirName = cleanPersonName(options.theirName) || null;
@@ -1044,10 +1145,36 @@ async function main(): Promise<void> {
         compareRubric && options.grade && !nothingToGrade
           ? await grade(scenario, text, env.modelSmart, meter, first, 'previous')
           : null;
+      // --guard, when the page asked again: the run is scored on the retry (what the user sees); grading the
+      // discarded first reply too only measures how much the old way of scoring it differed.
+      const discarded = answer.discardedFirst;
+      let discardedFirstTotal: number | undefined;
+      if (discarded && options.grade) {
+        const skip =
+          (discarded.meta?.type === 'garbled' || discarded.meta?.type === 'none') &&
+          discarded.text.trim() === '';
+        const g = skip
+          ? noAnswerGrade(scenario)
+          : await grade(
+              theirName
+                ? { ...scenario, session: { ...scenario.session, themName: theirName } }
+                : scenario,
+              discarded.text,
+              env.modelSmart,
+              meter,
+              first,
+            );
+        const s = skip
+          ? { headline: 1, bullets: 1 }
+          : shapeChecks(discarded.text, scenario.session.style.format, discarded.meta);
+        discardedFirstTotal =
+          g.facts + g.grounded + g.consistent + g.style + s.headline + s.bullets;
+      }
       runs.push({
         run,
         scores,
         total: Object.values(scores).reduce((a, b) => a + b, 0),
+        ...(discardedFirstTotal !== undefined ? { discardedFirstTotal } : {}),
         reason: graded.reason,
         checks: {
           ...checks,
@@ -1088,6 +1215,8 @@ async function main(): Promise<void> {
 Stopped at the --max-dollars cap: ${stopped} scenario(s) not run.`);
   const checkLines = summariseChecks(results);
   if (checkLines.length > 0) console.log(`\n${checkLines.join('\n')}`);
+  const retryLine = summariseRetryGrading(results);
+  if (retryLine !== null) console.log(retryLine);
   const depthLines = summariseDepth(results);
   if (depthLines.length > 0) console.log(`\n${depthLines.join('\n')}`);
   console.log(

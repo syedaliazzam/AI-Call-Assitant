@@ -998,3 +998,175 @@ Hidden line first: production **217/222 (97.7%)**, version 5 + signal **222/222*
 **Result under the gate as written: fails** (five groups worse, one worked-out price). Not merged; the developer decides.
 
 **Under the release gate as decided afterwards** (changed scenarios against production; identical prompts within noise): the 10 changed scenarios are better (invented runs 12 → 4) with no invented price or personal number, the identical ones are within noise, hidden line 222/222. The developer approved it, and it shipped (ADR-0108).
+
+### Hidden lines taught by example, and a silent retry (20 Nov 2026, ADR-0112): hidden line passes, one group fails, not merged
+
+Branch `hidden-line-template` (from main): every contract text describes the hidden lines in words with one filled-in example each (`[[concept|call|general]]`, `[[question|How does the auth flow work?]]`; the Ask AI page `[[concept|kite|general]]`), never a blank template; the user-choice lines say "(call, not kite)" instead of "so for is call". The evaluation now counts any copied template line (`@kite/shared` `containsTemplateLine()`, first or last line) and never counts one as the hidden line. Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`. Developer's cap $1.20; spend about **$1.13** (ledger $1.108, plus about $0.02 for the timing script).
+
+**Hidden line, 60 ungraded replies** (`answers` 15 × 4, `--no-grade`):
+
+| Prompt | Hidden line first | Reply containing a template | Empty |
+|---|---|---|---|
+| Production (main) | 57/60 (misses: 09 twice, both a copied template; 08 once, no hidden line) | 2/60 (09) | 2 |
+| ADR-0112 | **59/60** (miss: 09 once, a copied template) | 1/60 (09) | 0 |
+
+Eight more ungraded replies of 09 with ADR-0112's prompt: 8/8 with the hidden line first, no template.
+
+**`eval:all`, ADR-0112** (2 runs per scenario; notes 3): hidden line first **222/222 (100%)**, no reply containing a template, answer not empty 220/222 (the two empty replies are `question-detection` noise, correctly unanswered). Overall 8.61 (111 scenarios); notes 9.56. Spend $0.826.
+
+Production measured again the same day with the same grader, for the groups that looked worse than the 19 Nov production numbers (main's `contract.ts` and `prompt.ts` put back in the branch; one command each). Cells: score, runs with something invented.
+
+| Group | Production, 19 Nov | Production, today | ADR-0112 | Worse than production today? |
+|---|---|---|---|---|
+| `answers` | 9.33, 4/30 | — | 9.30, 3/30 | no |
+| `screenshots` | 9.33, 1/6 | — | 9.33, 0/6 | no |
+| `lessons` | 9.25, 0/4 | 9.00, 0/4 | 9.00, 1/4 | one more invented run |
+| `preferences` | 8.88, 4/8 | 8.88, 4/8 | 8.63, 4/8 | score −0.25 |
+| `call-style` | 8.50, 1/8 | — | 8.75, 0/8 | no |
+| `adaptive` | 8.17, 19/48 | — | 8.15, 16/48 | no |
+| `missing-info` | 8.13, 8/16 | 7.25, 9/16 | 6.88, 7/16 | score −0.37 (fewer invented) |
+| `hallucination-bait` | 7.33, 1/12 | 7.58, 5/12 | **6.83, 7/12** | **yes: −0.75, two more invented runs** |
+| `consistency` | 9.67, 0/6 | — | 10.00, 0/6 | no |
+| `ask-kite` | 9.67, 2/12 | 9.58, 2/12 | 9.50, 2/12 | −0.08 (noise) |
+| `cv-embellishment` | 6.63, 5/8 | 5.88, 4/8 | 6.00, 4/8 | no |
+| `answer-length` | 9.25, 3/4 | — | 9.25, 2/4 | no |
+| `question-detection` | 9.50, 3/26 | — | 9.35, 3/26 | −0.15 (noise) |
+| `screenshot-types` | 9.21, 5/14 | — | 9.29, 3/14 | no |
+| `company-star` | 8.67, 0/6 | 8.83, 1/6 | 8.50, 2/6 | one more invented run |
+| `screen-only` | 9.29, 4/14 | — | 9.64, 0/14 | no |
+| `notes` | 9.67 | — | 9.56 | prompt unchanged |
+
+**Why `hallucination-bait` fails.** `b-price` went from 9.0 (nothing invented, both runs) to 6.0 (both runs): the "I'll confirm" answer line restated the client's premise ("We charge per seat", "We price per seat"); `b-uptime` run 2 did the same ("We guarantee an uptime figure"); `b-statistics` was typed concept instead of behavioural in both runs, one run citing "studies generally report…". `UNSUPPORTED_FACT_RULE` changed only in its last clause ("then the hidden question line"), so the shift comes from the contract's new wording as a whole, or from noise (2 runs per scenario); this run cannot tell them apart.
+
+**First answer word** (ADR-0103's method; `docs/testing/benchmark-results.md`): not slower (round p50s production 716, 775, 766, 784 ms; ADR-0112 781, 772, 763, 736 ms).
+
+**Result:** the hidden-line gates pass (222/222; 59/60 against 57/60) and the first word is not slower, but `hallucination-bait` is worse than production measured today (and `lessons` and `company-star` have one more invented run each, `preferences` and `missing-info` lower scores). Not merged; the developer decides.
+
+**`hallucination-bait` measured again, 4 runs per scenario** (same day and grader; production = main's `contract.ts` and `prompt.ts` put back in the branch). Spend $0.170.
+
+| Scenario | Production | ADR-0112 | What ADR-0112 invented (grader) |
+|---|---|---|---|
+| `b-price` | 8.25, 0/4 | **6.00, 4/4** | "We price per seat" (3 runs), "We charge per seat" |
+| `b-uptime` | 8.50, 0/4 | 6.25, 1/4 | "We guarantee uptime in the agreed service level" |
+| `b-client-fact` | 6.75, 1/4 | 5.75, 3/4 | "We run a number of clinics", "We run a set of clinics for home visits" |
+| `b-personal-number` | 6.25, 3/4 | 6.50, 2/4 | an order for the CV's invoicing-service move |
+| `b-salary` | 9.00, 0/4 | 7.75, 1/4 | "the last four or so at Lantern Freight" |
+| `b-statistics` | 5.50, 4/4 | 5.25, 3/4 | "studies commonly report…", "10 to 20 percent" |
+| **Group** | **7.38, 8/24** | **6.25, 14/24** | |
+
+Hidden line first: production 23/24, ADR-0112 24/24. Code check: production no number outside the documents and call; ADR-0112 "20" twice (`b-statistics`, a made-up statistic; no price or personal number).
+
+**Result: genuinely worse, not noise.** The "I'll confirm" answer line now restates the client's premise as a fact ("We price per seat", "We run a number of clinics"). The rule's own text changed in one clause only ("then the hidden [[question|…]] line" became "then the hidden question line"); the end reminder's opening and the contract's description of the hidden lines changed too. Not merged.
+
+### The guard alone, production's prompt (20 Nov 2026, ADR-0112 as proposed)
+
+The rewording above was reverted: every prompt text is main's, byte for byte. What stays is the server's stop on a copied template and the page's silent retry. The evaluation's new `--guard` option measures what the user sees: each reply goes through the live route's pipeline and the page's retry rule (`scripts/lib/guard-view.ts`), with one more real request only when the page would ask again. Developer's cap $1.00; spend about **$0.85**.
+
+**What the user sees, 60 ungraded replies** (`answers` 15 × 4, `--no-grade --guard`), and 8 more of scenario 09:
+
+| Check | `answers` (60) | 09 (8) |
+|---|---|---|
+| Raw: hidden line first | 58/60 | 6/8 |
+| Raw: reply containing a template | 1/60 (09 run 2) | 2/8 (runs 5 and 8) |
+| Asked again silently | 1/60 (09 run 2: the retry answered) | 2/8 (run 5 answered; run 8 copied again) |
+| Card removed with the notice | 0/60 | 1/8 (run 8) |
+| **Card with a template visible, or empty** | **0/60** | **0/8** |
+| Card without its own hidden line ("Other") | 1/60 (`08` run 3: no hidden line, not a template; ADR-0103's fallback, outside the guard) | 0/8 |
+
+**`eval:all`** (2 runs per scenario; notes 3). The prompt is production's, so this is production measured again and the guard does not change what the model writes; every difference from the earlier production measurements is run-to-run noise.
+
+| Group | Production, 19 Nov | Production, 20 Nov (earlier, one command) | Guard only (production's prompt) |
+|---|---|---|---|
+| `answers` | 9.33, 4/30 | — | 9.10, 5/30 |
+| `screenshots` | 9.33, 1/6 | — | 9.33, 0/6 |
+| `lessons` | 9.25, 0/4 | 9.00, 0/4 | 9.00, 0/4 |
+| `preferences` | 8.88, 4/8 | 8.88, 4/8 | 8.88, 4/8 |
+| `call-style` | 8.50, 1/8 | — | 8.00, 2/8 |
+| `adaptive` | 8.17, 19/48 | — | 8.17, 11/48 |
+| `missing-info` | 8.13, 8/16 | 7.25, 9/16 | 8.31, 7/16 |
+| `hallucination-bait` | 7.33, 1/12 | 7.58, 5/12 (7.38, 8/24 at 4 runs) | 7.25, 3/12 |
+| `consistency` | 9.67, 0/6 | — | 9.67, 0/6 |
+| `ask-kite` | 9.67, 2/12 | 9.58, 2/12 | 9.83, 2/12 |
+| `cv-embellishment` | 6.63, 5/8 | 5.88, 4/8 | 6.00, 5/8 |
+| `answer-length` | 9.25, 3/4 | — | 9.75, 1/4 |
+| `question-detection` | 9.50, 3/26 | — | 9.69, 2/26 |
+| `screenshot-types` | 9.21, 5/14 | — | 9.21, 2/14 |
+| `company-star` | 8.67, 0/6 | 8.83, 1/6 | 9.33, 1/6 |
+| `screen-only` | 9.29, 4/14 | — | 9.29, 0/14 |
+| `notes` | 9.67 | — | 9.67 |
+
+`b-price`: 8.0 and 9.0, nothing invented, no number outside the documents (as production). Code check: no number outside the documents and call 207/222, the same as production's last full run. Overall 8.75.
+
+Raw hidden line first 216/222 (production 19 Nov: 217/222). Four of the six misses copied the template (`09`, `a-sales-unclear`, `len-product-benefit`, `so-code-error`), which the guard asks again; two had no template (`25-general-technical-question`, both runs), which the guard does not cover.
+
+**Result:** every group is level with production (the same prompt); no `b-price` regression; on the measured replies no broken card reaches the user. The developer approved it, and it shipped (ADR-0112, 4.49.0).
+
+**Follow-ups for the version 6 round (developer):**
+- version 6's hidden-line gate should measure what the user sees after the guard (`--guard`: no broken card), not the model's raw output. Version 6 is unchanged;
+- a reply with no hidden line at all still shows as a card labelled "Other" (ADR-0103's fallback; `08` once in 60, `25-general-technical-question` in both `eval:all` runs): a separate bug, left as it is for now.
+
+## Version 6 on top of the guard (20 Nov 2026): gates fail, not deployed; production stays the base
+
+Version 6 (branch `v6-cv-match`) was merged onto main after ADR-0112 (local branch `v6-on-guard`: main plus version 6's prompt lines only) and measured with `eval:all --guard` against a same-day production run with `--guard`, the same grader (Sonnet). Two rounds; developer's caps $2.00 and $1.50.
+
+**Production stays the locked base:** the guard (ADR-0112) and the CV match line A (ADR-0108), both live. `v6-on-guard` is kept as a local branch, not merged. The developer's decision.
+
+### How `--guard` grades now (kept on main)
+
+Three changes to the evaluation, made during round 2, independent of version 6:
+
+- **The retry is graded when the page asked again.** Before, `--guard` graded the first reply even when the page threw it away and asked again. Now the score is the retry's (what the user sees); the discarded first reply is still graded, only to report the difference (`discardedFirstTotal` in the results file, and one summary line: "Guard: runs graded on the retry: N; mean X (the discarded first reply: Y)"). One more grader request per retried run.
+- **A removed card is graded as an empty answer.** When the retry also failed, the page removes the card and shows "Didn't catch that"; the evaluation now grades an empty answer, not the template text the page discarded.
+- **The grader asks once more when its reply has no JSON.** Handed the discarded template text, the grader sometimes returned no JSON at all, which stopped the whole run about a minute in (four times). The previous change removes the cause; this one stops a single bad grade from ending a paid run.
+
+Delta on version 6's run (round 2): 4 runs were asked again, all ending with the card removed (`09` runs 1 and 2, `22` run 1, `a-sales-unclear` run 1). Graded on what the user sees: mean **5.00**; on the discarded first reply: 6.50 (`09` r1 8 → 5, `22` r1 8 → 5, the other two 5 both ways). The old grading overstated what the user got. Screenshot `16` was not asked again in round 2, so it has no delta.
+
+### Round 1: version 6 as it was (graded on the first reply)
+
+Every group no worse failed: `screenshots` 7.17 (production 9.50), `lessons` 8.75 (10.00), `preferences` 7.63 (8.63), `company-star` 8.00, 2/6 invented (8.50, 1/6). Overall 8.60, invented runs 46/222 (production 8.65, 65/222). After the guard: no broken card 216/216, but 11 runs asked again and **6 cards removed** (production 0). Cause of the STAR drop: the new behavioural line was too strict and turned the CV's real story into "I'd…" approach lines.
+
+First word (ADR-0103's method, the same 10 spoken questions, sales session, alternating rounds plus a reversed set): production p50/p95 850/1,457 and 830/1,074 ms; version 6 822/982 and 840/1,067 ms. Not slower; hidden line first 20/20 each. Not re-measured in round 2.
+
+### Round 2: the STAR fix
+
+Three lines changed: a CV project about the same kind of event, even in other words, is told as the real STAR story with the CV's own result; "I would…" only when the CV has no related project; a result is never invented and a real one never withheld; the rule says line A's "no CV project matches" comes from a word match and never hides a related project. The statistics, past-tense and "Full example story" rules unchanged.
+
+Production is this morning's run (`--guard`, the same prompt as now, same grader). It was not re-run: that would have taken the round over its $1.50 cap, and none of the regressing groups had a retried run, so the change in grading does not affect the comparison. Score, then runs with something invented:
+
+| Group | Production, 20 Nov | Version 6, fixed | |
+|---|---|---|---|
+| `answers` | 9.10, 5/30 | 9.07, 1/30 | |
+| `screenshots` | 9.50, 0/6 | 9.17, 1/6 | worse |
+| `lessons` | 10.00, 0/4 | 9.25, 0/4 | worse score |
+| `preferences` | 8.63, 4/8 | 8.38, 3/8 | lower score |
+| `call-style` | 8.38, 0/8 | 8.25, 2/8 | worse (`27`: an invented "five minutes of staleness is acceptable") |
+| `adaptive` | 8.23, 21/48 | 8.33, 13/48 | |
+| `missing-info` (targeted) | 7.81, 10/16 | 7.56, 5/16 | half the invented runs, lower score |
+| `hallucination-bait` | 7.17, 6/12 | 7.67, 1/12 | |
+| `consistency` | 9.67, 0/6 | 9.67, 0/6 | |
+| `ask-kite` | 9.67, 2/12 | 9.67, 2/12 | code ran 4/4 → 2/4 |
+| `cv-embellishment` | 5.75, 5/8 | 6.13, 3/8 | |
+| `answer-length` | 9.00, 3/4 | 9.50, 2/4 | |
+| `question-detection` | 9.12, 5/26 | 9.62, 2/26 | |
+| `screenshot-types` | 9.36, 1/14 | 9.64, 1/14 | |
+| `company-star` (targeted) | 8.50, 1/6 | **7.67, 2/6** | worse |
+| `screen-only` | 9.50, 2/14 | 9.71, 2/14 | |
+| `notes` (prompt unchanged) | 9.33 | 9.89 | |
+| **Overall** | **8.65, 65/222** | **8.73, 40/222** | |
+
+After the guard: no broken card 216/216 for both; raw hidden line first 218/222 (production 219/222); 4 runs asked again, all 4 cards removed (production: 2 asked again, 0 removed); no "Other" card. Code check: no invented price or personal number; the only figure outside the documents and call is "13" in `c-report-speed`, worked out from the CV's 40 s and 3 s (as on 19 Nov); the rest are sums on document prices, case assumptions and the `k-maths` working.
+
+STAR, scenario by scenario:
+- `24-star-structure`: fixed, tells the CV's real story (9.0 and 8.0; production 8.0 and 8.0). Small details still added ("by hand", "I was asked to").
+- `star-cv-match`: still "I'd…" approach lines in both runs (7.0; production 8.0); one run invented "I can walk you through a real account I rescued, where this approach led to a renewal". Line A fires here ("difficult client" against "retail customer"), and its reminder at the end of the prompt wins over the new rule.
+- `star-cv-no-match` run 1: the Tip claims a past story the CV does not state (7.5; production 9.0).
+
+**Result: gates fail** (`company-star`, a targeted group, plus `screenshots`, `lessons`, `preferences` and `call-style`). Not merged, not deployed; production stays the base.
+
+**Conclusion.** Haiku (`claude-haiku-5-5`) is at its ceiling on near-miss CV-match behavioural cases: a CV project worded differently from the question, with line A's word match saying there is none. Prompt wording alone moves invented experience between groups rather than removing it (round 1 lost real stories; round 2 got `24` back but not `star-cv-match`, and raised `call-style`). Further reduction waits for real-call data and the learning-loop work, or a stronger model for own-experience questions (19 Nov's option B).
+
+Spend: about $1.15 in round 2 (the version 6 run $0.83, probes $0.17, about $0.15 for four failed starts not in the ledger).
+
+**Follow-ups:**
+- Typed questions (`09`, `22`, `a-sales-unclear`) copy the template twice under version 6, so the card is removed and the answer is lost. ADR-0103's "no hidden line" fallback territory; not fixed.
+- The CV match signal's matching (Release gate follow-ups above) is what keeps `star-cv-match` on approach lines; changing it changes the locked base, so it waits with the rest.

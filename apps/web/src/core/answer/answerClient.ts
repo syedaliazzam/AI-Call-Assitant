@@ -42,6 +42,11 @@ export interface AnswerDone {
    * when it was not.
    */
   fallback?: 'timeout' | 'error' | 'empty';
+  /**
+   * ADR-0112: true when the server stopped the reply on a copied template line (no text came); absent
+   * otherwise.
+   */
+  templated?: true;
 }
 
 /** A failed answer. */
@@ -237,6 +242,8 @@ export function streamAnswer(
           payload.fallback === 'empty'
             ? { fallback: payload.fallback }
             : {}),
+          // ADR-0112: only the literal true is passed on.
+          ...(payload.templated === true ? { templated: true as const } : {}),
         }),
       );
     } else if (event === 'error') {

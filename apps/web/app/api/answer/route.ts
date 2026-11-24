@@ -32,6 +32,7 @@ import type {
   AnswerProvider,
   AnswerRequest,
   AnswerTimings,
+  AnswerUsage,
   ModelTier,
 } from '@kite/shared';
 import { dailyLimitMessage, providerOf } from '@kite/shared';
@@ -94,6 +95,17 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 /** Vercel function limit in seconds; matches the 60 s Claude time limit. */
 export const maxDuration = 60;
+
+/**
+ * ADR-0112: the token counts of a live reply stopped on a copied template (the stream was stopped, so
+ * the model's own counts never arrive). The log line says `templatedReply` next to them.
+ */
+const NO_USAGE: AnswerUsage = {
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_creation_input_tokens: 0,
+  cache_read_input_tokens: 0,
+};
 
 /**
  * Builds a JSON error response (used before streaming starts).
@@ -538,8 +550,16 @@ async function respond(
     // first line is missing, stray tags taken out; the counts go in this request's log line. ADR-0095: the
     // same for a Groq reply.
     // ADR-0103: text written before the hidden first line is never shown (flagged in the log).
+    // ADR-0112: a live reply that opens with a copied template ("[[type|for|source]]") is stopped there and
+    // ends with no text, so the browser asks again once (useLiveAnswers.ts). Its token counts are unknown
+    // once the stream is stopped, so they are logged as 0 next to `contract.templatedReply`. The Ask AI
+    // page has no retry: it keeps ADR-0103's drop-and-continue.
     source = withContractFallback(
-      withAnswerMeta(reply, contract),
+      withAnswerMeta(
+        reply,
+        contract,
+        mode === 'kite' ? {} : { stopOnTemplate: () => ({ usage: NO_USAGE, stopReason: null }) },
+      ),
       {
         type: 'other',
         target: mode === 'kite' || data.target === 'kite' ? 'kite' : 'call',
@@ -617,6 +637,8 @@ async function respond(
         ms,
         model: answeredBy,
         ...(fallback ? { fallback } : {}),
+        // ADR-0112: the reply was stopped on a copied template (the browser asks again once).
+        ...(contract.templatedReply ? { templated: true as const } : {}),
       };
     },
     onError: (error): AnswerEvent => {

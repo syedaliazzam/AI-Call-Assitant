@@ -59,7 +59,9 @@ nsis:
   oneClick: true
   perMachine: false
   createStartMenuShortcut: true
-  createDesktopShortcut: false
+  # 1.7.4: a Desktop icon too. Without one, people re-ran the Setup .exe from Downloads to open the app,
+  # which reinstalled it every time. build/installer.nsh recreates it if it was deleted.
+  createDesktopShortcut: true
   shortcutName: Paramount AI
   uninstallDisplayName: Paramount AI
   # No spaces: GitHub renames them in release assets, and latest.yml must match the asset's name.

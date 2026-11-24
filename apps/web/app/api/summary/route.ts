@@ -7,7 +7,8 @@
  * Depends on: src/server/auth.ts (getCachedSession), src/server/env.ts, src/server/validate.ts
  *             (parseSummaryRequest, MAX_REQUEST_BYTES), src/server/summary.ts, src/server/claude.ts
  *             (errors)
- * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2; ADR-0067
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2; ADR-0067, ADR-0116 (plain-text
+ *               summary; a cut-off reply is kept, not an error)
  *
  * Not counted towards the daily limit (ADR-0036): like a warm-up, the device asks for it on its own,
  * once per set of documents. Logs ids, sizes, timings and token counts only: never document or
@@ -17,7 +18,7 @@ import type { AnswerErrorCode, DocumentsSummaryResponse } from '@kite/shared';
 import { getCachedSession } from '@/server/auth';
 import { describeClaudeError, errorLogDetails } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
-import { writeDocumentsSummary } from '@/server/summary';
+import { EmptySummaryError, writeDocumentsSummary } from '@/server/summary';
 import { MAX_REQUEST_BYTES, parseSummaryRequest } from '@/server/validate';
 import { readRequestText } from '@/server/requestBody';
 
@@ -106,18 +107,42 @@ async function respond(
     chars: parsed.data.documents.reduce((total, document) => total + document.text.length, 0),
   };
   try {
-    const { summary, usage } = await writeDocumentsSummary(parsed.data, model);
+    const { summary, usage, stopReason, cutOff } = await writeDocumentsSummary(parsed.data, model);
     const ms = Math.round(performance.now() - startedAt);
-    console.info('summary: done', { userId: user.id, model, ...sizes, ms, usage });
-    const body: DocumentsSummaryResponse = { summary, usage, ms };
+    // ADR-0116: the stop reason shows a summary cut off at its token limit ('max_tokens').
+    console.info('summary: done', {
+      userId: user.id,
+      model,
+      ...sizes,
+      ms,
+      usage,
+      stopReason,
+      cutOff,
+    });
+    const body: DocumentsSummaryResponse = { summary, usage, ms, cutOff };
     return Response.json(body);
   } catch (error) {
+    if (error instanceof EmptySummaryError) {
+      // ADR-0116: Claude answered but wrote no usable summary (for example a refusal). Logged with
+      // why it stopped and how much it wrote, never the text.
+      console.error('summary: failed', {
+        userId: user.id,
+        model,
+        ...sizes,
+        code: 'upstream_error',
+        stopReason: error.stopReason,
+        outputTokens: error.outputTokens,
+        ms: Math.round(performance.now() - startedAt),
+      });
+      return jsonError(502, 'upstream_error', 'Claude returned no summary.');
+    }
     const described = describeClaudeError(error);
     console.error('summary: failed', {
       userId: user.id,
       model,
       ...sizes,
       code: described.code,
+      ms: Math.round(performance.now() - startedAt),
       ...errorLogDetails(error),
     });
     const status =

@@ -227,7 +227,8 @@ test('the hand-off page: the link with a one-time code, its button, the download
     await route.fulfill({ json: { code: CODE, expiresAt: Date.now() + 60_000 } });
   });
   await page.evaluate((session) => window.kiteHandoffHarness.showHandoff(session), id);
-  await expect(page.getByText('Open Paramount AI')).toBeVisible();
+  // Exact: the download's "…open Paramount AI from the Start menu…" (ADR-0114) also contains the words.
+  await expect(page.getByText('Open Paramount AI', { exact: true })).toBeVisible();
   await expect(page.getByText('No prompt? Use the button below.')).toBeVisible();
   await expect.poll(followed).toEqual([`paramountai://session/${id}/${CODE}`]);
   // No session file any more (ADR-0092): nothing to save again.
@@ -237,9 +238,12 @@ test('the hand-off page: the link with a one-time code, its button, the download
   expect(asked).toBe(2);
   const region = page.getByRole('region', { name: 'Get the desktop app' });
   await expect(region).toContainText('Don’t have the desktop app yet?');
-  await expect(region.getByRole('link', { name: 'Download for Windows' })).toHaveAttribute(
-    'href',
-    /kite-releases\/releases\/latest$/,
+  // The direct download, in the same tab (no empty tab), and what to do after it.
+  const download = region.getByRole('link', { name: 'Download for Windows' });
+  await expect(download).toHaveAttribute('href', '/download/windows');
+  await expect(download).not.toHaveAttribute('target', /./);
+  await expect(region).toContainText(
+    'Run the installer once. After that, open Paramount AI from the Start menu or the Desktop icon. You can delete the downloaded file.',
   );
   await region.getByText('Need it for macOS?').hover();
   await expect(page.getByRole('tooltip')).toHaveText('Coming soon');

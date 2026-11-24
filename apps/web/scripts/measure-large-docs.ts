@@ -309,7 +309,8 @@ async function main(): Promise<void> {
   printUsage(
     'summary',
     written.usage,
-    `${written.summary.length} characters, ${Math.round(performance.now() - summaryStarted)} ms, ${usd(cost(written.usage, 'fast'))}`,
+    // ADR-0116: the stop reason ('max_tokens' when the summary reached its token limit) and whether it was cut short.
+    `${written.summary.length} characters, stop ${written.stopReason}, cut off ${written.cutOff}, ${Math.round(performance.now() - summaryStarted)} ms, ${usd(cost(written.usage, 'fast'))}`,
   );
 
   // 3. The notes, as sent now (the CV and the summary), and the old prompt's size (counted only).

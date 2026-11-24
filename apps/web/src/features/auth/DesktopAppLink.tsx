@@ -1,12 +1,13 @@
 /**
  * File: apps/web/src/features/auth/DesktopAppLink.tsx
- * Purpose: "Get the desktop app" under the sign-in card (ADR-0071): a link to the latest Windows
- *          installer's release page. Hidden inside the desktop app itself, which is already installed.
- *          1.8.0 (ADR-0109): on a Mac it opens the Mac install steps instead.
+ * Purpose: "Get the desktop app" under the sign-in card (ADR-0071): downloads the latest Windows
+ *          installer (/download/windows, in the same tab; ADR-0114). Hidden inside the desktop app
+ *          itself, which is already installed. 1.8.0 (ADR-0109): on a Mac it opens the Mac install
+ *          steps instead.
  * Used by: app/login/page.tsx
  * Depends on: lucide-react, src/features/session-setup/labels.ts (DESKTOP_DOWNLOAD_URL), src/platform,
- *             src/features/shell/MacInstall.tsx, src/ui/icons.tsx, src/ui/useIsMac.ts
- * Architecture: ADR-0071
+ *             src/features/shell/MacInstall.tsx, src/ui/useIsMac.ts
+ * Architecture: ADR-0071, ADR-0109, ADR-0114
  */
 'use client';
 
@@ -15,7 +16,6 @@ import { useState, useSyncExternalStore } from 'react';
 import { DESKTOP_DOWNLOAD_URL } from '@/features/session-setup/labels';
 import { MacInstallDialog } from '@/features/shell/MacInstall';
 import { getPlatform } from '@/platform';
-import { OutIcon } from '@/ui/icons';
 import { useIsMac } from '@/ui/useIsMac';
 
 /** The link's look (the same for the Windows link and the Mac button). */
@@ -47,7 +47,7 @@ const inBrowser = () => getPlatform().kind !== 'desktop';
  */
 export function DesktopAppLink() {
   const show = useSyncExternalStore(subscribeNever, inBrowser, () => false);
-  // ADR-0109: a Mac gets the Mac install steps instead of the Windows release page.
+  // ADR-0109: a Mac gets the Mac install steps instead of the Windows installer download.
   const mac = useIsMac();
   const [macSteps, setMacSteps] = useState(false);
   if (!show) return null;
@@ -63,15 +63,9 @@ export function DesktopAppLink() {
     );
   }
   return (
-    <a
-      href={DESKTOP_DOWNLOAD_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={LINK_CLASSES}
-    >
+    <a href={DESKTOP_DOWNLOAD_URL} className={LINK_CLASSES}>
       <Download aria-hidden="true" size={16} strokeWidth={1.75} />
       Get the desktop app
-      <OutIcon />
     </a>
   );
 }

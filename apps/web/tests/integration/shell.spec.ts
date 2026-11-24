@@ -362,9 +362,9 @@ test('desktop card: open, download, hide (remembered), and never inside the desk
     'href',
     'paramountai://open',
   );
-  await expect(
-    card.getByRole('link', { name: 'Don’t have it? Download for Windows' }),
-  ).toHaveAttribute('href', /kite-releases\/releases\/latest$/);
+  const download = card.getByRole('link', { name: 'Don’t have it? Download for Windows' });
+  await expect(download).toHaveAttribute('href', '/download/windows');
+  await expect(download).not.toHaveAttribute('target', /./);
   await card.getByRole('button', { name: 'Desktop app card options' }).click();
   await page.getByRole('menuitem', { name: 'Hide card' }).click();
   await expect(card).toHaveCount(0);

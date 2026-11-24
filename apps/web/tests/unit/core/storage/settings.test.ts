@@ -3,13 +3,14 @@
  * in-memory IndexedDB (fake-indexeddb): getSessionDefaults() returns the built-in defaults until
  * defaults are saved and the saved ones after; deleteAllLocalData() resets them; and a device
  * that still has the version-1 database keeps its sessions when version 2 adds the settings
- * store; STAR is off in the built-in defaults. All data is invented.
+ * store; STAR is off in the built-in defaults; the built-in length is Balanced ('medium') while a
+ * saved Short default and an existing Short session keep Short. All data is invented.
  */
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DB_NAME, forgetDb } from '@/core/storage/db';
-import { getSession, listSessions } from '@/core/storage/sessions';
+import { createSession, getSession, listSessions } from '@/core/storage/sessions';
 import {
   BUILT_IN_DEFAULTS,
   getSessionDefaults,
@@ -32,6 +33,27 @@ const CUSTOM: SessionDefaults = {
 describe('session defaults', () => {
   it('leaves STAR off in the built-in defaults, so a new session starts without it', () => {
     expect(BUILT_IN_DEFAULTS.style.star).toBeUndefined();
+  });
+
+  it('start new sessions at Balanced length (medium) when nothing is saved', async () => {
+    expect(BUILT_IN_DEFAULTS.style.length).toBe('medium');
+    expect((await getSessionDefaults()).style.length).toBe('medium');
+  });
+
+  it('keep a saved Short default: the built-in Balanced never replaces a choice', async () => {
+    const savedShort: SessionDefaults = {
+      ...BUILT_IN_DEFAULTS,
+      style: { ...BUILT_IN_DEFAULTS.style, length: 'short' },
+    };
+    await saveSessionDefaults(savedShort, 7);
+    expect((await getSessionDefaults()).style.length).toBe('short');
+  });
+
+  it('leave an existing Short session at Short', async () => {
+    // sessionInput() stores length 'short' on the session itself.
+    const { id } = await createSession(sessionInput());
+    expect((await getSessionDefaults()).style.length).toBe('medium');
+    expect((await getSession(id))?.preferences.style.length).toBe('short');
   });
 
   it('are the built-in defaults until saved', async () => {

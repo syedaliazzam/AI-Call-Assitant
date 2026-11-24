@@ -6,7 +6,8 @@
  * and never makes the panel more solid than the chosen value (the v1.0.2 bug: solid under the
  * pointer); blocked storage leaves the defaults. ADR-0085: the transcript panel is open by default (once
  * on a device that stored a choice before), then follows the user's own choice; the answer panel is never
- * remembered; the side-by-side split defaults to 40 % and stays within its limits.
+ * remembered; the side-by-side split defaults to 40 % and stays within its limits. ADR-0113: the panels' own
+ * width defaults to the bars' whole width (a share of 1) and stays within its limits.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -14,8 +15,12 @@ import {
   getOverlayFade,
   getOverlayOpacity,
   getOverlayPanels,
+  getOverlayPanelsWidth,
   getOverlaySplit,
   OVERLAY_PANELS_DEFAULT_KEY,
+  OVERLAY_PANELS_WIDTH,
+  OVERLAY_PANELS_WIDTH_KEY,
+  setOverlayPanelsWidth,
   OVERLAY_PANELS_KEY,
   OVERLAY_SPLIT,
   OVERLAY_SPLIT_KEY,
@@ -164,6 +169,23 @@ describe('overlay panels and split (ADR-0085)', () => {
     expect(getOverlaySplit()).toBe(OVERLAY_SPLIT.default);
   });
 
+  it("remembers the panels' width within its limits, and nothing until a drag (ADR-0113, ADR-0115)", () => {
+    // ADR-0115: nothing stored is null (the page picks the default for the panels open), and the answer
+    // alone defaults to 62 % of the bars' width (it was the bars' whole width).
+    expect(getOverlayPanelsWidth()).toBeNull();
+    expect(OVERLAY_PANELS_WIDTH.default).toBe(0.62);
+    setOverlayPanelsWidth(0.4567);
+    expect(stored.get(OVERLAY_PANELS_WIDTH_KEY)).toBe('0.457');
+    expect(getOverlayPanelsWidth()).toBe(0.457);
+    // Never wider than the bars, never under the floor.
+    setOverlayPanelsWidth(1.5);
+    expect(getOverlayPanelsWidth()).toBe(OVERLAY_PANELS_WIDTH.max);
+    setOverlayPanelsWidth(0);
+    expect(getOverlayPanelsWidth()).toBe(OVERLAY_PANELS_WIDTH.min);
+    stored.set(OVERLAY_PANELS_WIDTH_KEY, 'narrow');
+    expect(getOverlayPanelsWidth()).toBeNull();
+  });
+
   it('with storage blocked: the transcript open, the default split, and no error', () => {
     vi.stubGlobal('localStorage', {
       getItem: () => {
@@ -180,5 +202,7 @@ describe('overlay panels and split (ADR-0085)', () => {
     expect(getOverlaySplit()).toBe(OVERLAY_SPLIT.default);
     expect(() => setOverlayPanels({ transcript: false, answer: false })).not.toThrow();
     expect(() => setOverlaySplit(0.5)).not.toThrow();
+    expect(getOverlayPanelsWidth()).toBeNull();
+    expect(() => setOverlayPanelsWidth(0.5)).not.toThrow();
   });
 });

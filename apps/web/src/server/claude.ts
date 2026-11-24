@@ -4,8 +4,10 @@
  *          which streams a reply as text pieces and finishes with the token usage; and
  *          warmCache(), which writes the prompt cache for a session without answering (Day 3);
  *          and jsonReply(), a non-streaming reply in a fixed JSON shape (structured outputs),
- *          used by the call notes (Day 5), the documents summary (ADR-0067) and the evaluations'
- *          graders; and countInputTokens(), the free token count a measurement uses (ADR-0067).
+ *          used by the call notes (Day 5) and the evaluations' graders; textReply(), a non-streaming
+ *          plain-text reply that survives being cut off, used by the documents summary (ADR-0067,
+ *          plain text since ADR-0116); and countInputTokens(), the free token count a measurement
+ *          uses (ADR-0067).
  * Used by: app/api/answer/route.ts, src/server/prompt.ts (cachedBlock); app/api/notes/route.ts
  *          (Day 5); scripts/verify-warm.ts, scripts/verify-answer-cache.ts,
  *          scripts/eval-answers.ts (developer-only)
@@ -257,7 +259,8 @@ export interface JsonReplyInput {
  * @throws Anthropic.APIError for API failures; Error('NO_JSON') when the reply has no text
  *         (for example a refusal).
  * Called from: scripts/eval-answers.ts and scripts/eval-notes.ts (the graders);
- *              src/server/notes.ts (the call notes, Day 5)
+ *              src/server/notes.ts (the call notes, Day 5). Not the documents summary: a JSON reply
+ *              cut off at maxTokens does not parse, so the summary uses textReply() (ADR-0116).
  */
 export async function jsonReply(
   input: JsonReplyInput,
@@ -276,6 +279,61 @@ export async function jsonReply(
   const text = message.content.find((block) => block.type === 'text');
   if (!text || text.type !== 'text') throw new Error('NO_JSON');
   return { value: JSON.parse(text.text) as unknown, usage: toAnswerUsage(message.usage) };
+}
+
+/** Input for textReply(). */
+export interface TextReplyInput {
+  /** Full model name. */
+  model: string;
+  /** Which tier that model is (thinking setting). */
+  tier: ModelTier;
+  /** System prompt: a string, sent as one cached block. */
+  system: string;
+  /** The user turn. */
+  prompt: string;
+  /** Time limit for this request, in ms (default CLAUDE_TIMEOUT_MS). */
+  timeoutMs?: number;
+  /** Most tokens Claude may write. */
+  maxTokens: number;
+}
+
+/** What textReply() returns. */
+export interface TextReplyResult {
+  /** The reply's text blocks joined ('' when there are none, for example a refusal). Never logged. */
+  text: string;
+  /** Token counts. */
+  usage: AnswerUsage;
+  /**
+   * Why Claude stopped. 'max_tokens' means the text was cut off at input.maxTokens; the caller
+   * decides whether a cut-off reply is still usable.
+   */
+  stopReason: Anthropic.StopReason | null;
+}
+
+/**
+ * Asks Claude for a plain-text reply, not streamed. Unlike jsonReply() nothing has to parse, so a
+ * reply cut off at the token limit is still returned (with stopReason 'max_tokens') instead of
+ * failing (ADR-0116).
+ *
+ * @param input See TextReplyInput.
+ * @returns The reply text, the token usage and the stop reason. Never throws for a cut-off or empty
+ *          reply.
+ * @throws Anthropic.APIError for API failures.
+ * Called from: src/server/summary.ts (the documents summary, ADR-0116)
+ */
+export async function textReply(input: TextReplyInput): Promise<TextReplyResult> {
+  const message = await getClaude().messages.create(
+    {
+      model: input.model,
+      max_tokens: input.maxTokens,
+      system: [cachedBlock(input.system)],
+      messages: [{ role: 'user', content: input.prompt }],
+      thinking: thinkingFor(input.tier),
+    },
+    { timeout: input.timeoutMs ?? CLAUDE_TIMEOUT_MS },
+  );
+  const text = message.content.map((block) => (block.type === 'text' ? block.text : '')).join('');
+  return { text, usage: toAnswerUsage(message.usage), stopReason: message.stop_reason };
 }
 
 /** Input for countInputTokens(). */

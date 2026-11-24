@@ -19,6 +19,28 @@ export interface ExperimentFlags {
   smartModel: boolean;
 }
 
+/**
+ * ADR-0112, --guard only: what the user would see for one reply, after the live route's pipeline
+ * (server/answer-meta.ts, with the template stop) and the page's retry rule (core/answer/finishedReply.ts).
+ */
+export interface GuardCheck {
+  /** The first reply opened with a copied template (the server stopped it). */
+  firstTemplated: boolean;
+  /** The first reply had no answer text (templated or empty). */
+  firstEmpty: boolean;
+  /** The page asked again once, silently (one more real request). */
+  retried: boolean;
+  /**
+   * What reached the user: 'card' (an answer card), 'notice' (the card removed with "Didn't catch
+   * that"), or 'dropped' (garbled or none: no card by design, before the guard).
+   */
+  outcome: 'card' | 'notice' | 'dropped';
+  /** A card shown without a hidden line of its own (labelled with the default type, "Other"). */
+  cardWithoutMeta: boolean;
+  /** A card whose shown text still holds a template ("[[type|for|source]]"); must never happen. */
+  templateVisible: boolean;
+}
+
 /** One graded run of one scenario. */
 export interface ScenarioRunResult {
   /** The run's number, from 1. */
@@ -27,6 +49,11 @@ export interface ScenarioRunResult {
   scores: Record<string, number>;
   /** The run's total out of 10. */
   total: number;
+  /**
+   * --guard, when the page asked again (20 Nov 2026): `total` is the retry's (what the user sees); this is
+   * what the discarded first reply would have scored, kept only to report the difference. Absent otherwise.
+   */
+  discardedFirstTotal?: number;
   /** The grader's sentence on what cost points ("none" when nothing did). */
   reason: string;
   /** The checks made in code on top of the score (ADR-0030), when this evaluation has them. */
@@ -37,7 +64,10 @@ export interface ScenarioRunResult {
 export interface RunChecks {
   /** True when the reply opened with its hidden line (ADR-0103: a copied placeholder does not count). */
   hiddenLine: boolean;
-  /** ADR-0103: true when the reply contains the copied placeholder ("[[type|for|source]]"); absent in older files. */
+  /**
+   * ADR-0103: true when the reply contains the copied placeholder ("[[type|for|source]]"); absent in older
+   * files. ADR-0112: any copied template line, first or last ("[[question|…]]").
+   */
   placeholder?: boolean;
   /** v1.1.0: how many words the model's answer line has, for an answer that has one. */
   answerLineWords?: number;
@@ -55,6 +85,8 @@ export interface RunChecks {
   inventedPrevious?: string[];
   /** 19 Nov 2026 experiments only: option A's line was in the prompt; option B used the smart model. */
   experiment?: ExperimentFlags;
+  /** ADR-0112, --guard only: what the user would see after the guard. */
+  guard?: GuardCheck;
   /** Numbers and prices the claim check could not find in the documents or the call. */
   unsupportedNumbers: string[];
   /** Dates and names the claim check could not find. */
@@ -154,6 +186,26 @@ export function evalResultsName(results: EvalResultsFile): string {
   const only = (results.only ?? 'all').replace(/[^\w-]/g, '_');
   const lessons = results.withoutLessons ? '-without-lessons' : '';
   return `${results.evaluation}-${only}${lessons}-${time}.json`;
+}
+
+/**
+ * One summary line for --guard runs whose first reply the page asked again (20 Nov 2026): how many there
+ * were, and their mean score graded on the retry (what the user sees, the score used) against the
+ * discarded first reply (how they were scored before).
+ *
+ * @param results The scenarios' results.
+ * @returns The line, or null when no run was asked again (or the run was not graded).
+ * Called from: main() of scripts/eval-answers.ts; tests
+ */
+export function summariseRetryGrading(results: readonly ScenarioResult[]): string | null {
+  const retried = results.flatMap((scenario) =>
+    scenario.runs.filter((run) => run.discardedFirstTotal !== undefined),
+  );
+  if (retried.length === 0) return null;
+  const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+  const onRetry = mean(retried.map((run) => run.total));
+  const onFirst = mean(retried.map((run) => run.discardedFirstTotal as number));
+  return `Guard: runs graded on the retry: ${retried.length}; mean ${onRetry.toFixed(2)} (the discarded first reply: ${onFirst.toFixed(2)})`;
 }
 
 /**
