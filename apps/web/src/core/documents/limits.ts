@@ -4,27 +4,43 @@
  *          one document may add, and the most text a session may hold in total; plus a check
  *          that says whether a new document fits and how much room is left.
  * Used by: src/core/documents/extract.ts (file size); the Create/Edit session wizard (Day 3
- *          Stage 3: room left, refusing a document that does not fit); server/validate.ts uses
- *          the same session cap (Stage 5)
- * Depends on: src/core/storage/types.ts (AnswerModel, a type only)
+ *          Stage 3: room left, refusing a document that does not fit, the over-limit warning);
+ *          features/library/UploadBox.tsx (the size shown); server/validate.ts uses the same
+ *          session cap (Stage 5)
+ * Depends on: nothing
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (documents ≤ 500k characters
- *               per session, ADR-0067); day-03-sessions.md Stage 2
+ *               per session, ADR-0067); ADR-0117 (10 MB per file, no warning under 500k);
+ *               day-03-sessions.md Stage 2
+ *
+ * Two independent gates (ADR-0117). They measure different things and never stand in for each other:
+ *   1. File size (MAX_FILE_BYTES, 10 MB), checked once when a file is read, before any text is
+ *      taken out of it. It protects the user's laptop, not the model.
+ *   2. Extracted text (MAX_SESSION_CHARS, 500,000 characters), checked on the text the files gave,
+ *      for all of a session's documents together. It is what reaches the model.
+ * So a 10 MB file whose text is under 500,000 characters passes both with no warning, and a small
+ * file whose text would take the session past 500,000 is refused by the second gate.
  */
-import type { AnswerModel } from '../storage/types';
+
+/** Largest file Kite reads, in megabytes (ADR-0117). Shown to the user by the upload box. */
+export const MAX_FILE_MB = 10;
 
 /**
- * Largest file Kite reads, in bytes (20 MB). Reading happens on the user's laptop; past this,
- * PDF parsing gets slow and memory-heavy, and such files are almost always scanned images or
- * slide decks with little text anyway.
+ * Largest file Kite reads, in bytes (10 MB; 20 MB before ADR-0117). Gate 1 only: it is checked on
+ * the file before reading, and says nothing about how much text the file holds (gate 2 checks that).
+ * Reading happens on the user's laptop; past this, PDF parsing gets slow and memory-heavy, and such
+ * files are almost always scanned images or slide decks with little text anyway.
  */
-export const MAX_FILE_BYTES = 20 * 1024 * 1024;
+export const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
 /**
- * Most document text one session may hold, in characters (architecture §7.2, ADR-0067). All of it
- * is sent to the fast model in the cached session block of every live answer. The official docs put
- * 1M tokens at about 2.5M characters, so 500,000 characters is at most about 200,000 tokens: a fifth
- * of the 1M-token context of claude-haiku-5-5 and claude-sonnet-5-5, leaving room for the rules, the
- * conversation and the answer. As UTF-8 it is at most about 1.5 MB, inside the 4 MB request cap.
+ * Most document text one session may hold, in characters (architecture §7.2, ADR-0067). Gate 2:
+ * a hard limit, not only a warning. The wizard refuses a document that would pass it
+ * (fitsInSession()) and server/validate.ts rejects a request over it, so the whole document set,
+ * which /api/summary reads in one request, stays inside the model's context window: the official
+ * docs put 1M tokens at about 2.5M characters, so 500,000 characters is at most about 200,000
+ * tokens, a fifth of the 1M-token context of claude-haiku-5-5 and claude-sonnet-5-5. Live answers
+ * have a second, tighter hard limit of their own (server/budget.ts: MAX_ANSWER_INPUT_TOKENS,
+ * 100,000 tokens a request). As UTF-8 it is at most about 1.5 MB, inside the 4 MB request cap.
  */
 export const MAX_SESSION_CHARS = 500_000;
 
@@ -36,36 +52,36 @@ export const MAX_SESSION_CHARS = 500_000;
 export const MAX_DOCUMENT_CHARS = 500_000;
 
 /**
- * Above this many characters the wizard warns about cost and speed (ADR-0067). About 280k
- * characters is where a live answer's prompt passes 100,000 tokens (measured: 480k characters =
- * 164k tokens), and Haiku 5.5 charges about 5× more for every request over that line, cache reads
- * included. The first request of a call also writes the whole block to Claude's cache, so it is
- * slower.
+ * The wizard's warning when a session's extracted document text is over MAX_SESSION_CHARS
+ * (ADR-0117). It replaces ADR-0067's cost warning above 280,000 characters: live answers no longer
+ * send every document in full (server/budget.ts keeps each one under 100,000 tokens), so that
+ * warning's "5× more" no longer happened.
  */
-export const LARGE_SESSION_CHARS = 280_000;
-
-/** The wizard's warning above LARGE_SESSION_CHARS. */
-export const LARGE_SESSION_WARNING =
-  "Above about 280k characters, each answer costs about 5× more and the first answer is slower. Remove documents you don't need.";
+export const OVER_LIMIT_WARNING = `Documents exceed the ${MAX_SESSION_CHARS.toLocaleString('en-US')}-character limit — remove some to continue`;
 
 /**
- * The wizard's warning above LARGE_SESSION_CHARS when the session uses the deeper model (Sonnet),
- * which reads every document on each live answer at Sonnet's price.
- */
-export const DEEP_MODEL_WARNING =
-  'Large documents with the deeper model are expensive. Haiku is recommended.';
-
-/**
- * The warnings the wizard shows for a session's document size and model.
+ * Whether a session's documents hold more text than MAX_SESSION_CHARS allows. The wizard refuses
+ * documents that would get here, so this is the backstop for a draft that already is (for example
+ * one saved by an older version): the wizard then shows OVER_LIMIT_WARNING and will not go on.
  *
- * @param usedChars Characters the session's documents hold.
- * @param model     The session's model: 'fast' (Haiku) or 'smart' (Sonnet).
- * @returns The warnings to show, in order ([] at or under LARGE_SESSION_CHARS).
- * Called from: DetailsStep.tsx, PreferencesStep.tsx; tests
+ * @param usedChars Characters of extracted text the session's documents hold, all together.
+ * @returns True above MAX_SESSION_CHARS; false at or under it.
+ * Called from: documentWarnings(), SessionWizard.tsx (Next and Save); tests
  */
-export function documentWarnings(usedChars: number, model: AnswerModel): string[] {
-  if (usedChars <= LARGE_SESSION_CHARS) return [];
-  return model === 'smart' ? [LARGE_SESSION_WARNING, DEEP_MODEL_WARNING] : [LARGE_SESSION_WARNING];
+export function overSessionLimit(usedChars: number): boolean {
+  return usedChars > MAX_SESSION_CHARS;
+}
+
+/**
+ * The warnings the wizard shows for a session's document size. Under the limit there is none,
+ * however large the files were (file size is gate 1's business, checked when each file was read).
+ *
+ * @param usedChars Characters of extracted text the session's documents hold, all together.
+ * @returns [OVER_LIMIT_WARNING] above MAX_SESSION_CHARS; [] at or under it.
+ * Called from: DetailsStep.tsx; tests
+ */
+export function documentWarnings(usedChars: number): string[] {
+  return overSessionLimit(usedChars) ? [OVER_LIMIT_WARNING] : [];
 }
 
 /** Whether a document fits, from fitsInSession(). */

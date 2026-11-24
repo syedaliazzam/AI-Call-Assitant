@@ -20,7 +20,7 @@
 import { Bot, Video } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { fitsInSession } from '@/core/documents/limits';
+import { fitsInSession, overSessionLimit } from '@/core/documents/limits';
 import { listDocuments } from '@/core/storage/documents';
 import { requestPersistentStorage } from '@/core/storage/persist';
 import {
@@ -244,6 +244,9 @@ export function SessionWizard({ mode, sessionId, initialType }: SessionWizardPro
   }
 
   const errors = showErrors ? validateDetails(draft) : {};
+  // ADR-0117: over the 500,000-character limit the server would refuse every answer for this
+  // session, so the wizard does not go on until documents are removed (step 1 says so).
+  const overLimit = overSessionLimit(draftChars(draft));
   return (
     <>
       <Modal
@@ -284,7 +287,7 @@ export function SessionWizard({ mode, sessionId, initialType }: SessionWizardPro
                 <Button variant="ghost" size="lg" onClick={close}>
                   Cancel
                 </Button>
-                <Button size="lg" onClick={next} disabled={readingCount > 0}>
+                <Button size="lg" onClick={next} disabled={readingCount > 0 || overLimit}>
                   Next
                 </Button>
               </>
@@ -293,7 +296,7 @@ export function SessionWizard({ mode, sessionId, initialType }: SessionWizardPro
                 <Button variant="ghost" size="lg" onClick={() => setStep(1)} disabled={saving}>
                   Back
                 </Button>
-                <Button size="lg" onClick={() => void save()} disabled={saving}>
+                <Button size="lg" onClick={() => void save()} disabled={saving || overLimit}>
                   {saving
                     ? 'Saving…'
                     : mode === 'create'

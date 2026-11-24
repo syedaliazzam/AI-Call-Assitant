@@ -1,55 +1,77 @@
 /**
- * Tests for apps/web/src/core/documents/limits.ts: the caps are 500k characters per session and
- * 250k per document; above 280k the wizard warns, with one more line for Sonnet (documentWarnings(),
- * ADR-0067); roomLeft() never goes below
- * 0; fitsInSession() accepts a document that fits (up to exactly the cap), refuses one over the
- * per-document cap ('document-too-long') and one that would overfill the session
- * ('session-full'), with messages that give the numbers.
+ * Tests for apps/web/src/core/documents/limits.ts: the file cap is 10 MB (ADR-0117); the text caps
+ * are 500k characters per session and per document, the same as the server's; the wizard warns only
+ * above 500k, with the agreed words, and not at all under it (documentWarnings(), overSessionLimit(),
+ * ADR-0117, which removed ADR-0067's 280k cost warning and its Sonnet line); the file and text gates
+ * are independent; roomLeft() never goes below 0; fitsInSession() accepts a document that fits (up to
+ * exactly the cap), refuses one over the per-document cap ('document-too-long') and one that would
+ * overfill the session ('session-full'), with messages that give the numbers.
  */
 import { MAX_SESSION_DOCUMENT_CHARS } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
+import * as limits from '@/core/documents/limits';
 import {
-  DEEP_MODEL_WARNING,
   documentWarnings,
   fitsInSession,
-  LARGE_SESSION_CHARS,
-  LARGE_SESSION_WARNING,
   MAX_DOCUMENT_CHARS,
+  MAX_FILE_BYTES,
+  MAX_FILE_MB,
   MAX_SESSION_CHARS,
+  OVER_LIMIT_WARNING,
+  overSessionLimit,
   roomLeft,
 } from '@/core/documents/limits';
 
-describe('the caps (ADR-0067)', () => {
+describe('the caps (ADR-0067, ADR-0117)', () => {
   it('are 500k per session and (1.5.1, ADR-0069) 500k for one document, the same cap as the server', () => {
     expect(MAX_SESSION_CHARS).toBe(500_000);
     expect(MAX_DOCUMENT_CHARS).toBe(500_000);
     expect(MAX_SESSION_CHARS).toBe(MAX_SESSION_DOCUMENT_CHARS);
   });
 
-  it('warns above 280k with the agreed words', () => {
-    expect(LARGE_SESSION_CHARS).toBe(280_000);
-    expect(LARGE_SESSION_WARNING).toBe(
-      "Above about 280k characters, each answer costs about 5× more and the first answer is slower. Remove documents you don't need.",
+  it('reads files up to 10 MB (ADR-0117; was 20 MB)', () => {
+    expect(MAX_FILE_MB).toBe(10);
+    expect(MAX_FILE_BYTES).toBe(10 * 1024 * 1024);
+  });
+
+  it('warns above 500k with the agreed words', () => {
+    expect(OVER_LIMIT_WARNING).toBe(
+      'Documents exceed the 500,000-character limit — remove some to continue',
     );
-    expect(DEEP_MODEL_WARNING).toBe(
-      'Large documents with the deeper model are expensive. Haiku is recommended.',
-    );
+  });
+
+  it('no longer has the 280k cost warning or the Sonnet line (ADR-0117)', () => {
+    expect(limits).not.toHaveProperty('LARGE_SESSION_CHARS');
+    expect(limits).not.toHaveProperty('LARGE_SESSION_WARNING');
+    expect(limits).not.toHaveProperty('DEEP_MODEL_WARNING');
   });
 });
 
-describe('documentWarnings', () => {
-  it('says nothing at or under 280k, whatever the model', () => {
-    expect(documentWarnings(0, 'fast')).toEqual([]);
-    expect(documentWarnings(LARGE_SESSION_CHARS, 'fast')).toEqual([]);
-    expect(documentWarnings(LARGE_SESSION_CHARS, 'smart')).toEqual([]);
+describe('documentWarnings and overSessionLimit', () => {
+  it('say nothing at or under 500k, including at the old 280k line', () => {
+    for (const chars of [0, 280_001, 499_999, MAX_SESSION_CHARS]) {
+      expect(documentWarnings(chars)).toEqual([]);
+      expect(overSessionLimit(chars)).toBe(false);
+    }
   });
 
-  it('warns above 280k, and adds the deeper-model line only for Sonnet', () => {
-    expect(documentWarnings(LARGE_SESSION_CHARS + 1, 'fast')).toEqual([LARGE_SESSION_WARNING]);
-    expect(documentWarnings(LARGE_SESSION_CHARS + 1, 'smart')).toEqual([
-      LARGE_SESSION_WARNING,
-      DEEP_MODEL_WARNING,
-    ]);
+  it('warn above 500k', () => {
+    expect(documentWarnings(MAX_SESSION_CHARS + 1)).toEqual([OVER_LIMIT_WARNING]);
+    expect(overSessionLimit(MAX_SESSION_CHARS + 1)).toBe(true);
+  });
+});
+
+describe('the two gates are independent (ADR-0117)', () => {
+  it('lets a full 10 MB file through when its text is under 500k, with no warning', () => {
+    // Gate 1 (bytes) is tested in extract.test.ts; here, the text such a file gave.
+    const textOfTenMbFile = 120_000;
+    expect(fitsInSession(textOfTenMbFile, 0)).toEqual({ ok: true });
+    expect(documentWarnings(textOfTenMbFile)).toEqual([]);
+  });
+
+  it('refuses a small file whose text is over 500k, whatever its size in bytes', () => {
+    expect(fitsInSession(MAX_SESSION_CHARS + 1, 0)).toMatchObject({ ok: false });
+    expect(documentWarnings(MAX_SESSION_CHARS + 1)).toEqual([OVER_LIMIT_WARNING]);
   });
 });
 
