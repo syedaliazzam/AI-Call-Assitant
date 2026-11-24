@@ -1,5 +1,5 @@
 /**
- * Tests for apps/web/src/core/documents/limits.ts: the file cap is 10 MB (ADR-0117); the text caps
+ * Tests for apps/web/src/core/documents/limits.ts: the file cap is 20 MB (ADR-0117); the text caps
  * are 500k characters per session and per document, the same as the server's; the wizard warns only
  * above 500k, with the agreed words, and not at all under it (documentWarnings(), overSessionLimit(),
  * ADR-0117, which removed ADR-0067's 280k cost warning and its Sonnet line); the file and text gates
@@ -29,9 +29,9 @@ describe('the caps (ADR-0067, ADR-0117)', () => {
     expect(MAX_SESSION_CHARS).toBe(MAX_SESSION_DOCUMENT_CHARS);
   });
 
-  it('reads files up to 10 MB (ADR-0117; was 20 MB)', () => {
-    expect(MAX_FILE_MB).toBe(10);
-    expect(MAX_FILE_BYTES).toBe(10 * 1024 * 1024);
+  it('reads files up to 20 MB (ADR-0117)', () => {
+    expect(MAX_FILE_MB).toBe(20);
+    expect(MAX_FILE_BYTES).toBe(20 * 1024 * 1024);
   });
 
   it('warns above 500k with the agreed words', () => {
@@ -62,11 +62,11 @@ describe('documentWarnings and overSessionLimit', () => {
 });
 
 describe('the two gates are independent (ADR-0117)', () => {
-  it('lets a full 10 MB file through when its text is under 500k, with no warning', () => {
+  it('lets a full 20 MB file through when its text is under 500k, with no warning', () => {
     // Gate 1 (bytes) is tested in extract.test.ts; here, the text such a file gave.
-    const textOfTenMbFile = 120_000;
-    expect(fitsInSession(textOfTenMbFile, 0)).toEqual({ ok: true });
-    expect(documentWarnings(textOfTenMbFile)).toEqual([]);
+    const textOfTwentyMbFile = 120_000;
+    expect(fitsInSession(textOfTwentyMbFile, 0)).toEqual({ ok: true });
+    expect(documentWarnings(textOfTwentyMbFile)).toEqual([]);
   });
 
   it('refuses a small file whose text is over 500k, whatever its size in bytes', () => {

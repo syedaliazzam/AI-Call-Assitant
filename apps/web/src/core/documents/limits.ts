@@ -9,23 +9,23 @@
  *          session cap (Stage 5)
  * Depends on: nothing
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (documents ≤ 500k characters
- *               per session, ADR-0067); ADR-0117 (10 MB per file, no warning under 500k);
+ *               per session, ADR-0067); ADR-0117 (20 MB per file, no warning under 500k);
  *               day-03-sessions.md Stage 2
  *
  * Two independent gates (ADR-0117). They measure different things and never stand in for each other:
- *   1. File size (MAX_FILE_BYTES, 10 MB), checked once when a file is read, before any text is
+ *   1. File size (MAX_FILE_BYTES, 20 MB), checked once when a file is read, before any text is
  *      taken out of it. It protects the user's laptop, not the model.
  *   2. Extracted text (MAX_SESSION_CHARS, 500,000 characters), checked on the text the files gave,
  *      for all of a session's documents together. It is what reaches the model.
- * So a 10 MB file whose text is under 500,000 characters passes both with no warning, and a small
+ * So a 20 MB file whose text is under 500,000 characters passes both with no warning, and a small
  * file whose text would take the session past 500,000 is refused by the second gate.
  */
 
 /** Largest file Kite reads, in megabytes (ADR-0117). Shown to the user by the upload box. */
-export const MAX_FILE_MB = 10;
+export const MAX_FILE_MB = 20;
 
 /**
- * Largest file Kite reads, in bytes (10 MB; 20 MB before ADR-0117). Gate 1 only: it is checked on
+ * Largest file Kite reads, in bytes (20 MB, as before ADR-0117; now named). Gate 1 only: it is checked on
  * the file before reading, and says nothing about how much text the file holds (gate 2 checks that).
  * Reading happens on the user's laptop; past this, PDF parsing gets slow and memory-heavy, and such
  * files are almost always scanned images or slide decks with little text anyway.
