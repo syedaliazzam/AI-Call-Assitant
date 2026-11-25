@@ -4,7 +4,13 @@
 
 **Who:** the teammate with the build Mac. **Time:** about 2 hours, mostly waiting for builds.
 
-> **Tonight (25 Nov 2026 evening): the test runs against PRODUCTION.**
+> **Tonight (26 Nov 2026): the test runs against PRODUCTION, with two overlay fixes. Build 1.7.98 and 1.7.99 again.**
+> - **Production runs `main` @ `3b05780`** (https://kite-call-assistant-gbm7l3b1a-paramount-intelligence.vercel.app, aliased to `call.paramountintelligence.co`): everything from 25 Nov below, plus **Fix 1** (ADR-0055 amended 26 Nov 2026): with Click-through on, the **whole** overlay passes every click to the app behind, the bars too; only **⌘ ⌥ X** turns it off (bar 1 says so).
+> - **The commit to build from: `3b05780`** (on `mac-internal-release`, fast-forwarded to `main`). In step 1.3, `git log --oneline -2` shows a docs commit (this file and the runbook) first, then `3b05780`; both have the same code. Check that the build has **Fix 2** (ADR-0126, commit `0f96afe`: the overlay is plainly see-through on a Mac, no frosted material): `git merge-base --is-ancestor 0f96afe HEAD && echo HAS-FIX-2` must print **HAS-FIX-2**.
+> - **Builds made yesterday (from `6205ad3` or `4b980c0`) are out of date:** they have the frosted overlay and no "Turn click-through off" in the menu bar icon. Delete them (`rm -rf ~/paramount-test`) and do section 2 again from `3b05780`.
+> - **New checks:** section **5d** (click-through and see-through). Sections 5b and 5c stay as they are.
+>
+> **Earlier notes (25 Nov 2026), still true except the commit:**
 > - **The web app is live.** Everything on `mac-internal-release` (the Mac overlay work, bug-fix batch 1 and WP3: the chat bar, your own questions on ⌘↵ / ⌘⇧Space, transcript and answer the same height) went to production on 25 Nov 2026 (`main` @ `4b980c0`, https://kite-call-assistant-bj7xmwyz8-paramount-intelligence.vercel.app). So: **no test address, no preview and no `--kite-url`**. Open Paramount AI normally; it shows the live site, `call.paramountintelligence.co`. Sign in with your normal account.
 > - **The commit to pull:** `mac-internal-release`, as before. In step 1.3, `git log --oneline -2` shows a docs commit (this file and the runbook) first and **`d51786c`** second. `d51786c` is exactly the code production runs (`main` @ `4b980c0` merges it with no other change).
 > - **Builds 1.7.98 / 1.7.99 are unaffected.** Nothing under `apps/desktop` changed since `6205ad3` (the ADR-0120 fixes): bug-fix batch 1, WP3 and the Mac-download switch are web-only. If you already built 1.7.98 and 1.7.99 from `6205ad3`, keep them and skip section 2. If not, build them from `4b980c0`; they are the same app.
@@ -53,7 +59,7 @@ Write down each step's result: ✅ or ❌, plus a short note for every ❌ (what
    git log --oneline -2
    ```
 
-   The two lines must start with the commits the developer named (tonight: the docs commit, then `d51786c`). If you cloned before, `git pull` on `mac-internal-release` is enough: it moves forward with no merge.
+   The two lines must start with the commits the developer named (tonight, 26 Nov: the docs commit, then `3b05780`). Then run `git merge-base --is-ancestor 0f96afe HEAD && echo HAS-FIX-2`: it must print **HAS-FIX-2**. If you cloned before, `git pull` on `mac-internal-release` is enough: it moves forward with no merge.
 
 4. Check it is ready:
    - `ls apps/desktop/build/mac-signing/` lists **certificate.pem**;
@@ -349,6 +355,50 @@ This is the most important part. The app updates itself to 1.7.99 from this Mac,
 | 8.2 | Tab with audio: both sides transcribed | |
 | 8.3 | ⌃⌥ arrows work in the tab; ⌘← left alone | |
 | 8.4 | Sidebar card offers the Mac app; tonight its box says **Mac version coming soon** (no command); after publishing, the install steps | |
+
+## 5d. Overlay fixes of 26 Nov 2026: click-through and see-through (25 min)
+
+A new call in the desktop app (the 1.7.98 or 1.7.99 built tonight, opened normally: production). Headphones on. In Chrome, open a YouTube video (any interview) and keep it in a normal window, not full screen. Invented data only.
+
+**Click-through covers the whole overlay** (ADR-0055 amended):
+
+1. Drag the bars (by bar 1) so that **bar 1 and the W button sit over the YouTube player** (the video picture is behind them). Pause the video.
+2. Click **W** on bar 1. **Expected:** in place of Chat, AA, the model chip and W, bar 1 shows **Click-through on — press ⌘ ⌥ X to turn off**. Moving the pointer over the bars shows no tooltips and no hover colours.
+3. **Click behind bar 1:** click on bar 1 where the video is behind it. **Expected:** the video starts playing (the click went to Chrome); Paramount AI does nothing. Click there again: the video pauses.
+4. **Click behind the W button's spot:** click exactly where **W** was. **Expected:** the video plays / pauses again; Click-through stays on.
+5. Click on **bar 2** and on the **answer panel** over the video. **Expected:** each click reaches the video (play / pause). Try to drag bar 1: the bars do **not** move.
+6. **Turn it off with ⌘ ⌥ X** while Chrome is in front (click the Chrome window first, then press **⌘ ⌥ X**). **Expected:** the hint goes; Chat, AA, the model chip and W come back; clicking **Chat** opens the chat bar (the bars take clicks again). Close the chat bar.
+7. **The script bar:** press **⌘ ⌥ S** (the slim script bar), then **⌘ ⌥ X**. Click on the script bar over the video: the click reaches the video. Press **⌘ ⌥ X**, then **⌘ ⌥ S** to go back to the full bars.
+8. **The menu bar icon:** press **⌘ ⌥ X** to turn it on. Click the Paramount AI icon in the menu bar. **Expected:** the menu starts with **Turn click-through off**. Choose it: the hint goes and the bars take clicks again.
+9. **The call window:** open the bars' **⋮** › **Call window**. The bars hide and the call window comes up. Press **⌘ ⌥ X**. **Expected:** an amber line *"Click-through is on: every click on the overlay goes to the app behind it. Press ⌘ ⌥ X, or turn it off here."* with **Turn click-through off**. Click it: the line goes. Go back to the bars (**Back to compact** or Esc).
+10. **The call ending:** open ⋮ › **Call window** again, press **⌘ ⌥ X** (the amber line shows: it is on), and **without** turning it off click **End** in the call window. **Expected:** the call ends and the notes are written. Start a new call: bar 1 shows **W** (off), no hint, and the bars take clicks.
+11. **Settings › Hotkeys:** the Click-through row shows **⌘ ⌥ X**, "Any app", and no "In use by another app". If it says it is in use, note the warning's words.
+
+**The overlay is see-through** (ADR-0126). Play the video behind the answer panel and the transcript (⤢ open) during a call:
+
+12. **Dark mode** (System Settings › Appearance › **Dark**). In the bars' **⋮** › Display, set **Opacity to 40 %**. **Expected:** the video is clearly visible through the bars and both panels, like tinted glass: **not** frosted or blurred, **not** a dark box. At **100 %** the panels are solid; back to 40 %.
+13. **Light mode** (System Settings › Appearance › **Light**). **Expected:** the same at 40 %: the video shows through.
+14. **Reduce transparency ON** (System Settings › Accessibility › Display › **Reduce transparency**). **Expected:** still see-through at 40 % in dark and light mode. Turn it **off** again afterwards.
+15. **Shadow:** the shadow follows the rounded panels. Open and close the transcript (⤢) and resize the overlay a few times. Note whether an old outline (a "ghost" shadow) stays where a panel was.
+16. **Dark theme on every screen:** in Paramount AI choose **Dark** (the account menu's Theme for the dashboard; ⋮ › Display › Theme for the call). Open the **dashboard**, **Settings** and a **call**. **Expected:** all dark, no light area or white flash besides a moment while a window first loads. Then choose **System** in both places and switch macOS between Light and Dark: the dashboard, Settings and the overlay follow within a second, without a restart.
+
+| # | Check | Result |
+|---|---|---|
+| 5d.1 | W turns Click-through on; bar 1 shows "Click-through on — press ⌘ ⌥ X to turn off"; no tooltips over the bars | |
+| 5d.2 | A click on bar 1 reaches the video behind it (play / pause) | |
+| 5d.3 | A click on W's spot reaches the video; Click-through stays on | |
+| 5d.4 | Clicks on bar 2 and the answer panel reach the video; bar 1 does not drag | |
+| 5d.5 | ⌘ ⌥ X with Chrome in front turns it off; the bars take clicks again | |
+| 5d.6 | Script bar: clicks pass while on; ⌘ ⌥ X / ⌘ ⌥ S bring it back | |
+| 5d.7 | Menu bar icon › Turn click-through off works (shown only during a call) | |
+| 5d.8 | Call window: the amber line and Turn click-through off work | |
+| 5d.9 | Ending the call turns it off; the next call starts with W off | |
+| 5d.10 | Settings › Hotkeys: ⌘ ⌥ X, Any app, no clash (or the warning's words) | |
+| 5d.11 | Dark mode, 40 %: the video shows through the bars and panels (not frosted, not dark) | |
+| 5d.12 | Light mode, 40 %: the video shows through | |
+| 5d.13 | Reduce transparency on: still see-through at 40 % (dark and light) | |
+| 5d.14 | Shadow follows the panels; ghost outline after ⤢ / resize? (yes / no) | |
+| 5d.15 | Dark theme on the dashboard, Settings and the call; System follows macOS live | |
 
 ## 9. Send the developer
 
