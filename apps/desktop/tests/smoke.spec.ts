@@ -936,13 +936,15 @@ test('the six positions: 16 from the work area, the bottom row grows upward, the
   await expect(
     page.evaluate(() => window.kiteDesktop!.setOverlayPosition!('middle' as never)),
   ).rejects.toThrow();
-  // The jump and nudge keys are registered during a call; Ctrl+Shift+Arrows never are.
+  // The jump and nudge keys are registered during a call. ADR-0095 (desktop 1.7.0) moved the jumps to
+  // Ctrl+Shift+Arrows; Ctrl+Alt+Arrows (the jumps until then) is no longer held. This line still expected the
+  // old keys until 25 Nov 2026 (CI did not run from 17 Nov), and its failure broke the tests after it.
   const statuses = await page.evaluate(() => window.kiteDesktop!.setHotkeysEnabled!(true));
   const keys = statuses.map((status) => status.accelerator);
   expect(keys).toEqual(
-    expect.arrayContaining(['CommandOrControl+Alt+Left', 'CommandOrControl+Alt+Shift+Left']),
+    expect.arrayContaining(['CommandOrControl+Shift+Left', 'CommandOrControl+Alt+Shift+Left']),
   );
-  expect(keys).not.toContain('CommandOrControl+Shift+Left');
+  expect(keys).not.toContain('CommandOrControl+Alt+Left');
   await page.evaluate(() => window.kiteDesktop!.setHotkeysEnabled!(false));
   // Back to the top centre for the tests after this one, then closed.
   await page.evaluate(() => window.kiteDesktop!.setOverlayPosition!('top-center'));
