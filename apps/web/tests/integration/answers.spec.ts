@@ -358,11 +358,13 @@ test('the compact view shows the live answer; its Answer and Clear answers keys 
   await compact.keyboard.press('Control+Alt+t');
   await expect(panel).toHaveCount(0);
   await expect(statusBar.getByLabel('Latest words')).toContainText(/forty/i);
-  // ADR-0082: no Answer, Screenshot or Chat buttons on the overlay, and no message box; the shortcuts do
-  // their work. Ctrl+Enter with the overlay focused asks the live page.
-  for (const name of ['Answer', 'Screenshot', 'Chat']) {
+  // ADR-0082: no Answer or Screenshot buttons on the overlay; the shortcuts do their work. ADR-0122: Chat is
+  // back on bar 1, and the message box shows only once it is opened. Ctrl+Enter with the overlay focused asks
+  // the live page.
+  for (const name of ['Answer', 'Screenshot']) {
     await expect(bar.getByRole('button', { name, exact: true })).toHaveCount(0);
   }
+  await expect(bar.getByRole('button', { name: 'Chat', exact: true })).toBeVisible();
   await expect(compact.getByLabel('Type a question')).toHaveCount(0);
   await compact.locator('body').click({ position: { x: 2, y: 2 } });
   await compact.keyboard.press('Control+Enter');
