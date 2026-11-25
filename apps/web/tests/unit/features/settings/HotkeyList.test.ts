@@ -4,13 +4,16 @@
  * shortcuts never conflict; labels read correctly on Windows and macOS; v1.3.0 (ADR-0056): a desktop
  * app with the six positions (and the browser) gets the jump, nudge and Transcript rows, an older one
  * its own move row. Desktop 1.5.0 (ADR-0068): the recording row (Ctrl+Alt+R) only where meetings can be
- * recorded, and it reports a conflict when another app holds the keys. ADR-0110: a Mac lists the Mac keys.
+ * recorded, and it reports a conflict when another app holds the keys. ADR-0110: a Mac lists the Mac keys;
+ * amended 25 Nov 2026: a browser marks the desktop-only shortcuts, a taken shortcut says whether it still works
+ * with Paramount AI in front or not at all, and a Mac gets the note that macOS may not report a clash.
  */
 import { DEFAULT_GLOBAL_HOTKEYS, HOTKEY_ROWS, hotkeyLabel, type HotkeyStatus } from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/platform', () => ({ getPlatform: () => ({}) }));
-const { hotkeyRowsFor, rowHasConflict, rowKeys } = await import('@/features/settings/HotkeyList');
+const { conflictEffect, hotkeyRowsFor, MAC_CLASH_NOTE, rowHasConflict, rowKeys, rowWhere } =
+  await import('@/features/settings/HotkeyList');
 
 /** A status saying the overlay's upward move is taken. */
 const TAKEN: HotkeyStatus[] = [
@@ -108,5 +111,48 @@ describe('Settings on a Mac (ADR-0110)', () => {
     ];
     expect(rowKeys(clear, held, true)).toBe('Control+Alt+Backspace');
     expect(hotkeyLabel(rowKeys(clear, held, true), true)).toBe('⌃ ⌥ ⌫');
+  });
+});
+
+describe('where each shortcut works (ADR-0110, amended 25 Nov 2026)', () => {
+  /**
+   * The row that holds an action.
+   *
+   * @param action The action.
+   * @returns Its row.
+   */
+  const rowOf = (action: string) =>
+    HOTKEY_ROWS.find((row) => (row.actions as readonly string[]).includes(action))!;
+
+  it('marks show or hide, the moves, Click-through and Rec "Desktop app only" in a browser', () => {
+    for (const action of [
+      'overlay-toggle',
+      'overlay-row-top',
+      'overlay-up',
+      'click-through',
+      'record',
+    ]) {
+      expect(rowWhere(rowOf(action), false), action).toBe('Desktop app only');
+      expect(rowWhere(rowOf(action), true), action).toBe('Any app');
+    }
+    // The ones the page handles work in a browser tab while it has the keyboard.
+    for (const action of ['answer', 'chat', 'clear', 'prev', 'zoom-in', 'script-bar', 'ask-kite']) {
+      expect(rowWhere(rowOf(action), false), action).toBe('Paramount AI in front');
+      expect(rowWhere(rowOf(action), true), action).toBe('Any app');
+    }
+    expect(rowWhere(rowOf('transcript'), true)).toBe('Paramount AI in front');
+  });
+
+  it('says whether a taken shortcut still works with Paramount AI in front, or not at all', () => {
+    expect(conflictEffect(rowOf('answer'))).toBe('works only while Paramount AI is in front');
+    expect(conflictEffect(rowOf('clear'))).toBe('works only while Paramount AI is in front');
+    expect(conflictEffect(rowOf('overlay-toggle'))).toBe('does not work during calls');
+    expect(conflictEffect(rowOf('click-through'))).toBe('does not work during calls');
+  });
+
+  it('on a Mac, says macOS may not report a clash, naming the usual ⌃ ⌥ users', () => {
+    expect(MAC_CLASH_NOTE).toContain('macOS may not tell Paramount AI');
+    expect(MAC_CLASH_NOTE).toContain('Rectangle');
+    expect(MAC_CLASH_NOTE).toContain('VoiceOver');
   });
 });

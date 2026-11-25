@@ -204,7 +204,9 @@ export const DEFAULT_GLOBAL_HOTKEYS: Readonly<Record<CallHotkey, string>> = {
  * text-editing and window keys every Mac app uses, which a call would take from them. On a Mac they use ⌃⌥
  * (Control+Option) instead, and the jumps between the six positions ⌃⌘ with arrows. ⌃⌥ is also VoiceOver's
  * key (VO); a VoiceOver user can set VO to Caps Lock, or Settings → Hotkeys shows the key another app holds.
- * Every other key is the same as on Windows, with ⌘ for Ctrl.
+ * Every other key is the same as on Windows, with ⌘ for Ctrl. Reviewed 25 Nov 2026 (ADR-0110 amendment): with ⌃
+ * for Ctrl instead, these would take Mission Control (⌃←/→) or text keys, so they stay; the whole table is pinned
+ * in apps/web/tests/unit/shared/hotkeys.test.ts.
  */
 export const MAC_HOTKEY_CHANGES: Readonly<Partial<Record<CallHotkey, string>>> = {
   'clear-transcript': 'Control+Alt+Shift+Backspace',
@@ -450,6 +452,57 @@ export function hotkeyRows(mac: boolean): readonly HotkeyRow[] {
 
 /** The list Settings shows on Windows (hotkeyRows(false)). */
 export const HOTKEY_ROWS: readonly HotkeyRow[] = hotkeyRows(false);
+
+/**
+ * ADR-0110 (amended 25 Nov 2026): the shortcuts the page also handles itself while a Paramount AI window has
+ * the keyboard (apps/web/src/platform/keymap.ts; Escape for the voice question; Ctrl+Alt+T for the transcript).
+ * When another app holds one of these, it still works with Paramount AI in front, and in a browser these are
+ * the ones that work (while the tab has the keyboard). The others (show or hide the overlay, its jumps and
+ * nudges, Click-through, Rec) exist only as the desktop app's global shortcuts: held by another app, they do
+ * not work at all, and a browser has none of them.
+ */
+export const PAGE_HANDLED_HOTKEYS: ReadonlySet<GlobalHotkey | 'transcript'> = new Set<
+  GlobalHotkey | 'transcript'
+>([
+  'answer',
+  'screenshot',
+  'chat',
+  'screenshot-send',
+  'clear',
+  'clear-transcript',
+  'prev',
+  'next',
+  'zoom-in',
+  'zoom-out',
+  'zoom-reset',
+  'script-bar',
+  'ask-kite',
+  'voice-cancel',
+  'transcript',
+]);
+
+/**
+ * Whether a shortcut still works through the page when the desktop app cannot hold it (PAGE_HANDLED_HOTKEYS).
+ *
+ * @param action The shortcut.
+ * @returns True when the page handles it too (with Paramount AI in front, or in a browser tab).
+ * Called from: apps/web/src/platform/desktop.ts (the in-call warning), desktopOnlyRow(); tests
+ */
+export function worksInPage(action: GlobalHotkey | 'transcript'): boolean {
+  return PAGE_HANDLED_HOTKEYS.has(action);
+}
+
+/**
+ * Whether a Settings row works only in the desktop app: none of its shortcuts is handled by the page (the
+ * classic move row of a desktop app before 1.3.0 names none, and is desktop-only too).
+ *
+ * @param row The row.
+ * @returns True for show or hide, the moves, Click-through and Rec.
+ * Called from: apps/web/src/features/settings/HotkeyList.tsx; tests
+ */
+export function desktopOnlyRow(row: Pick<HotkeyRow, 'actions'>): boolean {
+  return row.actions.every((action) => !worksInPage(action));
+}
 
 /** A shortcut a key-cap chip can show (v1.2.0, spec §4): any global or focused one. */
 export type KeycapHotkey = GlobalHotkey | keyof typeof FOCUSED_HOTKEYS | 'chat-send' | 'transcript';

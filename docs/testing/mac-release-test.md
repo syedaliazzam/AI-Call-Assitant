@@ -159,7 +159,7 @@ Make a session (any type, invented details). Put on headphones. Open a YouTube i
    - **⌃ ⌥ =** / **⌃ ⌥ -** / **⌃ ⌥ 0** zoom the bars;
    - **⌃ ⌥ H** hides and shows the bars;
    - **⌃ ⌘ ↑** / **⌃ ⌘ ↓** move the bars to the top / bottom row.
-5. **Settings › Hotkeys** (open it from the call's ⋮ › Dashboard, or after the call) lists the Mac keys with ⌃ ⌥ and ⌘ symbols, and says nothing is "In use by another app". If something is, note which (window tools such as Rectangle use ⌃⌥ arrows).
+5. **Settings › Hotkeys** (open it from the call's ⋮ › Dashboard, or after the call) lists the Mac keys with ⌃ ⌥ and ⌘ symbols, and says nothing is "In use by another app". If something is, note which. **Expected** (25 Nov 2026): under the first line, a note starts *"On a Mac, macOS may not tell Paramount AI that another app uses the same keys…"*. If **Rectangle** (or Magnet) is installed, note whether Settings shows ⌃⌥ arrows "In use by another app", and whether ⌃⌥← in a call shows the previous answer or moves the window (this tells us whether macOS reports clashes).
 6. **Full screen.** Make the YouTube window full screen (the green button, or ⌃⌘F). **Expected:** the bars float over the full-screen video. When the bars first opened, the Dock icon may have blinked once: note whether it did.
 7. **Screenshot answer:** press **⌘ ⇧ ↵**. **Expected:** the answer is about the video page, not about Paramount AI's own bars.
 8. **Private.** Open the bars' **⋮** menu. **Expected:** under **Private**, the line *"On Mac, share a single window or tab, not your entire screen."* Then turn **Private** off in that menu. **Expected:** a slim line under the transcript bar says *"Private is off. On a Mac, Private hides the overlay when you share a window or tab, not your entire screen."* with **Turn on**. Click **Turn on**: the line goes. (ADR-0120)
@@ -194,7 +194,7 @@ Make a session (any type, invented details). Put on headphones. Open a YouTube i
 | 5.3 | ⌘ ↵ answers | |
 | 5.4 | ⌘← / ⌘→ / ⌘⌫ work in TextEdit during the call | |
 | 5.5 | ⌃⌥ keys and ⌃⌘ arrows work as listed | |
-| 5.6 | Settings › Hotkeys shows the Mac keys | |
+| 5.6 | Settings › Hotkeys shows the Mac keys and the Mac note (Rectangle: clash shown? yes / no / not installed) | |
 | 5.7 | Bars float over a full-screen window (Dock blink: yes/no) | |
 | 5.8 | Screenshot answer is about the page, not Paramount AI | |
 | 5.9 | Private note shown in ⋮ | |

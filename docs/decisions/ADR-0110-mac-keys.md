@@ -3,7 +3,7 @@
 - **Status:** Accepted (19 Nov 2026, the developer's brief: "Mac shortcut set that doesn't take over text-editing keys")
 - **Date:** 2026-11-19
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §7.3 (hotkeys) (version 4.48.0)
-- **Supersedes / superseded by:** updates ADR-0082 (ParakeetAI's call keys, held globally during a call) and ADR-0095 (the jumps on Ctrl+Shift+Arrows) for macOS only; Windows is unchanged
+- **Supersedes / superseded by:** updates ADR-0082 (ParakeetAI's call keys, held globally during a call) and ADR-0095 (the jumps on Ctrl+Shift+Arrows) for macOS only; Windows is unchanged. **Amended 25 Nov 2026** (see the end): the keys were reviewed and stay; Settings and the call say what a key another app holds still does.
 
 ## Context
 
@@ -88,3 +88,29 @@ The labels show ⌃ for `Control` and ⌘ for `Command`.
   - ⌃⌥H hides the bars;
   - ⌃⌘↑ moves them to the top row;
   - Settings → Hotkeys shows the Mac keys.
+
+## Amendment (25 Nov 2026): the keys reviewed; what a taken key still does
+
+**Review.** The developer asked for the Mac keys to match Windows wherever that clashes with no macOS system shortcut (Spotlight, Mission Control, input sources, screenshots) and no Zoom, Meet or Teams shortcut, keeping the deliberate differences. Every key was checked (investigation `docs/investigations/2026-11-25-mac-windows-parity-and-backlog.md`, Part B).
+
+- **11 of the 23 call shortcuts already match Windows**, with ⌘ for Ctrl: Answer, Screenshot, the voice question, the screenshot and voice question, the script bar, Click-through, Rec, the four nudges, plus Ask AI, Transcript and Esc.
+- **The other 12 (6 actions) stay different.** Matching Windows would clash with a Mac text, Finder or system key (⌘ for Ctrl) or a Mission Control key (⌃ for Ctrl):
+
+| Action | Windows | Mac (kept) | ⌘ for Ctrl would take | ⌃ for Ctrl would take |
+|---|---|---|---|---|
+| Previous / next answer | Ctrl+← / → | ⌃⌥← / → | start / end of the line | Mission Control: move a space |
+| Clear answers | Ctrl+⌫ | ⌃⌥⌫ | delete to line start; Finder's Move to Trash | delete backward (text) |
+| Clear transcript | Ctrl+⇧+⌫ | ⌃⌥⇧⌫ | Finder's Empty Trash | — (kept with Clear answers) |
+| Zoom in / out / reset | Ctrl+= / - / 0 | ⌃⌥= / - / 0 | every app's zoom, Chrome's (Meet) and Teams' | — (kept with the ⌃⌥ set) |
+| Show or hide overlay | Ctrl+Alt+H | ⌃⌥H (the same keys pressed) | Hide Others in every app | — |
+| Jump between the six positions | Ctrl+⇧+arrows | ⌃⌘ arrows | select to the line's or document's edge | select to the line's edge (⌃⇧ arrows) |
+
+- **No key changes**: there was nothing left to align. `apps/web/tests/unit/shared/hotkeys.test.ts` now pins the whole table on both systems, and checks that no Mac key takes a macOS system key (Spotlight, input sources, Character Viewer, Mission Control, screenshots) or a published Zoom, Meet or Teams key. On Windows the one known clash is kept in the test: show or hide (Ctrl+Alt+H) is Google Meet's raise hand. That is the developer's decision, and changing it needs a Windows release.
+
+**What a key another app holds still does** (web only):
+- The page handles some shortcuts itself (`PAGE_HANDLED_HOTKEYS` in `packages/shared/src/hotkeys.ts`): Answer, Screenshot, the voice questions, Clear, previous / next, zoom, the script bar, Ask AI, Transcript, Esc. Held by another app, these still work with Paramount AI in front.
+- The others (show or hide, the jumps and nudges, Click-through, Rec) are only the desktop app's global shortcuts. Held by another app, they do not work at all.
+- The call's warning now says which is which ("…so it does not work during this call"); it said "works only while Paramount AI is in front" for all of them.
+- Settings → Hotkeys says the same on each taken row.
+- In a browser, Settings marks the desktop-only shortcuts "Desktop app only". It said all of them work in a browser.
+- On a Mac, Settings adds a note: macOS may not tell Paramount AI that another app uses the same keys (unverified on a real Mac; the release test checks it with Rectangle), so it suggests checking window tools such as Rectangle or Magnet (⌃⌥ arrows) and VoiceOver.

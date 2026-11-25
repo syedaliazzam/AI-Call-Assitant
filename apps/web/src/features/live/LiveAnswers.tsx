@@ -355,6 +355,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
   );
   // Desktop app: global shortcuts another app already uses (they work only while Kite has focus).
   const [taken, setTaken] = useState<string[]>([]);
+  // ADR-0110 (amended 25 Nov 2026): taken ones the page does not handle (show or hide, moves, Click-through,
+  // Rec): they do not work at all during this call.
+  const [takenUnavailable, setTakenUnavailable] = useState<string[]>([]);
   // ADR-0076 (G4): the Answer shortcut's label when another app holds it (a lasting overlay warning).
   const [answerTaken, setAnswerTaken] = useState<string | null>(null);
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
@@ -910,9 +913,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
             setAskKiteCount((count) => count + 1);
           }
         },
-        (labels, answer) => {
+        (labels, answer, unavailable) => {
           setTaken(labels);
           setAnswerTaken(answer ?? null);
+          setTakenUnavailable(unavailable ?? []);
         },
       ),
     [],
@@ -1205,14 +1209,27 @@ export function LiveAnswers(props: LiveAnswersProps) {
           {compactNotice}
         </p>
       )}
-      {taken.length > 0 && (
+      {(taken.length > 0 || takenUnavailable.length > 0) && (
         <p
           role="status"
           className="rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
         >
-          Another app already uses {taken.join(', ')}, so{' '}
-          {taken.length === 1 ? 'it works' : 'they work'} only while Paramount AI is in front. Close
-          that app&rsquo;s shortcut, or use the buttons.
+          {taken.length > 0 && (
+            <>
+              Another app already uses {taken.join(', ')}, so{' '}
+              {taken.length === 1 ? 'it works' : 'they work'} only while Paramount AI is in
+              front.{' '}
+            </>
+          )}
+          {takenUnavailable.length > 0 && (
+            <>
+              {/* ADR-0110 (amended 25 Nov 2026): these have no in-page fallback. */}
+              Another app already uses {takenUnavailable.join(', ')}, so{' '}
+              {takenUnavailable.length === 1 ? 'it does' : 'they do'} not work during this
+              call.{' '}
+            </>
+          )}
+          Close that app&rsquo;s shortcut, or use the buttons.
         </p>
       )}
       {!online && (

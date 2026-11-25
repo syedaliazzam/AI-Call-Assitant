@@ -492,13 +492,15 @@ export interface Platform {
    *
    * @param handler   Called with the action each time a hotkey is pressed.
    * @param onTaken   Desktop only: called with the shortcuts another app already uses (for
-   *                  example ['Ctrl+Enter']); those work only while Kite has focus. ADR-0076 (G4):
-   *                  the second argument is the Answer shortcut's label when it is one of them.
+   *                  example ['Ctrl+Enter']) that still work while Kite has focus (the page handles them).
+   *                  ADR-0076 (G4): the second argument is the Answer shortcut's label when it is one of
+   *                  them. ADR-0110 (amended 25 Nov 2026): the third lists the taken ones the page does not
+   *                  handle (show or hide, moves, Click-through, Rec), which then do not work at all.
    * @returns A function that removes the listener (and, on desktop, releases the shortcuts).
    */
   onHotkey(
     handler: (action: HotkeyAction) => void,
-    onTaken?: (shortcuts: string[], answerTaken?: string | null) => void,
+    onTaken?: (shortcuts: string[], answerTaken?: string | null, unavailable?: string[]) => void,
   ): () => void;
 
   /**

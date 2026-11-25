@@ -6,13 +6,23 @@
  *          with the six positions and the browser; an older desktop app sees its own move row. ADR-0095: a row
  *          shows the keys the desktop app reports holding, so a 1.3.0–1.6.5 app still shows Ctrl+Alt+Arrows.
  *          1.8.0 (ADR-0110): a Mac sees the Mac's keys (⌃⌥ for Clear, previous / next and zoom).
+ *          ADR-0110 (amended 25 Nov 2026): in a browser the desktop-only shortcuts (show or hide, moves,
+ *          Click-through, Rec) say "Desktop app only"; a shortcut another app holds says whether it still works
+ *          with Paramount AI in front (the page handles it) or not at all; on a Mac a note says macOS may not
+ *          report a shortcut another app holds.
  * Used by: src/features/settings/Settings.tsx
  * Depends on: @kite/shared (hotkeyRows), src/platform, src/ui/KeyCap.tsx, src/ui/useIsMac.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3; docs/design/parakeet-parity.md
  */
 'use client';
 
-import { hotkeyAccelerator, hotkeyRows, type HotkeyRow, type HotkeyStatus } from '@kite/shared';
+import {
+  desktopOnlyRow,
+  hotkeyAccelerator,
+  hotkeyRows,
+  type HotkeyRow,
+  type HotkeyStatus,
+} from '@kite/shared';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { getPlatform } from '@/platform';
 import { KeyCap } from '@/ui/KeyCap';
@@ -83,6 +93,41 @@ export function rowKeys(
 }
 
 /**
+ * ADR-0110 (amended 25 Nov 2026): what the Works column says for a row.
+ *
+ * @param row     The row.
+ * @param desktop True in the desktop app (false in a browser).
+ * @returns "Any app", "Paramount AI in front", or "Desktop app only" (a browser, for show or hide, moves,
+ *          Click-through and Rec, which only the desktop app has).
+ * Called from: HotkeyList; tests
+ */
+export function rowWhere(row: HotkeyRow, desktop: boolean): string {
+  if (!desktop && desktopOnlyRow(row)) return 'Desktop app only';
+  return row.scope === 'global' && desktop ? 'Any app' : 'Paramount AI in front';
+}
+
+/**
+ * ADR-0110 (amended 25 Nov 2026): what a row says when another app holds its keys. The page handles some
+ * shortcuts itself, which then still work with Paramount AI in front; the others do not work at all.
+ *
+ * @param row The row (with a conflict).
+ * @returns The words after "In use by another app".
+ * Called from: HotkeyList; tests
+ */
+export function conflictEffect(row: HotkeyRow): string {
+  return desktopOnlyRow(row)
+    ? 'does not work during calls'
+    : 'works only while Paramount AI is in front';
+}
+
+/**
+ * ADR-0110 (amended 25 Nov 2026): on a Mac, macOS may give a shortcut to Paramount AI even when another app
+ * (a window tool, VoiceOver) uses the same keys, so "In use by another app" may never show there.
+ */
+export const MAC_CLASH_NOTE =
+  'On a Mac, macOS may not tell Paramount AI that another app uses the same keys, so a clash may not show here. If a key does nothing during a call, check window tools such as Rectangle or Magnet (they use ⌃ ⌥ with arrows) and VoiceOver (⌃ ⌥).';
+
+/**
  * Never changes after load (the platform is fixed for the page's life).
  *
  * @returns An unsubscribe function that does nothing.
@@ -115,6 +160,12 @@ export function HotkeyList() {
     () => false,
   );
   const mac = useIsMac();
+  // ADR-0110 (amended 25 Nov 2026): a browser has no global shortcuts, and none of the desktop-only ones.
+  const desktop = useSyncExternalStore(
+    subscribeNever,
+    () => getPlatform().kind === 'desktop',
+    () => false,
+  );
   const rows = hotkeyRowsFor(positions, recording, mac);
   const conflicts = rows.filter((row) => rowHasConflict(row, statuses));
   return (
@@ -122,9 +173,10 @@ export function HotkeyList() {
       <p className="mb-3 text-[13px] text-ui-muted">
         &ldquo;Any app&rdquo; shortcuts work from every app in the desktop app, during a call; Open
         Ask AI works whenever the desktop app is running. &ldquo;Paramount AI in front&rdquo; ones
-        never take keys from other apps. In a browser, all of them work while Paramount AI has
-        focus.
+        never take keys from other apps. In a browser, they work while the Paramount AI tab has the
+        keyboard, except the ones marked &ldquo;Desktop app only&rdquo;.
       </p>
+      {mac && desktop && <p className="mb-3 text-[13px] text-ui-muted">{MAC_CLASH_NOTE}</p>}
       <table className="w-full text-left text-[13px]">
         <thead>
           <tr className="border-b border-ui-border text-ui-muted">
@@ -149,9 +201,11 @@ export function HotkeyList() {
                 <KeyCap accelerator={rowKeys(row, statuses, mac)} />
               </td>
               <td className="py-2 text-ui-muted">
-                {row.scope === 'global' ? 'Any app' : 'Paramount AI in front'}
+                {rowWhere(row, desktop)}
                 {rowHasConflict(row, statuses) && (
-                  <span className="ml-2 text-ui-danger">In use by another app</span>
+                  <span className="ml-2 text-ui-danger">
+                    In use by another app: {conflictEffect(row)}
+                  </span>
                 )}
               </td>
             </tr>
@@ -161,7 +215,8 @@ export function HotkeyList() {
       {conflicts.length > 0 && (
         <p role="status" className="mt-3 text-[13px] text-ui-danger">
           Another app uses {conflicts.map((row) => row.label).join(', ')}. Close that app or change
-          its shortcut. Answer and Screenshot still work while Paramount AI is in front.
+          its shortcut. Until then each one works only while Paramount AI is in front, or not at all
+          during calls, as its row says.
         </p>
       )}
     </>

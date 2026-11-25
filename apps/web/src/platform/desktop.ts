@@ -22,7 +22,7 @@ import type {
   ShareProtectionState,
   WindowControlAction,
 } from '@kite/shared';
-import { LINK_CODE_PATTERN } from '@kite/shared';
+import { LINK_CODE_PATTERN, worksInPage } from '@kite/shared';
 import { installDesktopDocument } from './desktopDocument';
 import { CaptureError } from './errors';
 import { listenForAskKite, listenForHotkeys } from './keymap';
@@ -686,9 +686,14 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
           if (active && taken.length > 0) {
             // ADR-0076 (G4): the Answer shortcut is named apart, for the overlay's lasting warning.
             const answer = taken.find((status) => status.action === 'answer');
+            // ADR-0110 (amended 25 Nov 2026): the page handles some of them itself (they still work with
+            // Paramount AI in front); the rest (show or hide, moves, Click-through, Rec) then do not work.
+            const label = (status: (typeof taken)[number]) =>
+              acceleratorLabel(status.accelerator, bridge.os);
             onTaken?.(
-              taken.map((status) => acceleratorLabel(status.accelerator, bridge.os)),
+              taken.filter((status) => worksInPage(status.action)).map(label),
               answer ? acceleratorLabel(answer.accelerator, bridge.os) : null,
+              taken.filter((status) => !worksInPage(status.action)).map(label),
             );
           }
         })
