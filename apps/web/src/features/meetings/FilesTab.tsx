@@ -49,6 +49,14 @@ export interface FilesTabProps {
 }
 
 /**
+ * 25 Nov 2026: under a call's files when a screen recording is in Google Drive. Drive's web player can offer
+ * only a low resolution for a while after an upload (it showed 360p / Auto), though the uploaded file is full
+ * quality.
+ */
+export const DRIVE_QUALITY_NOTE =
+  'Google Drive may show low quality for a while after upload — download it or play it in Paramount AI for full quality.';
+
+/**
  * A "<name> in Drive ↗" link.
  *
  * @param props.file The saved file.
@@ -237,6 +245,12 @@ export function FilesTab({ session, call, accountName, host, localIds, drive }: 
           })
         )}
       </ul>
+
+      {parts.some((part) => part.kind === 'screen' && linkOf('recording', part.part)) && (
+        // 25 Nov 2026: Drive's web player shows a low resolution (360p or "Auto") until it has processed a
+        // video; the file itself is full quality (downloaded and played locally it is sharp).
+        <p className="text-[13px] text-ui-muted">{DRIVE_QUALITY_NOTE}</p>
+      )}
 
       {message && (
         <p role="status" className="text-[13px] text-ui-muted">

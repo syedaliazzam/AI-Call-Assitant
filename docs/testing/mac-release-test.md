@@ -187,6 +187,12 @@ Make a session (any type, invented details). Put on headphones. Open a YouTube i
 15. **No Chromium zoom** (ADR-0120). Click on the bars, then press **⌘ +** three times and **⌘ −** three times. **Expected:** nothing changes. **⌃ ⌥ =** and **⌃ ⌥ −** still zoom the bars, and **⌃ ⌥ 0** puts them back. The **View** menu has only **Enter Full Screen**.
 16. **Snap zones over a full-screen meeting** (ADR-0120). With the YouTube window still full screen (step 6), drag the bars by their move icon. **Expected:** the six snap zones show over the full-screen video, and dropping snaps the bars there.
 17. **End** the call. **Expected:** the notes are written as usual.
+18. **Drive playback quality** (needs Settings › Google Drive connected and the recording from step 12, **Screen + audio**, at least 2 minutes with a moving video on screen).
+    - After the call, let the upload finish (the call's Drive line says **Saved to Drive**). Write down the time.
+    - **Meetings › this call › Files:** under the files, the note *"Google Drive may show low quality for a while after upload — download it or play it in Paramount AI for full quality."*
+    - **The .mkv in Drive:** click **Open in Drive** on the recording row. In Drive's player open ⚙ › Quality and write down the resolutions offered: right away, after 10 minutes, after 30 minutes. Also note any "still processing" message.
+    - **The same recording as .mp4:** on the recording row click **Save as…**, choose **MP4 video**, save it to the Desktop. In drive.google.com, drag that .mp4 into the **same call folder**. Then for the .mp4, the same as for the .mkv: offered resolutions right away, after 10 and after 30 minutes, any "processing" message, and **whether it plays with sound** in Drive's player.
+    - Download the .mkv from Drive and play it in Paramount AI (Meetings) or VLC: sharp? (QuickTime does not open .mkv.)
 
 | # | Check | Result |
 |---|---|---|
@@ -210,6 +216,10 @@ Make a session (any type, invented details). Put on headphones. Open a YouTube i
 | 5.18 | ⌘ + / ⌘ − do nothing; ⌃⌥ = / − / 0 zoom; View menu has only Full Screen | |
 | 5.19 | Private off: the Mac line with Turn on; Turn on clears it | |
 | 5.20 | Snap zones show over a full-screen window | |
+| 5.21 | Drive note shown under the files | |
+| 5.22 | Drive player, **.mkv**: resolutions offered at 0 / 10 / 30 min; processing message? | |
+| 5.23 | Drive player, **.mp4** (Save as… MP4): resolutions at 0 / 10 / 30 min; processing message?; sound plays? | |
+| 5.24 | The .mkv downloaded from Drive is sharp when played locally | |
 
 ## 6. The update keeps the permissions (20 min)
 
