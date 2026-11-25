@@ -170,7 +170,11 @@ export interface CompactState {
   answer: CompactAnswer | null;
   /** The chat box's switch: Auto, For the call or Ask Kite (ADR-0030). */
   chatTarget?: TargetChoice;
-  /** Grows each time the Ask Kite shortcut is pressed, so the overlay opens its chat box. */
+  /**
+   * Grows each time the Ask Kite shortcut is pressed, so the overlay opens its chat box. ADR-0122: during a
+   * call with the overlay open, Ctrl+Alt+K (and the overlay's own 'open-chat') grows it, and the overlay opens
+   * its chat bar under bar 1.
+   */
   askKiteCount?: number;
   /** The session's type, for the source tag's words. */
   sessionType?: string;
@@ -315,7 +319,10 @@ export interface SimpleCommand {
     | 'voice-cancel'
     | 'dismiss-name'
     // ADR-0095: Voice mode's one-time tip was closed.
-    | 'voice-tip-seen';
+    | 'voice-tip-seen'
+    // ADR-0122: Ctrl+Alt+K pressed while the overlay had focus: open its chat bar (the live page counts it in
+    // askKiteCount, as it does the global key).
+    | 'open-chat';
 }
 
 /** ADR-0095: turns Voice mode (hands-free talking to the assistant) on or off. */
@@ -721,6 +728,8 @@ export function isCommand(value: unknown): value is CompactCommand {
     // ADR-0093: "Not now" on the rename offer.
     'dismiss-name',
     'voice-tip-seen',
+    // ADR-0122.
+    'open-chat',
   ].includes(command.type);
 }
 

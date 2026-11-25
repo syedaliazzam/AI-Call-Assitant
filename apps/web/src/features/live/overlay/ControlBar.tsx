@@ -7,8 +7,10 @@
  *          2026); ADR-0082: the Click-through toggle (as Ctrl+Alt+X; labelled "W"), where clicks can pass; ADR-0094: the model chip (Fast / Smart / Fastest) next to
  *          Auto, which opens the model choice; ADR-0095: the Voice toggle (hands-free talking to the assistant)
  *          next to the model chip; then move and compact, the call timer, ⋮ and Exit
- *          (red; web 9 Nov 2026: one press ends the call). ADR-0082: no Answer, Screenshot or Chat buttons
- *          (their shortcuts still work). The bar is the window's drag handle; its buttons opt out.
+ *          (red; web 9 Nov 2026: one press ends the call). ADR-0082: no Answer or Screenshot buttons (their
+ *          shortcuts still work). ADR-0122: Chat is back, first in the part that gives way, with its shortcut
+ *          (Ctrl+Alt+K) as a key-cap; it opens the chat bar under this bar. The bar is the window's drag handle;
+ *          its buttons opt out.
  *
  *          1.6.3 (ADR-0075): ⋮ and Exit are pinned on the right and never leave the window. ADR-0085: the
  *          device icons and, while recording, the Rec pill are
@@ -29,7 +31,7 @@
  */
 'use client';
 
-import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
+import { ASK_KITE_HOTKEY, DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
 import { AudioLines, Clock } from 'lucide-react';
 import {
   useEffect,
@@ -43,6 +45,7 @@ import { flushSync } from 'react-dom';
 import { callClock } from '@/features/live/callClock';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import {
+  ChatIcon,
   ChevronDownIcon,
   CollapseIcon,
   ExpandIcon,
@@ -57,6 +60,7 @@ import {
   BUTTON_BASE,
   CHEVRON_BUTTON,
   ICON_BUTTON,
+  KeyChip,
   ownResizeObserver,
   PILL,
   StatusIcon,
@@ -123,6 +127,13 @@ export interface ControlBarProps {
    * its Voice mode (an older one, or no microphone in this call): no toggle.
    */
   onVoice?: (on: boolean) => void;
+  /**
+   * ADR-0122: opens or closes the chat bar under this bar (as Ctrl+Alt+K does during a call). Absent: no Chat
+   * button.
+   */
+  onChat?: () => void;
+  /** ADR-0122: whether the chat bar is open (the Chat button shows it). */
+  chatOpen?: boolean;
 }
 
 /**
@@ -130,11 +141,14 @@ export interface ControlBarProps {
  * step hides what the one before did, and more.
  */
 const FIT = {
-  /** From here: no key-cap on the Rec pill. */
+  /** From here: no key-cap on the Rec pill (ADR-0122: nor on Chat). */
   noRecKey: 1,
   /** From here: Click-through's "W" pill gives way to a square; no clock icon (ADR-0118: no Transcript word any more). */
   noWords: 2,
-  /** From here: Auto answer's "AA" pill is a square, the model chip its icon (ADR-0094), Voice its waveform (ADR-0095). */
+  /**
+   * From here: Auto answer's "AA" pill is a square, the model chip its icon (ADR-0094), Voice its waveform
+   * (ADR-0095) and Chat its icon (ADR-0122).
+   */
   iconAuto: 3,
   /** From here: no move icon (the whole bar still drags the window). */
   noMove: 4,
@@ -233,6 +247,62 @@ function VoiceToggle({
               : 'bg-ui-muted opacity-60'
         }`}
       />
+    </button>
+  );
+}
+
+/**
+ * ADR-0122: Chat on bar 1, with its shortcut (Ctrl+Alt+K; ⌘⌥K on a Mac) as a key-cap: opens or closes the chat
+ * bar under bar 1 ("Enter a message…", Send, ×). It gives way like the others: first its key-cap, then its
+ * word (the icon stays). A click gives the keyboard back to the meeting (data-releases-focus): only a click into
+ * the chat bar's box takes it.
+ *
+ * @param props.open     True while the chat bar is open.
+ * @param props.disabled True before the live page answers, or once the call ended.
+ * @param props.keyCap   False to leave out the key-cap.
+ * @param props.word     False to show the icon only.
+ * @param props.mac      True on macOS (the shortcut's name).
+ * @param props.onToggle Opens or closes the chat bar.
+ * @returns The button.
+ * Rendered by: ControlBar
+ */
+function ChatButton({
+  open,
+  disabled,
+  keyCap,
+  word,
+  mac,
+  onToggle,
+}: {
+  /** True while the chat bar is open. */
+  open: boolean;
+  /** True before the live page answers, or once the call ended. */
+  disabled: boolean;
+  /** False to leave out the key-cap. */
+  keyCap: boolean;
+  /** False to show the icon only. */
+  word: boolean;
+  /** True on macOS (the shortcut's name). */
+  mac: boolean;
+  /** Opens or closes the chat bar. */
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label="Chat"
+      aria-expanded={open}
+      aria-keyshortcuts={hotkeyLabel(ASK_KITE_HOTKEY, mac)}
+      data-tip={tipText(open ? 'Close chat' : 'Chat: type a question', ASK_KITE_HOTKEY, mac)}
+      data-chat-button=""
+      data-releases-focus=""
+      className={`${word ? `${PILL} gap-1.5` : ICON_BUTTON} ${open ? 'text-ui-text ring-1 ring-inset ring-ui-accent-fill' : ''}`}
+      onClick={onToggle}
+      disabled={disabled}
+    >
+      <ChatIcon />
+      {word && 'Chat'}
+      {word && keyCap && <KeyChip hotkey="ask-kite" />}
     </button>
   );
 }
@@ -613,6 +683,8 @@ export function ControlBar(props: ControlBarProps) {
     modelChoice?.model ?? 'no-model',
     // ADR-0095: the Voice toggle appearing or going.
     voice === null ? 'no-voice' : 'voice',
+    // ADR-0122: the Chat button appearing or going.
+    props.onChat ? 'chat' : 'no-chat',
   ].join('|');
   const { step, room, content } = useFitStep(fitKey);
   const recKey = step < FIT.noRecKey;
@@ -672,6 +744,17 @@ export function ControlBar(props: ControlBarProps) {
           data-fit-key={fitKey}
           className="flex shrink-0 items-center gap-1 pr-0.5"
         >
+          {props.onChat && (
+            // ADR-0122: first in the part that gives way, so the pinned controls never leave the window.
+            <ChatButton
+              open={props.chatOpen ?? false}
+              disabled={ended}
+              keyCap={recKey}
+              word={step < FIT.iconAuto}
+              mac={mac}
+              onToggle={props.onChat}
+            />
+          )}
           <AutoAnswerToggle
             on={autoOn}
             disabled={!state}

@@ -2,8 +2,8 @@
  * Tests for apps/web/src/features/live/overlay/StatusBar.tsx, WarningLine.tsx and ControlBar.tsx. ADR-0118: bar 2
  * (the transcript bar) is one row (level button, the live words as phrase chips, Clear, the expand button) that
  * always shows the words and never a warning or a collapse button; the warning has its own slim line
- * (WarningLine.tsx) with its button. ADR-0085: no language control. Bar 1 has no Answer, Screenshot, Chat or
- * (ADR-0118) Transcript buttons, and a Click-through switch with its state and tooltip where clicks can pass (none
+ * (WarningLine.tsx) with its button. ADR-0085: no language control. Bar 1 has no Answer, Screenshot or
+ * (ADR-0118) Transcript buttons, ADR-0122: a Chat button with its shortcut; and a Click-through switch with its state and tooltip where clicks can pass (none
  * where they cannot). The Auto answer and Click-through switches show the short labels "AA" and "W" (no icons) and
  * keep their full names in aria-label and the tooltip.
  */
@@ -160,9 +160,14 @@ describe('WarningLine (ADR-0118)', () => {
  *
  * @param state          The overlay state.
  * @param onClickThrough The Click-through toggle's handler, or undefined where clicks cannot pass.
+ * @param onChat         ADR-0122: the Chat button's handler, or undefined for no Chat button.
  * @returns The markup.
  */
-function bar1(state: CompactState, onClickThrough?: (on: boolean) => void): string {
+function bar1(
+  state: CompactState,
+  onClickThrough?: (on: boolean) => void,
+  onChat?: () => void,
+): string {
   return renderToString(
     <ControlBar
       state={state}
@@ -176,18 +181,43 @@ function bar1(state: CompactState, onClickThrough?: (on: boolean) => void): stri
       onDeviceList={() => undefined}
       menuButton={{ current: null }}
       {...(onClickThrough ? { onClickThrough } : {})}
+      {...(onChat ? { onChat } : {})}
     />,
   );
 }
 
 describe('ControlBar (bar 1)', () => {
-  it('has no Answer, Screenshot or Chat buttons (the shortcuts do those)', () => {
-    const html = bar1(QUIET, () => undefined);
+  it('has no Answer or Screenshot buttons (the shortcuts do those)', () => {
+    const html = bar1(
+      QUIET,
+      () => undefined,
+      () => undefined,
+    );
     expect(html).not.toContain('aria-label="Answer"');
     expect(html).not.toContain('aria-label="Screenshot"');
-    expect(html).not.toContain('aria-label="Chat"');
     expect(html).toContain('aria-label="Exit: end call"');
     expect(html).toContain('aria-label="Overlay menu"');
+  });
+
+  it('ADR-0122: has Chat with its shortcut shown, first in the part that gives way', () => {
+    const html = bar1(
+      QUIET,
+      () => undefined,
+      () => undefined,
+    );
+    expect(html).toContain('aria-label="Chat"');
+    expect(html).toContain('aria-keyshortcuts="Ctrl+Alt+K"');
+    expect(html).toContain('data-tip="Chat: type a question · Ctrl+Alt+K"');
+    // A click gives the keyboard back to the meeting (only a click into the chat bar's box takes it).
+    expect(html).toMatch(/<button[^>]*aria-label="Chat"[^>]*data-releases-focus=""/);
+    // Before Auto answer, inside the part that gives way (data-fit-step).
+    const fitPart = html.slice(html.indexOf('data-fit-step'));
+    expect(fitPart.indexOf('aria-label="Chat"')).toBeGreaterThan(-1);
+    expect(fitPart.indexOf('aria-label="Chat"')).toBeLessThan(
+      fitPart.indexOf('aria-label="Auto answer"'),
+    );
+    // Without the handler: no Chat button.
+    expect(bar1(QUIET, () => undefined)).not.toContain('aria-label="Chat"');
   });
 
   it('has a Click-through switch with its state and shortcut in the tooltip', () => {

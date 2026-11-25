@@ -549,8 +549,8 @@ test('overlay: a coding answer, a figure to check and a private answer fit (ADR-
     );
     expect(fits, 'the window itself does not scroll').toBe(true);
     await shot(coding, size, `overlay-coding-${size.width}`);
-    // ADR-0082: the overlay has no Chat button and no message box (Ctrl+Shift+Space asks by voice).
-    await expect(page.getByRole('button', { name: 'Chat' })).toHaveCount(0);
+    // ADR-0122: the overlay's message box shows only once Chat (or Ctrl+Alt+K) opens the chat bar.
+    await expect(page.getByRole('button', { name: 'Chat', exact: true })).toBeVisible();
     await expect(page.getByRole('textbox')).toHaveCount(0);
     await expect(page.getByRole('radiogroup', { name: 'Who the answer is for' })).toHaveCount(0);
     await coding.context.close();
@@ -774,7 +774,7 @@ async function barWords(page: Page): Promise<(string | undefined)[]> {
   return words.filter((word) => !word?.includes('capturing') && !word?.includes('not connected'));
 }
 
-test('S13: bar 1 in order, 44 tall, nothing cut off; ADR-0082: no Answer, Screenshot or Chat', async () => {
+test('S13: bar 1 in order, 44 tall, nothing cut off; ADR-0082: no Answer or Screenshot; ADR-0122: Chat', async () => {
   // 1.6.3 (ADR-0075): at the desktop overlay's default width.
   const watched = await openOverlayView(
     { width: 980, height: 480, touch: false },
@@ -787,6 +787,8 @@ test('S13: bar 1 in order, 44 tall, nothing cut off; ADR-0082: no Answer, Screen
     'Choose audio source',
     'Choose microphone',
     // ADR-0118: no Transcript pill any more (bar 2's level and expand buttons open the full transcript).
+    // ADR-0122: Chat, first in the part that gives way.
+    'Chat',
     // 1.6.3 (ADR-0075): Auto answer moved here from its floating pill.
     'Auto answer',
     // ADR-0094: the model chip next to Auto.
@@ -797,10 +799,16 @@ test('S13: bar 1 in order, 44 tall, nothing cut off; ADR-0082: no Answer, Screen
     'Overlay menu',
     'Exit: end call',
   ]);
-  // ADR-0082: the shortcuts still work, but bar 1 has no buttons for them.
-  for (const name of ['Answer', 'Screenshot', 'Chat']) {
+  // ADR-0082: the shortcuts still work, but bar 1 has no buttons for Answer or Screenshot.
+  for (const name of ['Answer', 'Screenshot']) {
     await expect(bar.getByRole('button', { name, exact: true })).toHaveCount(0);
   }
+  // ADR-0122: Chat shows its shortcut.
+  await expect(bar.getByRole('button', { name: 'Chat', exact: true })).toContainText('Chat');
+  await expect(bar.getByRole('button', { name: 'Chat', exact: true })).toHaveAttribute(
+    'aria-keyshortcuts',
+    'Ctrl+Alt+K',
+  );
   await shot(watched, BARS_SIZE, 'call-bars');
   // ADR-0082: where clicks can pass (a desktop shell from 1.3.0), the Click-through switch follows Auto
   // answer.
@@ -809,6 +817,7 @@ test('S13: bar 1 in order, 44 tall, nothing cut off; ADR-0082: no Answer, Screen
   expect(await barWords(page)).toEqual([
     'Choose audio source',
     'Choose microphone',
+    'Chat',
     'Auto answer',
     'Model: Haiku',
     'Click-through',
@@ -1689,11 +1698,11 @@ test('1.6.3: ⋮ and Exit are always whole; bar 1 gives way in order at the defa
               menuInside: true,
             });
           // The controls that never give way are still there; the timer stays, short; so do move and
-          // compact. ADR-0082: no Answer, Screenshot or Chat buttons.
-          for (const control of ['Overlay menu', 'Exit: end call', 'Shrink to an icon']) {
+          // compact. ADR-0082: no Answer or Screenshot buttons. ADR-0122: Chat stays (its icon at least).
+          for (const control of ['Overlay menu', 'Exit: end call', 'Shrink to an icon', 'Chat']) {
             await expect(bar.getByRole('button', { name: control, exact: true })).toBeVisible();
           }
-          for (const control of ['Answer', 'Screenshot', 'Chat']) {
+          for (const control of ['Answer', 'Screenshot']) {
             await expect(bar.getByRole('button', { name: control, exact: true })).toHaveCount(0);
           }
           await expect(bar.getByRole('img', { name: 'Drag here to move' })).toBeVisible();
@@ -2376,4 +2385,150 @@ test('ADR-0118 / ADR-0119 pictures: bars, transcript and answer at 640, 768 and 
     path.join(SHOT_DIR!, 'measurements.json'),
     `${JSON.stringify(measured, null, 2)}\n`,
   );
+});
+
+/**
+ * WP3 (ADR-0122 to ADR-0124): the overlay widths of the before / after pictures: the 640 default (13" Mac, small
+ * Windows laptops) and a wide window on a Windows desktop.
+ */
+const WP3_WIDTHS = [640, 1280] as const;
+
+test('WP3 pictures: chat bar, answer alone centred, transcript and answer the same height (640 and 1280 px, top and bottom)', async () => {
+  test.skip(!SHOT_DIR, 'pictures only (KITE_SCREENSHOT_DIR)');
+  test.setTimeout(300_000);
+  const measured: unknown[] = [];
+  for (const width of WP3_WIDTHS) {
+    for (const position of ['top-center', 'bottom-center'] as const) {
+      for (const panels of ['answer', 'transcript,answer'] as const) {
+        for (const chat of [false, true]) {
+          // The chat bar only with both panels (one picture per width and row is enough).
+          if (chat && panels === 'answer') continue;
+          const context = await browser!.newContext({
+            viewport: { width, height: 620 },
+            deviceScaleFactor: 1.25,
+            userAgent: WINDOWS_UA,
+          });
+          const page = await context.newPage();
+          await page.goto(`${origin}/?view=gate`);
+          await page.goto(
+            `${origin}/?view=compact&glass=1&alpha=0.82&shell=1&position=${position}&rec=off&ct=off&panels=${panels}&os=windows`,
+          );
+          await page.getByRole('toolbar', { name: 'Overlay controls' }).waitFor();
+          if (chat) {
+            // Before WP3 there is no Chat button: that picture is skipped.
+            const button = page.getByRole('button', { name: /^Chat/ });
+            if ((await button.count()) === 0) {
+              await context.close();
+              continue;
+            }
+            await button.click();
+          }
+          await page.evaluate((image) => {
+            document.documentElement.style.backgroundImage = image;
+            document.documentElement.style.backgroundAttachment = 'fixed';
+          }, BACKDROPS.light);
+          await page.waitForTimeout(800);
+          const file = `windows-${width}-${position}-${panels === 'answer' ? 'answer' : 'both'}${chat ? '-chat' : ''}`;
+          await page.screenshot({ path: path.join(SHOT_DIR!, `${file}.png`) });
+          measured.push({
+            file,
+            ...(await page.evaluate(() => {
+              const rect = (selector: string) => {
+                const element = document.querySelector(selector);
+                if (!element) return null;
+                const r = element.getBoundingClientRect();
+                return {
+                  x: Math.round(r.x),
+                  y: Math.round(r.y),
+                  width: Math.round(r.width),
+                  height: Math.round(r.height),
+                };
+              };
+              return {
+                window: window.innerWidth,
+                bar1: rect('[role="toolbar"][aria-label="Overlay controls"]'),
+                barsColumn: rect('[data-bars-column]'),
+                chatBar: rect('[role="group"][aria-label="Chat"]'),
+                transcript: rect('[data-panel]:has(section[aria-label="Transcript panel"])'),
+                answer: rect('[data-answer-panel]'),
+              };
+            })),
+          });
+          await context.close();
+        }
+      }
+    }
+  }
+  writeFileSync(
+    path.join(SHOT_DIR!, 'measurements.json'),
+    `${JSON.stringify(measured, null, 2)}\n`,
+  );
+});
+
+test('ADR-0122: Chat on bar 1 opens the chat bar under it; it never takes the keyboard by itself; mirrored at the bottom', async () => {
+  const size: Width = { width: 640, height: 560, touch: false };
+  const watched = await openOverlayView(size, '&panels=answer&shell=1&position=top-center');
+  const { page } = watched;
+  const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
+  const chat = page.getByRole('group', { name: 'Chat' });
+  await expect(chat).toHaveCount(0);
+  // No Screenshot button anywhere (the screenshot shortcuts still work).
+  await expect(page.getByRole('button', { name: /screenshot/i })).toHaveCount(0);
+
+  // Chat opens the bar right under bar 1, above the transcript bar (bar 2).
+  await bar.getByRole('button', { name: 'Chat', exact: true }).click();
+  await expect(chat).toBeVisible();
+  await expect(chat.getByRole('textbox', { name: 'Type a question' })).toHaveAttribute(
+    'placeholder',
+    'Enter a message…',
+  );
+  await expect(chat.getByRole('button', { name: /screenshot/i })).toHaveCount(0);
+  const bar1Box = (await bar.boundingBox())!;
+  const chatBox = (await chat.boundingBox())!;
+  const bar2Box = (await page.getByRole('group', { name: 'Status bar' }).boundingBox())!;
+  expect(chatBox.y).toBeGreaterThan(bar1Box.y + bar1Box.height - 1);
+  expect(bar2Box.y).toBeGreaterThan(chatBox.y + chatBox.height - 1);
+  // As wide as bar 1.
+  expect(Math.abs(chatBox.width - bar1Box.width)).toBeLessThan(4);
+  // The box does not take the keyboard by itself.
+  expect(await page.evaluate(() => document.activeElement?.tagName ?? '')).not.toBe('INPUT');
+  await expect(chat.getByRole('button', { name: 'Send' })).toBeDisabled();
+
+  // Clicking into the box takes the keyboard; Enter sends the typed question and keeps the bar open.
+  const box = chat.getByRole('textbox', { name: 'Type a question' });
+  await box.click();
+  await box.fill('What does the Professional plan include?');
+  await box.press('Enter');
+  expect(await watched.log()).toContainEqual({
+    type: 'chat',
+    question: 'What does the Professional plan include?',
+  });
+  await expect(box).toHaveValue('');
+  await expect(chat).toBeVisible();
+  // Sending gives the keyboard back (the box lets go).
+  expect(await page.evaluate(() => document.activeElement?.tagName ?? '')).not.toBe('INPUT');
+
+  // × closes; Escape in the box closes too.
+  await chat.getByRole('button', { name: 'Close chat' }).click();
+  await expect(chat).toHaveCount(0);
+  await bar.getByRole('button', { name: 'Chat', exact: true }).click();
+  await chat.getByRole('textbox').click();
+  await chat.getByRole('textbox').press('Escape');
+  await expect(chat).toHaveCount(0);
+
+  // Ctrl+Alt+K during a call (the live page counts it) opens the bar without taking the keyboard.
+  await page.evaluate(() => (window as unknown as { kiteOpenChat: () => void }).kiteOpenChat());
+  await expect(chat).toBeVisible();
+  expect(await page.evaluate(() => document.activeElement?.tagName ?? '')).not.toBe('INPUT');
+
+  // On the bottom row it is mirrored: above bar 1, under the transcript bar.
+  await page.goto(overlayUrl('&panels=answer&shell=1&position=bottom-center'));
+  await bar.waitFor();
+  await bar.getByRole('button', { name: 'Chat', exact: true }).click();
+  const low1 = (await bar.boundingBox())!;
+  const lowChat = (await chat.boundingBox())!;
+  const low2 = (await page.getByRole('group', { name: 'Status bar' }).boundingBox())!;
+  expect(lowChat.y + lowChat.height).toBeLessThan(low1.y + 1);
+  expect(low2.y + low2.height).toBeLessThan(lowChat.y + 1);
+  await watched.context.close();
 });

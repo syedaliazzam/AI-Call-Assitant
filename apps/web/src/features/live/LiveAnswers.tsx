@@ -811,6 +811,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
       // ADR-0095: Voice mode, and its tip closed.
       else if (command.type === 'voice-mode') setVoiceMode.current(command.on);
       else if (command.type === 'voice-tip-seen') setVoiceTip(false);
+      // ADR-0122: Ctrl+Alt+K with the overlay focused opens its chat bar, as the global key does.
+      else if (command.type === 'open-chat') setAskKiteCount((count) => count + 1);
       else if (command.type === 'voice-cancel') cancelVoice.current();
       else if (command.type === 'prev') actions.current.prev();
       else if (command.type === 'next') actions.current.next();
@@ -909,10 +911,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
             // is a click, never the shortcut alone).
             overlayProps.current.recording?.prompt();
           } else if (action === 'ask-kite') {
-            // ADR-0082: the overlay has no message box any more, so while it is in use Ask AI opens in
-            // the dashboard, in the browser, and the call goes on here.
+            // ADR-0122: while the overlay is in use it opens the overlay's chat bar (it counts the presses), without
+            // taking the keyboard from the meeting. (ADR-0082 to ADR-0122 the overlay had no message box, and Ask
+            // AI opened in the dashboard.)
             if (overlayOpened.current) {
-              openDashboard('/ask-kite');
+              setAskKiteCount((count) => count + 1);
               return;
             }
             // Leaving this page would end the call, so during a call the shortcut opens the chat

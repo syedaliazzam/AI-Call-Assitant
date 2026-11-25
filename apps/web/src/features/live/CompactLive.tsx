@@ -217,8 +217,9 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
           on: !(stateRef.current?.clickThrough ?? false),
         });
       } else if (action === 'ask-kite') {
-        // ADR-0082: the overlay has no message box: Ask AI opens in its own window; the call goes on.
-        openDashboard('/ask-kite');
+        // ADR-0122: the overlay's chat bar opens (the live page counts it, as for the global key). ADR-0082 to
+        // ADR-0122 Ask AI opened in its own window here.
+        channel.current?.send({ type: 'open-chat' });
       } else if (action === 'record') {
         // Desktop 1.5.0 (ADR-0068): Ctrl+Alt+R with the overlay focused: the bars ask Start or Stop.
         channel.current?.send({ type: 'record-prompt' });

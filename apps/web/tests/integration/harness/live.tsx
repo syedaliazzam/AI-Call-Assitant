@@ -22,7 +22,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing);
  *               docs/design/kite-ui-theme.md §6
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CLAUDE_UNAVAILABLE_MESSAGES, type OverlayPreset } from '@kite/shared';
 import { createRoot } from 'react-dom/client';
 import { callNoticeFor } from '@/core/live/callNotice';
@@ -411,7 +411,13 @@ function CompactHarness({
   // ADR-0094: a model command is applied as the live page applies it (Smart only while allowed), so the
   // chip, the menu and the toast follow.
   const [model, setModel] = useState(state.model);
-  const shown = { ...state, ...(model ? { model } : {}) };
+  // ADR-0122: window.kiteOpenChat() stands for Ctrl+Alt+K during a call (the live page counts the presses).
+  const [askKiteCount, setAskKiteCount] = useState(0);
+  useEffect(() => {
+    (window as unknown as { kiteOpenChat: () => void }).kiteOpenChat = () =>
+      setAskKiteCount((count) => count + 1);
+  }, []);
+  const shown = { ...state, ...(model ? { model } : {}), askKiteCount };
   return (
     <CompactView
       state={clickThrough ? { ...shown, clickThrough: true } : shown}

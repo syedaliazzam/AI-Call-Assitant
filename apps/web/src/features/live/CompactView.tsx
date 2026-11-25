@@ -1,9 +1,10 @@
 /**
  * File: apps/web/src/features/live/CompactView.tsx
  * Purpose: The overlay (the compact live view; spec S13–S16, ADR-0029, ADR-0041): separate pieces rather
- *          than one window-sized panel. Bar 1 (status, Rec, Auto answer and Click-through toggles, move,
- *          compact, timer, ⋮ and Exit; ADR-0082: no Answer, Screenshot or Chat buttons and no chat bar, the
- *          shortcuts do those), then bar 2, the transcript bar (ADR-0118, like ParakeetAI: always there during
+ *          than one window-sized panel. Bar 1 (status, Rec, Chat, Auto answer and Click-through toggles, move,
+ *          compact, timer, ⋮ and Exit; ADR-0082: no Answer or Screenshot buttons, the shortcuts do those;
+ *          ADR-0122: Chat is back and opens the chat bar right under bar 1, overlay/ChatBar.tsx), then bar 2,
+ *          the transcript bar (ADR-0118, like ParakeetAI: always there during
  *          a call, always the live words as phrase chips, with the level, Clear and expand buttons;
  *          StatusBar.tsx), then the call's current warning in a slim line of its own (WarningLine.tsx; it
  *          shared bar 2's line from ADR-0082 to ADR-0118), then the panels: the full transcript opens under
@@ -113,6 +114,7 @@ import {
   type HeldHeight,
 } from './overlay/answerHeight';
 import { AnswerPreferencesSheet } from './overlay/AnswerPreferencesSheet';
+import { ChatBar } from './overlay/ChatBar';
 import { DisplaySheet } from './overlay/DisplaySheet';
 import { ControlBar, type DeviceList } from './overlay/ControlBar';
 import { DevicePicker } from './overlay/DevicePicker';
@@ -502,6 +504,20 @@ export function CompactView(props: CompactViewProps) {
       setCollapsed(false);
     }
   }
+  // ADR-0122: the chat bar under bar 1. Bar 1's Chat button opens and closes it; Ctrl+Alt+K during a call (the
+  // live page counts the presses in askKiteCount) opens it. It never takes the keyboard by itself. While
+  // rendering, as React advises for state that follows a changed value.
+  const [chatOpen, setChatOpen] = useState(false);
+  const chatPresses = state?.askKiteCount ?? 0;
+  const [seenChatPresses, setSeenChatPresses] = useState(chatPresses);
+  if (chatPresses !== seenChatPresses) {
+    setSeenChatPresses(chatPresses);
+    if (chatPresses > seenChatPresses) {
+      setChatOpen(true);
+      setIcon(false);
+      setCollapsed(false);
+    }
+  }
   const recordNotice = state?.recording?.notice ?? null;
   const [seenNotice, setSeenNotice] = useState(recordNotice);
   if (recordNotice !== seenNotice) {
@@ -611,7 +627,19 @@ export function CompactView(props: CompactViewProps) {
     setNeededHeight(
       Math.min(OVERLAY_MAX_POPUP_HEIGHT, Math.max(forPopup, forBars, forToast) * zoom),
     );
-  }, [popup, noPanels, zoom, zoomPass, collapsed, icon, scriptBar, up, toast, voiceTipShown]);
+  }, [
+    popup,
+    noPanels,
+    zoom,
+    zoomPass,
+    collapsed,
+    icon,
+    scriptBar,
+    up,
+    toast,
+    voiceTipShown,
+    chatOpen,
+  ]);
 
   // Desktop 1.5.0 (ADR-0068): the Rec popover sits under its pill.
   useLayoutEffect(() => {
@@ -693,6 +721,7 @@ export function CompactView(props: CompactViewProps) {
     icon,
     scriptBar,
     panelsWidth,
+    chatOpen,
   ]);
 
   // ADR-0113: the share of the bars' width the answer panel's button strip needs, measured after every
@@ -839,7 +868,10 @@ export function CompactView(props: CompactViewProps) {
       if (!target?.closest(RELEASING)) return;
       const inPanel = target.closest('[data-panel]') !== null;
       const inBars = target.closest(`[${BARS_ATTRIBUTE}]`) !== null;
-      if (!inPanel && !(inBars && releaseAfterBars.current)) return;
+      // ADR-0122: Chat on bar 1 and the chat bar's Send and × always give the keyboard back to the meeting:
+      // only a click into the chat bar's box keeps it.
+      const releases = target.closest('[data-releases-focus]') !== null;
+      if (!inPanel && !releases && !(inBars && releaseAfterBars.current)) return;
       if (target.closest('[data-keeps-focus]')) return;
       // After React has applied the click: a box it opened has the focus by then.
       setTimeout(() => {
@@ -1024,6 +1056,12 @@ export function CompactView(props: CompactViewProps) {
                 : {})}
               // ADR-0095: the Voice toggle (hands-free talking to the assistant), where the live page says it.
               onVoice={(on: boolean) => onCommand({ type: 'voice-mode', on })}
+              // ADR-0122: Chat opens or closes the chat bar under bar 1.
+              onChat={() => {
+                setPopup(null);
+                setChatOpen((open) => !open);
+              }}
+              chatOpen={chatOpen}
             />
           </div>
           {popup === 'menu' && (
@@ -1174,6 +1212,19 @@ export function CompactView(props: CompactViewProps) {
             />
           )}
         </div>
+
+        {/* ADR-0122: the chat bar, right under bar 1 (above it on the bottom row: the column is mirrored). One
+            of the bars, so it takes clicks in Click-through mode; exactly bar 1's width. */}
+        {chatOpen && !collapsed && !state?.ended && (
+          <div className={`${piece} shrink-0 ${UNDER_BAR}`} {...{ [BARS_ATTRIBUTE]: '' }}>
+            <ChatBar
+              onCommand={onCommand}
+              onClose={() => setChatOpen(false)}
+              onReleaseFocus={releaseFocus}
+              disabled={!state}
+            />
+          </div>
+        )}
 
         {/* ADR-0082: no warning bars of their own (the call notices, the Answer key held elsewhere, a screen
           recording with Private off); ADR-0118: the current one is the slim line, which still shows collapsed

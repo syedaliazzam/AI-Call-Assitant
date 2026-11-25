@@ -435,7 +435,8 @@ export function hotkeyRows(mac: boolean): readonly HotkeyRow[] {
       shells: 'classic',
     },
     {
-      label: 'Open Ask AI',
+      // ADR-0122: during a call with the overlay open, the same key opens the overlay's chat bar.
+      label: 'Open Ask AI (during a call: the chat bar under the bars)',
       accelerator: ASK_KITE_HOTKEY,
       scope: 'global',
       actions: ['ask-kite'],
