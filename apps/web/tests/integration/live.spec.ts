@@ -421,13 +421,19 @@ test('the Connect card: audio source, microphone, tips, and how to connect', asy
       'href',
       '/',
     );
-    // ADR-0109: "Need it for macOS?" opens the Mac install steps (until the Mac release: a "Coming soon"
-    // tooltip).
+    // ADR-0109: "Need it for macOS?" opens the Mac install steps. ADR-0125: only once the Mac app is
+    // published; before that (the server says so) the dialog says "Mac version coming soon" and offers no
+    // install command or .dmg (the published case: tests/unit/features/shell/MacInstall.test.tsx).
     await shot(watched, size, 'connect');
+    await page.route('**/api/mac-release', (route) =>
+      route.fulfill({ json: { published: false } }),
+    );
     await page.getByRole('button', { name: 'Need it for macOS?' }).click();
     const macDialog = page.getByRole('dialog', { name: 'Get Paramount AI for Mac' });
     await expect(macDialog).toBeVisible();
-    await expect(macDialog).toContainText('install-mac.sh');
+    await expect(macDialog).toContainText('Mac version coming soon');
+    await expect(macDialog).not.toContainText('install-mac.sh');
+    await expect(macDialog).not.toContainText('.dmg');
     await page.keyboard.press('Escape');
     await expect(macDialog).toHaveCount(0);
     // Each way of calling opens a short how-to for this platform.

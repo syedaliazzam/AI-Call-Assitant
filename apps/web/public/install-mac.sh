@@ -11,11 +11,12 @@
 #            5. quits a running Paramount AI, puts the new app in /Applications (or in ~/Applications if
 #               you cannot write to /Applications; it never asks for an administrator password), removes
 #               the "downloaded from the internet" mark, and opens it.
-#          If any check fails, nothing is installed.
+#          If any check fails, nothing is installed. ADR-0125: before the Mac app is published (no
+#          latest-mac.yml in mac-latest) it says "Mac version coming soon" and installs nothing.
 # Used by: Mac users (the "Get Paramount AI for Mac" box in the web app); the stage-6 test
 #          (docs/testing/mac-release-test.md), with PARAMOUNT_AI_FEED pointing at a feed on the Mac itself
 # Depends on: macOS's own tools only (curl, openssl, ditto, codesign, shasum, PlistBuddy, xattr, open)
-# Architecture: docs/decisions/ADR-0109-macos-internal-release.md §4
+# Architecture: docs/decisions/ADR-0109-macos-internal-release.md §4; ADR-0125
 #
 # Everything is inside main(), called on the last line, so a download cut short runs nothing.
 
@@ -62,9 +63,15 @@ main() {
   trap "rm -rf '$work'" EXIT
 
   say "Checking the current Paramount AI for Mac…"
-  curl -fsSL --retry 3 --proto "$protocols" --proto-redir "$protocols" \
-    "$feed/latest-mac.yml" -o "$work/latest-mac.yml" ||
+  # ADR-0125: the HTTP status is kept, because a 404 is not a network problem: it means no Mac release has
+  # been published yet (the mac-latest release or its latest-mac.yml is missing), so say that plainly.
+  local status
+  status="$(curl -sSL --retry 3 --proto "$protocols" --proto-redir "$protocols" \
+    -o "$work/latest-mac.yml" -w '%{http_code}' "$feed/latest-mac.yml")" ||
     stop "could not reach the download. Check the internet connection and try again."
+  [ "$status" != "404" ] ||
+    stop "Mac version coming soon: Paramount AI for Mac has not been published yet. Use Paramount AI in Chrome on your Mac meanwhile."
+  [ "$status" = "200" ] || stop "could not reach the download (HTTP $status). Try again later."
 
   # Top-level fields of latest-mac.yml (electron-builder writes "key: value" lines).
   field() { sed -n "s/^$1: *//p" "$work/latest-mac.yml" | head -1 | tr -d "'\"\r"; }

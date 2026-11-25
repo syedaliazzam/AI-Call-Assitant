@@ -3,13 +3,15 @@
  * Purpose: How to get Paramount AI on a Mac (ADR-0109 §4): the one-line Terminal installer with a Copy
  *          button and a link to read the script, what it checks, and the .dmg fallback with the one-time
  *          "Open Anyway" steps. Shown in a dialog from every download place ("Need it for macOS?", "Get it
- *          for Mac"). Inside the desktop app on a Mac (already installed) the link is not shown.
+ *          for Mac"). Inside the desktop app on a Mac (already installed) the link is not shown. ADR-0125: the
+ *          command and the .dmg link show only once the Mac app is published (the mac-latest release has its
+ *          latest-mac.yml); until then the dialog says "Mac version coming soon" and offers no install.
  * Used by: src/features/shell/DesktopAppCard.tsx, src/features/auth/DesktopAppLink.tsx,
  *          src/features/handoff/DesktopHandoffPage.tsx, src/features/live/ConnectPanel.tsx,
  *          src/features/home/LauncherConnect.tsx
  * Depends on: src/features/session-setup/labels.ts (the command and addresses), src/platform (isDesktop),
- *             src/ui (Button, Dialog, useIsMac), browser Clipboard API
- * Architecture: docs/decisions/ADR-0109-macos-internal-release.md §4
+ *             src/ui (Button, Dialog, useIsMac, useMacRelease), browser Clipboard API
+ * Architecture: docs/decisions/ADR-0109-macos-internal-release.md §4; ADR-0125
  */
 'use client';
 
@@ -23,6 +25,7 @@ import { isDesktop } from '@/platform';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
 import { useIsMac } from '@/ui/useIsMac';
+import { useMacRelease } from '@/ui/useMacRelease';
 
 /** The dialog's title. */
 export const MAC_INSTALL_TITLE = 'Get Paramount AI for Mac';
@@ -38,14 +41,63 @@ const LINK_CLASSES =
  */
 const subscribeNever = () => () => undefined;
 
+/** ADR-0125: what the dialog says while no Mac release is published. */
+export const MAC_COMING_SOON = 'Mac version coming soon';
+
 /**
- * The install steps: the Terminal command first, then the .dmg fallback.
+ * ADR-0125: the dialog's body while the Mac app is not published (or the server has not said yet): no
+ * command and no .dmg link, so nobody is offered an install that cannot work. It turns into the install steps
+ * by itself once the mac-latest release is published.
  *
- * @returns The steps.
+ * @param props.checking True while the server has not answered yet.
+ * @returns The notice.
+ * Rendered by: MacInstallSteps
+ */
+function MacComingSoon({
+  checking,
+}: {
+  /** True while the server has not answered yet. */
+  checking: boolean;
+}) {
+  if (checking) {
+    return (
+      <p role="status" className="text-[14px] text-ui-muted">
+        Checking for the Mac version…
+      </p>
+    );
+  }
+  return (
+    <section
+      aria-label={MAC_COMING_SOON}
+      data-mac-release="coming-soon"
+      className="flex flex-col gap-2 text-[14px] text-ui-text"
+    >
+      <p className="font-medium text-ui-heading">{MAC_COMING_SOON}</p>
+      <p>
+        Paramount AI for Mac is not released yet. Until then, use Paramount AI in{' '}
+        <strong>Chrome</strong> or <strong>Edge</strong> on your Mac: open it in a tab and share the
+        meeting tab with its audio when you connect.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * The install steps: the Terminal command first, then the .dmg fallback. ADR-0125: only when the Mac app is
+ * published; otherwise "Mac version coming soon".
+ *
+ * @param props.published Whether the Mac app is published (useMacRelease()); null while not known yet.
+ * @returns The steps, or the notice.
  * Rendered by: MacInstallDialog
  */
-export function MacInstallSteps() {
+export function MacInstallSteps({
+  published,
+}: {
+  /** Whether the Mac app is published; null while the server has not said. */
+  published: boolean | null;
+}) {
   const [copied, setCopied] = useState(false);
+  if (published !== true) return <MacComingSoon checking={published === null} />;
 
   /** Copies the command and briefly says so. */
   async function copy() {
@@ -148,9 +200,11 @@ export interface MacInstallDialogProps {
  * Rendered by: MacInstallLink, DesktopHandoffPage.tsx, DesktopAppCard.tsx, DesktopAppLink.tsx
  */
 export function MacInstallDialog({ open, onClose }: MacInstallDialogProps) {
+  // ADR-0125: asked when the dialog opens (once per page).
+  const published = useMacRelease(open);
   return (
     <Dialog open={open} onClose={onClose} title={MAC_INSTALL_TITLE} size="lg">
-      <MacInstallSteps />
+      <MacInstallSteps published={published} />
     </Dialog>
   );
 }

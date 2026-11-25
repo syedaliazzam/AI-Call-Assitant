@@ -50,6 +50,14 @@ describe('proxy', () => {
     expect(proxy(request('/download')).status).toBe(307);
   });
 
+  it('ADR-0125: lets signed-out visitors ask whether the Mac app is published (the sign-in page asks)', () => {
+    const out = proxy(request('/api/mac-release'));
+    expect(out.status).toBe(200);
+    expect(out.headers.get('x-middleware-next')).toBe('1');
+    // Only that address: other API routes still answer 401.
+    expect(proxy(request('/api/mac-release/other')).status).toBe(401);
+  });
+
   it('answers 401 for other signed-out API routes, and lets signed-in requests through', async () => {
     const out = proxy(request('/api/google/status'));
     expect(out.status).toBe(401);
