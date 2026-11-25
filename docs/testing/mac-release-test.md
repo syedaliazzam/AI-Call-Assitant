@@ -6,7 +6,7 @@
 
 > **Tonight (26 Nov 2026): the test runs against PRODUCTION, with two overlay fixes. Build 1.7.98 and 1.7.99 again.**
 > - **Production runs `main` @ `3b05780`** (https://kite-call-assistant-gbm7l3b1a-paramount-intelligence.vercel.app, aliased to `call.paramountintelligence.co`): everything from 25 Nov below, plus **Fix 1** (ADR-0055 amended 26 Nov 2026): with Click-through on, the **whole** overlay passes every click to the app behind, the bars too; only **⌘ ⌥ X** turns it off (bar 1 says so).
-> - **The commit to build from: `3b05780`** (on `mac-internal-release`, fast-forwarded to `main`). In step 1.3, `git log --oneline -2` shows a docs commit (this file and the runbook) first, then `3b05780`; both have the same code. Check that the build has **Fix 2** (ADR-0126, commit `0f96afe`: the overlay is plainly see-through on a Mac, no frosted material): `git merge-base --is-ancestor 0f96afe HEAD && echo HAS-FIX-2` must print **HAS-FIX-2**.
+> - **The commit to build from: `3b05780`** (on `mac-internal-release`, fast-forwarded to `main`). In step 1.3, `git log --oneline | grep 3b05780` must print that commit (docs-only commits sit on top of it: this file and the runbook; the code is the same). Check that the build has **Fix 2** (ADR-0126, commit `0f96afe`: the overlay is plainly see-through on a Mac, no frosted material): `git merge-base --is-ancestor 0f96afe HEAD && echo HAS-FIX-2` must print **HAS-FIX-2**.
 > - **Builds made yesterday (from `6205ad3` or `4b980c0`) are out of date:** they have the frosted overlay and no "Turn click-through off" in the menu bar icon. Delete them (`rm -rf ~/paramount-test`) and do section 2 again from `3b05780`.
 > - **New checks:** section **5d** (click-through and see-through). Sections 5b and 5c stay as they are.
 >
@@ -59,7 +59,7 @@ Write down each step's result: ✅ or ❌, plus a short note for every ❌ (what
    git log --oneline -2
    ```
 
-   The two lines must start with the commits the developer named (tonight, 26 Nov: the docs commit, then `3b05780`). Then run `git merge-base --is-ancestor 0f96afe HEAD && echo HAS-FIX-2`: it must print **HAS-FIX-2**. If you cloned before, `git pull` on `mac-internal-release` is enough: it moves forward with no merge.
+   The two lines must start with the commits the developer named (tonight, 26 Nov: docs-only commits on top of `3b05780`; `git log --oneline | grep 3b05780` must print it). Then run `git merge-base --is-ancestor 0f96afe HEAD && echo HAS-FIX-2`: it must print **HAS-FIX-2**. If you cloned before, `git pull` on `mac-internal-release` is enough: it moves forward with no merge.
 
 4. Check it is ready:
    - `ls apps/desktop/build/mac-signing/` lists **certificate.pem**;
