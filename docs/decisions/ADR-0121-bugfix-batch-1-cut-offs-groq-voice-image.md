@@ -92,3 +92,9 @@ Both failures were stale tests, not pipeline bugs or timing:
   - a forced notes cut-off at 300 tokens kept 4 summary bullets, 2 questions and 2 next steps;
   - the long Java screenshot completed at 4,000 (2/2) and was cut off at 1,500 (2/2), with first-text times unchanged.
 - **For the developer on the preview:** the check list in the batch summary (a long coding screenshot ends with no cut-off line; Groq is in no list; an old Groq session shows Claude Haiku; Ctrl+Alt+Enter with a question spoken in two parts shows one answer).
+
+## Addendum (25 Nov 2026, evening): folded into the Mac release
+
+- `mac-internal-release` was fast-forwarded to this batch (`db52329`); nothing under `apps/desktop` changed, so the Mac test builds (1.7.98 / 1.7.99) are the same app.
+- `tests/integration/answers.spec.ts` ("the compact view shows the live answer") still used bar 1's Transcript switch, which ADR-0118 removed on purpose. It now checks the same things through bar 2: the panel is open on a fresh profile's first call, under bar 2, with the live words kept; the green level button closes it, the expand button (⤢) opens it, and Ctrl+Alt+T (bars focused) closes and opens it.
+- `tests/integration/screenshot.spec.ts` (the shared-tab frame) is flaky in headless Chromium, failing about 3 runs in 5, and also on `6205ad3`. Measured: the share always starts. The test stops inside `captureScreenshot()` → `startFrameSource().grab()` (`src/platform/media.ts`), which waits for `video.play()` and `canvas.convertToBlob()` with no time limit; only the first-frame wait has one (5 s). Bringing the harness page or the shared tab to the front did not help (2 of 5 and 3 of 6 passed), so it is not test timing. Left as it is. The product fix, giving the whole frame grab a time limit so a share that sends no frame ends in "could not take a screenshot" instead of waiting, is a separate change.

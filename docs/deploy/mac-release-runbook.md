@@ -8,8 +8,8 @@
 
 **Rules:** do the steps in order. Stop at the first ❌ and use the rollback section. No secret is ever printed or pasted.
 
-**Decisions** (ADR-0109, ADR-0118, ADR-0119, ADR-0120, ADR-0110 amendment):
-- **No eval.** No answer prompt or answer code changed.
+**Decisions** (ADR-0109, ADR-0118, ADR-0119, ADR-0120, ADR-0110 amendment; ADR-0121 bug-fix batch 1, folded in on 25 Nov 2026):
+- **No prompt text changed, so no full eval.** The Mac work changed no answer prompt or answer code. Batch 1 (ADR-0121) changed no prompt text; it changed the notes' reading of a cut-off reply (`eval:notes` 9.78 before and after) and the screenshot answers' output limit (1,500 → 4,000 tokens; measured complete on a long coding problem). The eval groups that limit touches, `--only=screen-only` and `--only=screenshot-types`, have not been run: running them before (b) is the developer's choice (get the request count with `--dry-run` first).
 - **No Windows desktop release.** Every desktop change is Mac-only, and the web changes reach Windows by the web deploy.
 
 ---
@@ -105,7 +105,7 @@
    cd "D:\Paramount Intelligence\AI Call Assistant\AI-Call-Assitant-hidden-line"
    git status --short
    git pull --ff-only
-   git merge --no-ff origin/mac-internal-release -m "Merge branch 'mac-internal-release' into main: Paramount AI for Mac 1.8.0 (ADR-0109 to ADR-0111, ADR-0118 to ADR-0120)"
+   git merge --no-ff origin/mac-internal-release -m "Merge branch 'mac-internal-release' into main: Paramount AI for Mac 1.8.0 (ADR-0109 to ADR-0111, ADR-0118 to ADR-0121)"
    ```
 
    `git status --short` must print nothing before the merge.
@@ -118,7 +118,7 @@
    pnpm --filter @kite/web test:launcher
    ```
 
-   Known, not from this release: two `sim-calls` tests ("coding round", "voice question 1.5 s") also fail on `main` @ `4aba5b5`. Leave them for the answer-pipeline work.
+   Also run `pnpm --filter @kite/web test:sim-calls`, `test:answers` and `test:review`: all pass since ADR-0121 (the two `sim-calls` tests that failed on `main` @ `4aba5b5` were brought up to date, and so was the answers test that still used bar 1's removed Transcript switch). Known, not from this release: `test:screenshot`'s shared-tab frame test fails about 3 runs in 5 in headless Chromium (the tab sometimes sends no frame and the frame source waits without a limit; ADR-0121 report). A ❌ there alone does not stop the release.
 3. **Production build check.** Copy `.env.local` in for the build only, then delete it:
 
    ```
@@ -160,7 +160,8 @@
    - bar 2 shows the chips;
    - ⤢ opens the transcript under it;
    - transcript and answer sit side by side at your usual size;
-   - Private off shows "Private is off: the overlay shows in screen shares · Turn on".
+   - Private off shows "Private is off: the overlay shows in screen shares · Turn on";
+   - (ADR-0121) the model chip and ⋮ › Model list no Groq; Ctrl+Shift+Enter on a long coding problem gives the whole code with no "Answer cut off" line; Ctrl+Alt+Enter with a question spoken in two parts gives one answer; a call's notes are written as before.
 
 ## (c) Install on the Mac from the live site, and check hand-off and sync
 

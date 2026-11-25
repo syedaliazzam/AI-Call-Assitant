@@ -4,6 +4,14 @@
 
 **Who:** the teammate with the build Mac. **Time:** about 2 hours, mostly waiting for builds.
 
+> **Tonight (25 Nov 2026 evening): bug-fix batch 1 is folded in.**
+> - **The commit to pull:** `mac-internal-release` now ends with a docs commit (this file and the release runbook) on top of **`db52329`** (bug-fix batch 1, ADR-0121, and the answers-test update). In step 1.3, `git log --oneline -2` must show that docs commit first and `db52329` second. The developer also sends both.
+> - **The test address:** in **Tonight's test address** below. That preview was deployed from `db52329`; the docs commit on top changes documents only.
+> - **Builds 1.7.98 / 1.7.99 are unaffected.** Batch 1 is web-only: nothing under `apps/desktop` changed since `6205ad3` (last desktop change: the ADR-0120 fixes and the jump-key smoke test). If you already built 1.7.98 and 1.7.99 from `6205ad3`, keep them and skip section 2. If not, build them from the new commit; they are the same app.
+> - **New checks:** section **5b** (screenshot code answers complete, no Groq, one answer for screenshot + voice, notes as before).
+>
+> **Tonight's test address:** `https://kite-call-assistant-e17lnh4eo-paramount-intelligence.vercel.app`
+
 Write down each step's result: ✅ or ❌, plus a short note for every ❌ (what you saw).
 
 **You need:**
@@ -49,10 +57,10 @@ The app then shows the test web app (sign in once there). Opened any other way, 
    cd AI-Call-Assitant
    git checkout mac-internal-release
    git pull
-   git log --oneline -1
+   git log --oneline -2
    ```
 
-   The last line must start with the commit the developer named.
+   The two lines must start with the commits the developer named (tonight: the docs commit, then `db52329`). If you cloned before, `git pull` on `mac-internal-release` is enough: it moves forward with no merge.
 
 4. Check it is ready:
    - `ls apps/desktop/build/mac-signing/` lists **certificate.pem**;
@@ -220,6 +228,22 @@ Make a session (any type, invented details). Put on headphones. Open a YouTube i
 | 5.22 | Drive player, **.mkv**: resolutions offered at 0 / 10 / 30 min; processing message? | |
 | 5.23 | Drive player, **.mp4** (Save as… MP4): resolutions at 0 / 10 / 30 min; processing message?; sound plays? | |
 | 5.24 | The .mkv downloaded from Drive is sharp when played locally | |
+
+## 5b. Bug-fix batch 1 (ADR-0121, 15 min)
+
+A new call in the desktop app, opened for the test as above. Keep headphones on and the video ready.
+
+1. **A long coding answer is complete.** In Chrome, open a page that shows a long coding problem (any practice site's "hard" problem, or a page with a long problem statement). In the session's preferences, pick a coding language such as **Java** if the session has one. Connect, click the Chrome window, then press **⌘ ⇧ ↵**. **Expected:** the answer has the approach, the steps, the **whole** code block (it ends; Copy code works), the complexity and a "Say" line, and **no** line *"Answer cut off: it reached its length limit…"* under it.
+2. **No Groq anywhere.** During the call, click the model chip on bar 1 (and **⋮ › Model**). **Expected:** GPT-5.6 Luna, GPT-5.6 Terra, Claude Haiku (Recommended), Claude Sonnet, and **no Groq**. After the call: **Settings** (answer defaults) and a session's **AI preferences** list no Groq either.
+3. **Screenshot + voice gives one answer.** Click the Chrome window, press **⌘ ⌥ ↵**, then ask a question in two parts with a short pause in the middle, for example *"What does this page…"*, wait about half a second, *"…ask me to do?"*. **Expected:** **one** answer card, about the page, for the whole question (not one for "What does this page" and another for the rest).
+4. **Notes look as before.** End the call. **Expected:** the notes are written as usual (summary, questions, next steps) and show **no** line *"These notes stop early…"*.
+
+| # | Check | Result |
+|---|---|---|
+| 5b.1 | Long coding screenshot: whole code block, no "Answer cut off" line | |
+| 5b.2 | No Groq in the model chip, ⋮ › Model, Settings or AI preferences | |
+| 5b.3 | ⌘⌥↵ with a two-part spoken question: one answer card | |
+| 5b.4 | Notes written as before, no "stop early" line | |
 
 ## 6. The update keeps the permissions (20 min)
 
