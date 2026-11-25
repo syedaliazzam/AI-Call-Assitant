@@ -14,6 +14,7 @@
  * Architecture: ADR-0072, ADR-0080; architecture §5 (Session review)
  */
 import type { CallNotes } from '@kite/shared';
+import { NOTES_CUT_OFF_TEXT } from '../notes/cutOff';
 import { conversationItems, transcriptPdf } from '../review/conversation';
 import type { CallView } from '../review/calls';
 import { formatCallTime } from '../review/load';
@@ -122,6 +123,8 @@ export function notesParagraphs(title: string, notes: CallNotes, them?: string):
       text: `- ${formatCallTime(part.from)}–${formatCallTime(part.to)}: ${part.reason}`,
     })),
   );
+  // ADR-0121: notes whose reply reached its length limit say so at the end.
+  if (notes.cutOff) lines.push({ text: '' }, { text: NOTES_CUT_OFF_TEXT });
   return lines;
 }
 

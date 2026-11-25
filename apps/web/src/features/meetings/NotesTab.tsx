@@ -21,6 +21,7 @@
 import { useState, type ReactNode } from 'react';
 import { notesFailureText } from '@/core/answer/unavailable';
 import { notesUnavailableOf } from '@/core/live/afterCall';
+import { NOTES_CUT_OFF_TEXT } from '@/core/notes/cutOff';
 import { regenerateCallNotes } from '@/core/notes/regenerate';
 import type { CallView } from '@/core/review/calls';
 import { formatCallTime, loadReview } from '@/core/review/load';
@@ -140,6 +141,16 @@ export function NotesTab({ session, call, onChanged }: NotesTabProps) {
             <p className="text-[12px] text-ui-muted">
               Written {DATE_TIME.format(call.notes.createdAt)}
               {call.notes.fromAnswersOnly ? ' · from answers only' : ''}
+            </p>
+          )}
+          {/* ADR-0121: the reply reached its length limit; what is shown is complete up to there. */}
+          {call.notes?.notes.cutOff && (
+            <p
+              role="note"
+              aria-label="Notes stop early"
+              className="mt-1 text-[12px] text-ui-warning"
+            >
+              {NOTES_CUT_OFF_TEXT}
             </p>
           )}
         </div>

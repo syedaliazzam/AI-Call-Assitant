@@ -592,6 +592,8 @@ export interface AnswerTimings {
  * - `daily_limit`: this user has used today's Claude requests (v1.0.2, ADR-0036); HTTP 429, with
  *   dailyLimitMessage() shown as it is. Nothing was sent to Claude.
  * - `internal`: any other server failure.
+ * - `cut_off`: ADR-0121: a non-streamed reply (the call notes) reached its output-token limit before
+ *   anything usable was complete. The same request would stop the same way, so it is not retried.
  */
 export type AnswerErrorCode =
   | 'unauthorized'
@@ -602,7 +604,8 @@ export type AnswerErrorCode =
   | 'refused'
   | 'claude_unavailable'
   | 'daily_limit'
-  | 'internal';
+  | 'internal'
+  | 'cut_off';
 
 /**
  * The friendly message sent with `daily_limit` (ADR-0036), shown as it is wherever answers,

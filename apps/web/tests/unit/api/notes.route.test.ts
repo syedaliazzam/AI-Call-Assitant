@@ -9,6 +9,9 @@
  * capped (6 summary bullets, 3 lessons); a Claude failure is 502 with a safe message (503
  * claude_unavailable with the fixed message for the usage limit); logs hold
  * sizes, counts, times and token counts, never transcript, answer, note or notes text.
+ * ADR-0121: the notes ask for 8,000 tokens; a reply cut off at the limit keeps its complete items with
+ * cutOff true and the stop reason logged; a cut before the first summary bullet is 502 cut_off (with the
+ * output token count logged); a refusal is 502 refused.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import {
@@ -263,6 +266,69 @@ describe('POST /api/notes', () => {
     expect(logged).toContain('"lines":2');
     expect(logged).toContain('"lessons":3');
     expect(logged).not.toContain('SECRET');
+  });
+
+  it('ADR-0121: asks for 8,000 tokens; a cut-off reply keeps its complete items, marked cutOff, and logs the stop reason', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    // Cut in the third question: the summary and two whole questions are complete.
+    const whole = JSON.stringify(JSON.parse(modelReply().content[0]!.text));
+    const cutAt = whole.indexOf('Follow-up?');
+    createMock.mockResolvedValue({
+      content: [{ type: 'text', text: whole.slice(0, cutAt) }],
+      usage: { input_tokens: 2_000, output_tokens: 8_000, cache_read_input_tokens: 0 },
+      stop_reason: 'max_tokens',
+    });
+    const response = await POST(post(JSON.stringify(BODY)));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as NotesResponse;
+    expect(createMock.mock.calls[0]![0].max_tokens).toBe(8_000);
+    expect(body.notes.cutOff).toBe(true);
+    expect(body.notes.summary).toHaveLength(6);
+    expect(body.notes.questions).toHaveLength(3);
+    // The sections after the cut were not reached: empty, not missing.
+    expect(body.notes.nextSteps).toEqual([]);
+    expect(body.notes.unclear).toEqual([]);
+    expect(body.notes.lessons).toEqual([]);
+    const logged = JSON.stringify(vi.mocked(console.info).mock.calls);
+    expect(logged).toContain('"stopReason":"max_tokens"');
+    expect(logged).toContain('"cutOff":true');
+    expect(logged).not.toContain('SECRET');
+  });
+
+  it('ADR-0121: a whole reply has no cutOff flag and logs end_turn', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    createMock.mockResolvedValue({ ...modelReply(), stop_reason: 'end_turn' });
+    const body = (await (await POST(post(JSON.stringify(BODY)))).json()) as NotesResponse;
+    expect(body.notes.cutOff).toBeUndefined();
+    expect(JSON.stringify(vi.mocked(console.info).mock.calls)).toContain('"stopReason":"end_turn"');
+  });
+
+  it('ADR-0121: a reply cut before its first summary bullet is 502 cut_off, logged with its token count', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    createMock.mockResolvedValue({
+      content: [{ type: 'text', text: '{"summary":["SECRET-S1 half' }],
+      usage: { input_tokens: 2_000, output_tokens: 8_000, cache_read_input_tokens: 0 },
+      stop_reason: 'max_tokens',
+    });
+    const response = await POST(post(JSON.stringify(BODY)));
+    expect(response.status).toBe(502);
+    expect(((await response.json()) as { code: string }).code).toBe('cut_off');
+    const logged = JSON.stringify(vi.mocked(console.error).mock.calls);
+    expect(logged).toContain('"code":"cut_off"');
+    expect(logged).toContain('"outputTokens":8000');
+    expect(logged).not.toContain('SECRET');
+  });
+
+  it('ADR-0121: a refusal is 502 refused', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    createMock.mockResolvedValue({
+      content: [],
+      usage: { input_tokens: 2_000, output_tokens: 0, cache_read_input_tokens: 0 },
+      stop_reason: 'refusal',
+    });
+    const response = await POST(post(JSON.stringify(BODY)));
+    expect(response.status).toBe(502);
+    expect(((await response.json()) as { code: string }).code).toBe('refused');
   });
 });
 

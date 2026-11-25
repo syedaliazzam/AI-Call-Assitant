@@ -16,7 +16,7 @@ import { dailyLimitMessage } from '@kite/shared';
 import type { AnswerErrorCode, NotesResponse } from '@kite/shared';
 import { getCachedSession } from '@/server/auth';
 import { countRequest } from '@/server/usage';
-import { describeClaudeError, errorLogDetails } from '@/server/claude';
+import { describeClaudeError, errorLogDetails, ReplyCutOffError } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { generateCallNotes } from '@/server/notes';
 import { companySettings } from '@/server/aiInstructions';
@@ -46,7 +46,8 @@ function jsonError(status: number, code: AnswerErrorCode, message: string): Resp
  * Handles POST /api/notes.
  *
  * @param request The incoming request; body is a NotesRequest (JSON).
- * @returns 401 (not signed in), 429 (daily limit), 400 (bad body), 500 (not configured), 502/504 (Claude failed),
+ * @returns 401 (not signed in), 429 (daily limit), 400 (bad body), 500 (not configured), 502/504 (Claude failed;
+ *          ADR-0121: 502 'cut_off' or 'refused' for a reply that would fail the same way again),
  *          503 (Claude unavailable: usage limit or overload),
  *          or 200 with a NotesResponse; each with any Set-Cookie from the session check.
  */
@@ -126,7 +127,11 @@ async function respond(
     // ADR-0089: the notes global prompt of the version the call started with (ADR-0083 pin), or, with
     // no pin, the one in force.
     const company = await companySettings('notes', parsed.data.instructionsVersion);
-    const { notes, usage } = await generateCallNotes(parsed.data, model, company.globalPrompt);
+    const { notes, usage, stopReason } = await generateCallNotes(
+      parsed.data,
+      model,
+      company.globalPrompt,
+    );
     const ms = Math.round(performance.now() - startedAt);
     console.info('notes: done', {
       requestId,
@@ -135,6 +140,9 @@ async function respond(
       ...sizes,
       ms,
       usage,
+      // ADR-0121: why the reply stopped, and whether the notes stop early (flags only, never text).
+      stopReason,
+      cutOff: notes.cutOff === true,
       counts: {
         summary: notes.summary.length,
         questions: notes.questions.length,
@@ -153,6 +161,8 @@ async function respond(
       ...sizes,
       code: described.code,
       ...errorLogDetails(error),
+      // ADR-0121: a reply cut off before anything usable: how many tokens it used (a count only).
+      ...(error instanceof ReplyCutOffError ? { outputTokens: error.outputTokens } : {}),
       ms: Math.round(performance.now() - startedAt),
     });
     // 503 when Claude is unavailable for everyone (usage limit or overload): the browser shows
