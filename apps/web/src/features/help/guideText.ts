@@ -79,7 +79,7 @@ During a call the desktop app is a set of slim bars over your screen, with panel
 - **Auto answer** turns on or off answering finished questions by itself.
 - **Model** (the chip next to Auto, or **⋮ → Model**): **GPT-5.6 Luna** (fast), **GPT-5.6 Terra**, **Claude Haiku** (the default) or **Claude Sonnet** (more thorough and slower). It applies from the next answer. The GPT models answer screenshots themselves. If a GPT model has a problem or doesn't start an answer within 4 seconds, Claude Haiku answers it instead. An admin can turn Sonnet or the GPT models off. Accounts in the Gemini trial also see **Gemini 3.5 Flash Lite** (it answers screenshots too, and falls back to Claude Haiku the same way).
 - **Chat** (**Ctrl+Alt+K**): opens a bar under bar 1 to type a private question: **Enter a message…**, **Send** (Enter) and **×**. It does not take the keyboard from the meeting until you click into the box, and after **Send** the keyboard goes back to the meeting. The answer card says **Your question:**.
-- **Click-through** (**Ctrl+Alt+X**): when it is lit, clicks and typing outside the bars go to the app behind; see **Click-through**.
+- **Click-through** (**W**, **Ctrl+Alt+X**): while it is on, every click and key on the whole overlay goes to the app behind; see **Click-through**.
 - **Compact** shrinks everything to a small square with moving level bars. Drag it to move it; click it to bring the bars back. The shortcuts keep working, and an answer starting brings the bars back by itself.
 - The **timer**, **⋮**, and **Exit**, which ends the call and closes the bars at once.
 
@@ -136,7 +136,7 @@ During a call the browser view fills the whole window; the sidebar comes back wh
 
 ### Click-through
 
-**Click-through** (the **Click-through** switch on bar 1, **⋮**, or **Ctrl+Alt+X**) lets you work in the app behind the overlay with the panels open: every click, scroll and key outside the bars goes to that app. The panels keep updating, and the shortcuts keep working. The bars still take clicks, so you can always turn it off with the mouse: the switch is lit while it is on; click it, or press **Ctrl+Alt+X** again.
+**Click-through** (the **W** switch on bar 1, **⋮**, or **Ctrl+Alt+X**) lets you work in the app behind the overlay with the panels open: every click, scroll and key on the whole overlay, the bars included, goes to that app. The panels keep updating, and the shortcuts keep working. Bar 1 says **Click-through on — press Ctrl+Alt+X to turn off**: press **Ctrl+Alt+X** again (**⌘ ⌥ X** on a Mac) from any app to turn it off. You can also press **Turn click-through off** in the Paramount AI call window (or, in a newer desktop app, in its tray or menu bar icon), and it turns off by itself when the call ends. If another app uses **Ctrl+Alt+X** (Settings › Hotkeys says so), the bars keep taking clicks while it is on, so you can turn it off with **W**.
 
 ### Private
 

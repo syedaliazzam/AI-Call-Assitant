@@ -63,6 +63,7 @@ import { installAccurate, type WorkerProcess } from './accurate/host';
 import { MODEL_FOLDER } from './accurate/model';
 import {
   CALL_ACTIVE_CHANNEL,
+  HOTKEY_CHANNEL,
   LINK_CODE_CHANNEL,
   OPEN_CALL_WINDOW_CHANNEL,
   OPEN_PAGES_CHANNEL,
@@ -666,6 +667,8 @@ function start(): void {
       allowedOrigin: config.allowedOrigin,
       // 1.8.0 (ADR-0110): a Mac's keys leave its text-editing and window keys to other apps.
       accelerators: globalHotkeys(process.platform === 'darwin'),
+      // ADR-0055 (amended 26 Nov 2026): the tray offers "Turn click-through off" during a call.
+      onCallChange: (on) => appTray?.setCall(on),
     });
     // The compact live window and screen-share protection (Day 5); the shell remembers the
     // window's position and size and the protection setting in its own small file.
@@ -911,6 +914,12 @@ function start(): void {
         // Through before-quit, which decides (runs on with work left).
         onQuit: () => app.quit(),
         onQuitNow: () => void control.quitNow(),
+        // ADR-0055 (amended 26 Nov 2026): the overlay takes clicks again at once, and the live page (which
+        // holds the mode) turns it off, so the next pointer move does not pass clicks again.
+        onClickThroughOff: () => {
+          compact?.setClickThrough(false);
+          mainWindow?.webContents.send(HOTKEY_CHANNEL, 'click-through-off');
+        },
       },
       control.view(),
     );

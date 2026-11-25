@@ -5,7 +5,8 @@
  *          session and a fixture transcript, with no sign-in. Answers go to the test server's
  *          mocked /api/answer, which streams a fixed answer slowly. Answers, ratings and notes are
  *          saved in this browser's real IndexedDB (core/storage). Exposes what was copied, the
- *          saved answers and a session delete on `window.kiteAnswerHarness` for the test.
+ *          saved answers and a session delete on `window.kiteAnswerHarness` for the test. ADR-0055
+ *          (amended 26 Nov 2026): `setEnding` stands for the call ending (Click-through turns off).
  * Used by: tests/integration/answers.spec.ts (bundled with esbuild and served on a test page)
  * Depends on: src/features/live/LiveAnswers.tsx, src/core/transcript/transcript.ts,
  *             src/core/storage (answers.ts, sessions.ts), react-dom
@@ -39,6 +40,11 @@ export interface KiteAnswerHarness {
   sessionModel: () => Promise<string | null>;
   /** ADR-0094: the model each saved answer records (oldest first). */
   savedModels: () => Promise<string[]>;
+  /**
+   * ADR-0055 (amended 26 Nov 2026): the call is ending (true) or not, as the live page's End does.
+   * @param on True while ending.
+   */
+  setEnding: (on: boolean) => void;
 }
 
 declare global {
@@ -107,6 +113,8 @@ window.kiteAnswerHarness = {
   },
   sessionModel: async () => (await getSession(SESSION.id))?.preferences.model ?? null,
   savedModels: async () => (await listAnswers(SESSION.id)).map((answer) => answer.model),
+  // Replaced by the Harness component once it renders.
+  setEnding: () => undefined,
 };
 
 // ADR-0094: the session is stored, as the app's are, so a model switch can be saved with it. Kept when it is
@@ -132,13 +140,18 @@ function Harness() {
     return () => clearInterval(timer);
   }, [rerender]);
   const session = rerender ? { ...SESSION, preferences: { ...SESSION.preferences } } : SESSION;
+  // ADR-0055 (amended 26 Nov 2026): the test ends the call to check Click-through turns off.
+  const [ending, setEnding] = useState(false);
+  useEffect(() => {
+    window.kiteAnswerHarness.setEnding = setEnding;
+  }, []);
   return (
     <LiveAnswers
       session={session}
       documents={[]}
       transcript={transcript}
       callStartedAt={callStartedAt}
-      ending={false}
+      ending={ending}
       onEnd={() => undefined}
       copy={async (text) => {
         window.kiteAnswerHarness.copied.push(text);

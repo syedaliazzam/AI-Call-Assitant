@@ -13,7 +13,9 @@
  *            LiveCallsUnsupported on a phone or tablet;
  *          - compact / compact-unavailable: CompactView with a live answer, or with the
  *            "Claude unavailable" message; ?status= puts a message on the overlay's status bar
- *            (ADR-0082) and ?ct=on|off gives bar 1 its Click-through switch.
+ *            (ADR-0082) and ?ct=on|off gives bar 1 its Click-through switch. ADR-0055 (amended 26 Nov
+ *            2026): ?ct=taken is the mode on while another app holds its key (the bars keep their clicks);
+ *            what the view tells the shell (pass clicks or not) is logged in window.throughLog.
  *          No sign-in, no microphone, no speech model and no Claude call.
  * Used by: tests/integration/live.spec.ts (bundled with esbuild and served on a test page)
  * Depends on: src/features/live (LiveCallLayout, TranscriptStrip, LiveAnswers, AudioMeter,
@@ -400,8 +402,12 @@ function CompactHarness({
   );
   // 1.6.3: ?ct=on: Click-through mode on (v1.3.2), as a desktop shell from 1.3.0 has it. ADR-0082: ?ct=off:
   // a shell that can pass clicks, with the mode off (bar 1 then shows the Click-through switch, off).
-  const clickThrough = params.get('ct') === 'on';
+  // ADR-0055 (amended 26 Nov 2026): ?ct=taken: the mode on while another app holds Ctrl+Alt+X.
+  const keyTaken = params.get('ct') === 'taken';
+  const clickThrough = params.get('ct') === 'on' || keyTaken;
   const canClickThrough = clickThrough || params.get('ct') === 'off';
+  // ADR-0055 (amended 26 Nov 2026): each true/false the view sends the shell (setOverlayClickThrough).
+  const throughLog = (window as unknown as { throughLog: boolean[] }).throughLog;
   // What the view asks for, so a test can read it. ?shell=1: a shell from 1.2.0, with the icon.
   const log = (window as unknown as { overlayLog: unknown[] }).overlayLog;
   // ?position=bottom-left: a shell from 1.3.0 with the six positions (ADR-0056), at that one.
@@ -420,8 +426,14 @@ function CompactHarness({
   const shown = { ...state, ...(model ? { model } : {}), askKiteCount };
   return (
     <CompactView
-      state={clickThrough ? { ...shown, clickThrough: true } : shown}
-      {...(canClickThrough ? { onClickThrough: () => undefined } : {})}
+      state={
+        clickThrough
+          ? { ...shown, clickThrough: true, ...(keyTaken ? { clickThroughKeyTaken: true } : {}) }
+          : shown
+      }
+      {...(canClickThrough
+        ? { onClickThrough: (through: boolean) => throughLog.push(through) }
+        : {})}
       protection={{ supported: true, on: true }}
       onCommand={(command) => {
         log.push(command);
@@ -477,6 +489,7 @@ function CompactHarness({
 }
 
 (window as unknown as { overlayLog: unknown[] }).overlayLog = [];
+(window as unknown as { throughLog: boolean[] }).throughLog = [];
 
 /** The compact view with a coding answer, a figure to check and other answers (ADR-0030). */
 const CODING_STATE: CompactState = {

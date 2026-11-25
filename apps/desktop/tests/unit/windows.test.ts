@@ -48,6 +48,7 @@ import {
   compactWindowOptions,
   createCompactWindows,
   floatOverFullScreen,
+  overlayGlass,
   installCompactWindows,
   COMPACT_COLLAPSED_HEIGHT,
   fittedHeight,
@@ -247,7 +248,7 @@ describe('compactUrl and restoreBounds', () => {
     });
   });
 
-  it('see-through on every system: transparent; vibrancy on macOS, no acrylic on Windows (ADR-0039)', () => {
+  it('see-through on every system: transparent with a clear background; no acrylic (ADR-0039), no vibrancy (ADR-0126)', () => {
     const bounds = { x: 1, y: 2, width: 380, height: 320 };
     const win = compactWindowOptions(bounds, '/p.js', '1', 'win32');
     // v1.0.1 had the clear colour without `transparent`, which Electron ignores: solid black.
@@ -260,9 +261,19 @@ describe('compactUrl and restoreBounds', () => {
     });
     // v1.0.3: acrylic blurred what is behind into unreadable colour on the real screen.
     expect(win.backgroundMaterial).toBeUndefined();
+    // ADR-0126: no frosted material on macOS (it hid the meeting, dark in dark mode); plain transparency
+    // as on Windows, keeping macOS's content-shaped shadow (hasShadow left at its default).
     const mac = compactWindowOptions(bounds, '/p.js', '1', 'darwin');
-    expect(mac).toMatchObject({ transparent: true, vibrancy: 'hud', maximizable: false });
-    expect(mac.backgroundColor).toBeUndefined();
+    expect(mac).toMatchObject({
+      transparent: true,
+      backgroundColor: '#00000000',
+      maximizable: false,
+      fullscreenable: false,
+    });
+    expect(mac.vibrancy).toBeUndefined();
+    expect(mac.visualEffectState).toBeUndefined();
+    expect(mac.backgroundMaterial).toBeUndefined();
+    expect(mac.hasShadow).toBeUndefined();
     const other = compactWindowOptions(bounds, '/p.js', '1', 'linux');
     expect(other).toMatchObject({ transparent: true, backgroundColor: '#00000000' });
     expect(other.backgroundMaterial).toBeUndefined();
@@ -284,6 +295,28 @@ describe('compactUrl and restoreBounds', () => {
       sandbox: true,
       nodeIntegration: false,
       preload: '/p.js',
+    });
+  });
+});
+
+describe('overlayGlass (ADR-0039, ADR-0126)', () => {
+  it('darwin: plain transparency with a clear background; no vibrancy; the macOS shadow kept', () => {
+    // 26 Nov 2026: vibrancy 'hud' filled the window with a frosted material, so no meeting showed behind it.
+    expect(overlayGlass('darwin')).toEqual({
+      transparent: true,
+      maximizable: false,
+      fullscreenable: false,
+      backgroundColor: '#00000000',
+    });
+  });
+
+  it('win32: plain transparency with a clear background, no acrylic, no rectangular shadow (unchanged)', () => {
+    expect(overlayGlass('win32')).toEqual({
+      transparent: true,
+      maximizable: false,
+      fullscreenable: false,
+      backgroundColor: '#00000000',
+      hasShadow: false,
     });
   });
 });

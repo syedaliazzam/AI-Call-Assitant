@@ -1,6 +1,6 @@
 # ADR-0055: The desktop flow and call UI match the reference app
 
-- **Status:** Accepted (developer: "go live", 9 Nov 2026); shipped to everyone in release 1.3.0
+- **Status:** Accepted (developer: "go live", 9 Nov 2026); shipped to everyone in release 1.3.0; amended 26 Nov 2026 (Click-through covers the whole overlay, see the end)
 - **Date:** 2026-11-09
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §4 (protection), §5 (Home panel, Connect, overlay), §7.3; `docs/design/paramount-ai-ui-spec.md` §3 (S10, S11, S13, S14)
 - **Supersedes / superseded by:** refines ADR-0051 (the launcher), ADR-0053 (where the desktop's Connect card is), ADR-0042 (Private covers every window); overrides spec S10's "No Buy credits" and S11's microphone meter on the desktop. Desktop 1.3.0 (draft) and the web app, for accounts with account sync only.
@@ -49,3 +49,23 @@ All behind the accountSync switch (accounts without it see no change), in the we
 - Real shell, temporary profiles: `tests/manual/click-through.spec.ts` (real Windows input: a gap click reaches the window behind and typing follows; a bar keeps its click), `tests/manual/protection-chrome.spec.ts` (Chrome's entire-screen capture leaves out a window created after Private was turned on).
 - Visual pairs for the Start card, Connect card, bars, chat bar and icon (`tests/visual/v12-pairs.ts`).
 - Human: the regression checklist in `docs/testing/v1.3.0-regression-checklist.md`, including the Private matrix (`final-test-plan.md` §3c).
+
+## Amendment (26 Nov 2026): Click-through covers the whole overlay
+
+**Context.** With Click-through on (W on bar 1, ⋮, Ctrl+Alt+X; on a Mac ⌘ ⌥ X), clicks passed through the answer and transcript panels but not through bar 1, bar 2, the chat bar or the script bar (v1.3.2 kept the bars clickable so the mouse could turn the mode off). A teammate on a Mac could not click a meeting app's button behind the bars.
+
+**Decision** (the developer's brief of 26 Nov 2026; web app only, through the same pass-through as above, `setOverlayClickThrough` → `setIgnoreMouseEvents(true, { forward: true })`):
+
+1. **The whole overlay passes every click** while Click-through is on: both bars, the chat bar, the slim script bar, the panels and W's own spot (`overlay/useClickThrough.ts` `passesThrough`). The page tells the shell at once, without waiting for a pointer move (on Windows a press on bar 1's drag area sends the page no move first). Nothing in the overlay reacts to the pointer meanwhile and nothing is a drag area (`theme.css` `.k-pass-all`), so no hover colours, tooltips or window drags on buttons that cannot be pressed. A menu opened by a shortcut (Rec's consent) still takes its clicks.
+2. **Only the shortcut turns it off from the overlay:** Ctrl+Alt+X (⌘ ⌥ X), a global shortcut held during the call, so it works while another app has focus. The icon still always takes its clicks (unchanged).
+3. **Safety nets, so nobody is stuck:**
+   - (a) bar 1 shows, in place of Chat, AA, the model chip and W, a hint that takes no clicks: **"Click-through on — press Ctrl+Alt+X to turn off"** (⌘ ⌥ X on a Mac; `overlay/clickThroughHint.ts`);
+   - (b) the call window (the main Paramount AI window's live page) shows "Click-through is on…" with a **Turn click-through off** button (`LiveAnswers.tsx`);
+   - (c) it turns off by itself when the call ends (the live page resets it as soon as the call is ending, and the last state the overlay hears says off);
+   - (d) Settings › Hotkeys warns when another app holds that shortcut. **While another app holds it in a call** (the shell reports it as taken), Click-through keeps the bars clickable as in v1.3.2, so W turns it off (`CompactState.clickThroughKeyTaken`). On a Mac, macOS may not report a clash; (b) and (c) still apply.
+   - A newer shell also has a tray (menu bar) item **Turn click-through off** during a call (`tray.ts`; it sends the page `click-through-off`): desktop 1.8.0 on a Mac, and listed for the next Windows desktop release.
+4. **Click-through off is unchanged:** gaps pass, bars and panels take their clicks.
+
+**Compatibility.** No new shell capability is needed: every shell from 1.3.0 already passes the whole window while the page asks it to (`setClickThrough`), so the Windows 1.7.4 app gets the new behaviour from the web app alone, including the hint, the call window's button, the auto-off and the taken-key fallback (1.7.4 already reports taken shortcuts with their actions). Only the tray item needs a new shell; an older shell simply has none.
+
+**Validation.** Unit: `useClickThrough` (`passesThrough` in both modes and with the key taken), `clickThroughHint`, `StatusBar` (bar 1: the hint in place of the controls; W as before when off or with the key taken), `HotkeyList` (the clash warning), `platform/desktop` (taken actions), desktop `tray` and `hotkeys` (the tray item during a call). Harness: `test:live-ui` (the whole overlay passes at once, stays passing over bar 1 and the panels, no tooltips or drag areas; off: bar 1 takes clicks; key taken: bars take clicks), `answers.spec.ts` (the call window's button and the call ending turn it off). Real machines: `docs/testing/mac-release-test.md` (Mac) and the Windows checklist in the runbook.

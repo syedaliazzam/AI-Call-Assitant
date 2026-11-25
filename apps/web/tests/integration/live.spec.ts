@@ -1740,7 +1740,7 @@ interface BarControl {
 const CLICK_THROUGH_CONTROL: BarControl = {
   role: 'switch',
   name: 'Click-through',
-  tip: 'Click-through: On (clicks outside the bars go to the app behind) · Ctrl+Alt+X',
+  tip: 'Click-through: On (clicks go to the app behind) · Ctrl+Alt+X',
 };
 
 /**
@@ -1873,9 +1873,10 @@ test('1.6.3: tooltips with Click-through on, in the light theme, over a dark pag
   test.setTimeout(240_000);
   const watched = await openDesktopOverlay(DESKTOP_OVERLAY.default, '&position=top-center');
   const { page } = watched;
-  // Click-through mode on, top and bottom rows.
+  // Click-through mode on, top and bottom rows. ADR-0055 (amended 26 Nov 2026): with its key held by another app
+  // (ct=taken), the only case where the bars keep their clicks and tooltips in the mode.
   for (const position of ['top-right', 'bottom-left']) {
-    await page.goto(overlayUrl(`&position=${position}&rec=on&private=off&ct=on`));
+    await page.goto(overlayUrl(`&position=${position}&rec=on&private=off&ct=taken`));
     await page.getByRole('toolbar', { name: 'Overlay controls' }).waitFor();
     await checkBarTips(
       page,
@@ -1913,6 +1914,9 @@ test('ADR-0082: the default window keeps the "AA" and "W" labels in every state;
   for (const extra of [
     '&rec=off',
     '&rec=on&private=off&auto=on',
+    // ADR-0055 (amended 26 Nov 2026): W lit stays only while another app holds its key (ct=taken); with the
+    // key free (ct=on) the hint takes its place.
+    '&rec=on&private=off&auto=on&ct=taken',
     '&rec=on&private=off&auto=on&ct=on',
   ]) {
     await page.goto(overlayUrl(`&position=top-center${extra}`));
@@ -1929,8 +1933,14 @@ test('ADR-0082: the default window keeps the "AA" and "W" labels in every state;
       // At 100 % the words stay; zoomed in, they may give way to icons (measured), but the bar still fits.
       // Auto answer and Click-through show their short labels "AA" and "W" (24 Nov 2026), at any width.
       if (zoom !== 1) continue;
-      await expect(bar.getByRole('switch', { name: 'Auto answer' }), name).toHaveText('AA');
       if (extra.includes('ct=on')) {
+        await expect(page.locator('[data-click-through-hint]'), name).toHaveText(
+          'Click-through on — press Ctrl+Alt+X to turn off',
+        );
+        continue;
+      }
+      await expect(bar.getByRole('switch', { name: 'Auto answer' }), name).toHaveText('AA');
+      if (extra.includes('ct=taken')) {
         await expect(bar.getByRole('switch', { name: 'Click-through' }), name).toHaveText('W');
       }
     }
@@ -1942,6 +1952,7 @@ test('ADR-0082: the default window keeps the "AA" and "W" labels in every state;
   await page.evaluate(() => {
     document.documentElement.style.zoom = '';
   });
+  await page.goto(overlayUrl('&position=top-center&rec=on&private=off&auto=on&ct=taken'));
   await page.setViewportSize(DESKTOP_OVERLAY.narrowest);
   await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveText('W');
   await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveAttribute(
@@ -2114,8 +2125,9 @@ test('ADR-0082: bar 1 has a Click-through switch where clicks can pass, which tu
   );
   await toggle.click();
   expect(await watched.log()).toContainEqual({ type: 'click-through', on: true });
-  // On: checked, and a click turns it off (the bars always take clicks).
-  await page.goto(overlayUrl('&position=top-center&ct=on'));
+  // On with its key held by another app: checked, and a click turns it off (ADR-0055 amended 26 Nov 2026: the
+  // only case where the bars keep their clicks in the mode).
+  await page.goto(overlayUrl('&position=top-center&ct=taken'));
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
   await toggle.click();
   expect(await watched.log()).toContainEqual({ type: 'click-through', on: false });
@@ -2123,6 +2135,82 @@ test('ADR-0082: bar 1 has a Click-through switch where clicks can pass, which tu
   await page.goto(overlayUrl('&position=top-center'));
   await bar.waitFor();
   await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveCount(0);
+  await watched.context.close();
+});
+
+test('ADR-0055 (amended 26 Nov 2026): Click-through on passes the whole overlay, the bars too; off, only the gaps', async () => {
+  const watched = await openDesktopOverlay(DESKTOP_OVERLAY.default, '&position=top-center&ct=off');
+  const { page } = watched;
+  const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
+  const root = page.locator('.k-overlay-root');
+  const through = () =>
+    page.evaluate(() => (window as unknown as { throughLog: boolean[] }).throughLog.slice());
+  /**
+   * Moves the pointer to the middle of an element.
+   *
+   * @param selector Where to.
+   */
+  const moveTo = async (selector: string) => {
+    const box = (await page.locator(selector).first().boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  };
+
+  // Off (unchanged): bar 1 takes its clicks, a gap passes them.
+  await bar.waitFor();
+  await expect(root).toHaveAttribute('data-click-through', 'off');
+  await moveTo('[data-bars-column]');
+  await moveTo('[role="toolbar"][aria-label="Overlay controls"]');
+  expect((await through()).at(-1) ?? false).toBe(false);
+  await expect(page.locator('[data-click-through-hint]')).toHaveCount(0);
+
+  // On: the shell is told to pass clicks at once, before any pointer move (a press on bar 1's drag area sends
+  // no move on Windows), and it stays so over bar 1, W's spot and bar 2.
+  await page.goto(overlayUrl('&position=top-center&ct=on&rec=on&private=off'));
+  await bar.waitFor();
+  await expect(root).toHaveAttribute('data-click-through', 'all');
+  await expect.poll(through).toEqual([true]);
+  await moveTo('[role="toolbar"][aria-label="Overlay controls"]');
+  await moveTo('[data-click-through-hint]');
+  await moveTo('[data-panel]');
+  expect(await through()).toEqual([true]);
+  // Bar 1 says how to turn it off, in text that takes no clicks; W, Chat and AA are not offered.
+  await expect(page.locator('[data-click-through-hint]')).toHaveText(
+    'Click-through on — press Ctrl+Alt+X to turn off',
+  );
+  await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveCount(0);
+  await expect(bar.getByRole('button', { name: 'Chat' })).toHaveCount(0);
+  // Nothing reacts to the pointer (no tooltips) and nothing is a drag area.
+  await expect(root).toHaveClass(/k-pass-all/);
+  const inert = await page.evaluate(() => {
+    const exit = document.querySelector('[aria-label="Exit: end call"]')!;
+    const toolbar = document.querySelector('[role="toolbar"]')!;
+    return {
+      pointer: getComputedStyle(exit).pointerEvents,
+      drag: getComputedStyle(toolbar).getPropertyValue('-webkit-app-region'),
+    };
+  });
+  expect(inert).toEqual({ pointer: 'none', drag: 'no-drag' });
+  await moveTo('[aria-label="Exit: end call"]');
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  // A Mac names its own key.
+  await page.goto(overlayUrl('&position=top-center&ct=on&os=mac'));
+  await expect(page.locator('[data-click-through-hint]')).toHaveText(
+    'Click-through on — press ⌘ ⌥ X to turn off',
+  );
+
+  // On while another app holds the key: the bars keep their clicks (W turns it off), the rest passes.
+  await page.goto(overlayUrl('&position=top-center&ct=taken'));
+  await bar.waitFor();
+  await expect(root).toHaveAttribute('data-click-through', 'bars');
+  await moveTo('[data-panel]');
+  await expect.poll(async () => (await through()).at(-1)).toBe(true);
+  await moveTo('[role="toolbar"][aria-label="Overlay controls"]');
+  await expect.poll(async () => (await through()).at(-1)).toBe(false);
+  await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await expect(page.locator('[data-click-through-hint]')).toHaveCount(0);
   await watched.context.close();
 });
 
@@ -2153,7 +2241,7 @@ test('ADR-0094: the model chip sits next to Auto and gives way without pushing o
     const watched = await openDesktopOverlay(size, '&position=top-center');
     const { page } = watched;
     for (const model of ['fast', 'smart']) {
-      for (const extra of ['&rec=off', '&rec=on&private=off&auto=on&ct=on']) {
+      for (const extra of ['&rec=off', '&rec=on&private=off&auto=on&ct=taken']) {
         const name = `${sizeName} ${model}${extra}`;
         await page.goto(overlayUrl(`&position=top-center&model=${model}${extra}`));
         const bar = page.getByRole('toolbar', { name: 'Overlay controls' });

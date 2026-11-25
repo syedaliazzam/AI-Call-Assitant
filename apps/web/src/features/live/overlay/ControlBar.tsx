@@ -11,7 +11,8 @@
  *          (red; web 9 Nov 2026: one press ends the call). ADR-0082: no Answer or Screenshot buttons (their
  *          shortcuts still work). ADR-0122: Chat is back, first in the part that gives way, with its shortcut
  *          (Ctrl+Alt+K) as a key-cap; it opens the chat bar under this bar. The bar is the window's drag handle;
- *          its buttons opt out.
+ *          its buttons opt out. ADR-0055 (amended 26 Nov 2026): while the whole overlay passes clicks
+ *          (Click-through on), the part that gives way shows only "Click-through on — press Ctrl+Alt+X to turn off".
  *
  *          1.6.3 (ADR-0075): ⋮ and Exit are pinned on the right and never leave the window. ADR-0085: the
  *          device icons and, while recording, the Rec pill are
@@ -26,7 +27,7 @@
  *          so resizing the answer panel never makes it give way; only a window narrower than the bar does.
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (hotkeys), lucide-react, react-dom (flushSync), src/core/live/liveChannel.ts,
- *             ./parts.tsx, ./RecordControls.tsx, ./BarTooltip.tsx, src/features/live/callClock.ts,
+ *             ./parts.tsx, ./RecordControls.tsx, ./BarTooltip.tsx, ./clickThroughHint.ts, src/features/live/callClock.ts,
  *             src/ui/icons.tsx
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S13); ADR-0041, ADR-0045, ADR-0075
  */
@@ -56,6 +57,7 @@ import {
   MoveIcon,
 } from '@/ui/icons';
 import { BarTooltip } from './BarTooltip';
+import { clickThroughHint } from './clickThroughHint';
 import { ModelChip, modelOf } from './ModelChoice';
 import {
   BUTTON_BASE,
@@ -102,8 +104,9 @@ export interface ControlBarProps {
   menuButton: RefObject<HTMLButtonElement | null>;
   /**
    * ADR-0082: turns Click-through on or off from its toggle on this bar (v1.3.2 to 1.6.3 an indicator showed
-   * only while it was on). Absent where clicks cannot pass (a browser, an older shell): no toggle then. The
-   * bars always take clicks, so the mouse can always turn it off again.
+   * only while it was on). Absent where clicks cannot pass (a browser, an older shell): no toggle then.
+   * ADR-0055 (amended 26 Nov 2026): once on, the whole overlay passes clicks (passAll), so only the shortcut
+   * turns it off; the toggle can still turn it off while another app holds that shortcut.
    */
   onClickThrough?: (on: boolean) => void;
   /** Desktop 1.5.0 (ADR-0068): whether the Rec pill's popover is open. */
@@ -130,6 +133,11 @@ export interface ControlBarProps {
   onChat?: () => void;
   /** ADR-0122: whether the chat bar is open (the Chat button shows it). */
   chatOpen?: boolean;
+  /**
+   * ADR-0055 (amended 26 Nov 2026): true while the whole overlay passes clicks (Click-through on, its shortcut
+   * free): the part that gives way shows only a hint that takes no clicks, with the shortcut that turns it off.
+   */
+  passAll?: boolean;
 }
 
 /**
@@ -292,8 +300,9 @@ const CLICK_THROUGH_LABEL = 'W';
 
 /**
  * ADR-0082: Click-through on bar 1, as Ctrl+Alt+X and the ⋮ menu, with a dot that is lit while it is on.
- * While on, every click and key outside the bars goes to the app behind the overlay; the bars still take
- * clicks, so this toggle can always turn it off. Since 24 Nov 2026 it shows the short label "W" instead
+ * ADR-0055 (amended 26 Nov 2026): while on, every click on the whole overlay goes to the app behind it, this
+ * toggle's spot too (bar 1 then shows ClickThroughHint in its place); only while another app holds the
+ * shortcut do the bars keep their clicks, so this toggle can turn it off. Since 24 Nov 2026 it shows the short label "W" instead
  * of a pointer and the word "Click-through"; the full name stays in its aria-label and tooltip.
  *
  * @param props.on       True while Click-through is on.
@@ -332,7 +341,7 @@ function ClickThroughToggle({
       aria-keyshortcuts={hotkeyLabel(CLICK_THROUGH_ACCELERATOR, mac)}
       data-tip={tipText(
         on
-          ? 'Click-through: On (clicks outside the bars go to the app behind)'
+          ? 'Click-through: On (clicks go to the app behind)'
           : 'Click-through: Off (turn on to click the app behind the overlay)',
         CLICK_THROUGH_ACCELERATOR,
         mac,
@@ -352,6 +361,32 @@ function ClickThroughToggle({
         className={`size-1.5 shrink-0 rounded-full ${wide ? '' : 'absolute right-1 top-1'} ${on ? 'bg-ui-accent-fill' : 'bg-ui-muted opacity-60'}`}
       />
     </button>
+  );
+}
+
+/**
+ * ADR-0055 (amended 26 Nov 2026), safety net (a): bar 1's hint while the whole overlay passes clicks. It is text,
+ * not a button (nothing on the overlay can be pressed then), and it says the one key that turns the mode off.
+ * It is cut with "…" rather than pushing the pinned controls out when the bar is narrow.
+ *
+ * @param props.mac True on macOS (⌘ ⌥ X instead of Ctrl+Alt+X).
+ * @returns The hint.
+ * Rendered by: ControlBar
+ */
+function ClickThroughHint({
+  mac,
+}: {
+  /** True on macOS. */
+  mac: boolean;
+}) {
+  return (
+    <p
+      role="status"
+      data-click-through-hint=""
+      className="min-w-0 truncate rounded-control px-2 text-[13px] font-medium text-ui-accent"
+    >
+      {clickThroughHint(mac)}
+    </p>
   );
 }
 
@@ -600,6 +635,8 @@ export function ControlBar(props: ControlBarProps) {
     modelChoice?.model ?? 'no-model',
     // ADR-0122: the Chat button appearing or going.
     props.onChat ? 'chat' : 'no-chat',
+    // ADR-0055 (amended 26 Nov 2026): the hint replaces the part that gives way.
+    props.passAll ? 'pass-all' : 'bars',
   ].join('|');
   const { step, room, content } = useFitStep(fitKey);
   const recKey = step < FIT.noRecKey;
@@ -653,13 +690,16 @@ export function ControlBar(props: ControlBarProps) {
       {/* 1.6.3: the rest may give way; it never pushes the pinned controls out of the window. Full height,
           so the focus rings are not clipped. */}
       <div ref={room} className="flex min-w-0 flex-1 items-center self-stretch overflow-hidden">
+        {props.passAll && <ClickThroughHint mac={mac} />}
         <div
           ref={content}
           data-fit-step={step}
           data-fit-key={fitKey}
           className="flex shrink-0 items-center gap-1 pr-0.5"
         >
-          {props.onChat && (
+          {/* ADR-0055 (amended 26 Nov 2026): none of these can be pressed while the whole overlay passes
+              clicks, so the hint stands in for them (the content box stays, empty, for the fitting). */}
+          {!props.passAll && props.onChat && (
             // ADR-0122: first in the part that gives way, so the pinned controls never leave the window.
             <ChatButton
               open={props.chatOpen ?? false}
@@ -670,13 +710,15 @@ export function ControlBar(props: ControlBarProps) {
               onToggle={props.onChat}
             />
           )}
-          <AutoAnswerToggle
-            on={autoOn}
-            disabled={!state}
-            wide={step < FIT.iconAuto}
-            onToggle={() => onCommand({ type: 'auto-answer', on: !autoOn })}
-          />
-          {modelChoice && props.onModel && (
+          {!props.passAll && (
+            <AutoAnswerToggle
+              on={autoOn}
+              disabled={!state}
+              wide={step < FIT.iconAuto}
+              onToggle={() => onCommand({ type: 'auto-answer', on: !autoOn })}
+            />
+          )}
+          {!props.passAll && modelChoice && props.onModel && (
             // ADR-0094: next to Auto; it gives way to its icon with Auto, and never pushes the pinned
             // controls out (it is inside the part that gives way).
             <ModelChip
@@ -688,7 +730,7 @@ export function ControlBar(props: ControlBarProps) {
               onToggle={props.onModel}
             />
           )}
-          {props.onClickThrough && step < FIT.noClickThrough && (
+          {!props.passAll && props.onClickThrough && step < FIT.noClickThrough && (
             <ClickThroughToggle
               on={clickThroughOn}
               disabled={!state}

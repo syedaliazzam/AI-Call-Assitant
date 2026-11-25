@@ -3,6 +3,8 @@
  * progress line while Drive work is left; after an exit it offers "Quit now" instead of Quit; the tooltip
  * carries the progress; the icon's file is the .ico on Windows and the PNG elsewhere, from resources/tray
  * in an installed app; the menu's items run the right actions and the menu is rebuilt only on a change.
+ * ADR-0055 (amended 26 Nov 2026): during a call the menu starts with "Turn click-through off", which runs its
+ * action; the item goes when the call ends.
  */
 import path from 'node:path';
 import type { MenuItemConstructorOptions } from 'electron';
@@ -34,6 +36,18 @@ describe('trayItems and trayTooltip', () => {
       { label: 'Quit now', action: 'quit-now' },
     ]);
     expect(trayTooltip(view)).toBe('Paramount AI: Uploading 1 recording to Drive: 42%');
+  });
+
+  it('ADR-0055 (amended 26 Nov 2026): offers "Turn click-through off" first during a call only', () => {
+    expect(trayItems({ background: false, status: null }, true)).toEqual([
+      { label: 'Turn click-through off', action: 'click-through-off' },
+      { separator: true },
+      { label: 'Open Paramount AI', action: 'open' },
+      { label: 'Quit Paramount AI', action: 'quit' },
+    ]);
+    expect(trayItems({ background: false, status: null }, false)).not.toContainEqual(
+      expect.objectContaining({ action: 'click-through-off' }),
+    );
   });
 });
 
@@ -76,6 +90,7 @@ describe('installTray', () => {
         onOpen: () => ran.push('open'),
         onQuit: () => ran.push('quit'),
         onQuitNow: () => ran.push('quit-now'),
+        onClickThroughOff: () => ran.push('click-through-off'),
       },
       { background: false, status: null },
     );
@@ -89,6 +104,17 @@ describe('installTray', () => {
     (menus[1]![3]!.click as () => void)();
     expect(ran).toEqual(['open', 'quit', 'quit-now']);
     expect(tips.at(-1)).toBe('Paramount AI: Uploading 1 recording to Drive: 10%');
+    // ADR-0055 (amended 26 Nov 2026): a call adds "Turn click-through off" on top; its end takes it away.
+    tray.setCall(true);
+    expect(menus).toHaveLength(3);
+    expect(menus[2]![0]!.label).toBe('Turn click-through off');
+    (menus[2]![0]!.click as () => void)();
+    expect(ran.at(-1)).toBe('click-through-off');
+    tray.setCall(true);
+    expect(menus).toHaveLength(3);
+    tray.setCall(false);
+    expect(menus).toHaveLength(4);
+    expect(menus[3]!.map((item) => item.label)).not.toContain('Turn click-through off');
   });
 });
 

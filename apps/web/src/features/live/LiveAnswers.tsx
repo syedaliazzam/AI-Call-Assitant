@@ -12,6 +12,8 @@
  *          meeting recording's state, its commands and Ctrl+Alt+R. ADR-0122: Ctrl+Alt+K during an overlay call
  *          opens the overlay's chat bar. ADR-0123: Ctrl+Enter answers the other person on a call and the user's
  *          own newest spoken question on their own; Ctrl+Shift+Space always the user's own; no Voice mode.
+ *          ADR-0055 (amended 26 Nov 2026): while Click-through is on (the whole overlay passes clicks) this
+ *          window shows "Turn click-through off"; the mode ends with the call, and the tray's item turns it off.
  * Used by: src/features/live/LivePage.tsx (live view);
  *          tests/integration/harness/answers.tsx (the answer harness test)
  * Depends on: src/features/live (useLiveAnswers, TopBar, ChatBox, AnswerPanel, useCallDictation),
@@ -73,6 +75,8 @@ import { AnswerPanel } from './AnswerPanel';
 import { openOverlay, startsCallsInOverlay, type OverlayAtStart } from './openOverlay';
 import { ChatBox, type ChatBoxHandle } from './ChatBox';
 import { KeyChip } from './overlay/parts';
+import { clickThroughKeyLabel } from './overlay/clickThroughHint';
+import { Button } from '@/ui/Button';
 import { TopBar } from './TopBar';
 import { isOnline, subscribeOnline } from '@/core/net/online';
 import { SignInAgainDialog } from './SignInAgainDialog';
@@ -353,8 +357,18 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const [questionClearedAt, setQuestionClearedAt] = useState(0);
   // The overlay as the slim script bar (v1.0.2; Ctrl+Alt+S or a ⋮ menu).
   const [scriptBar, setScriptBar] = useState(false);
-  // v1.3.2: Click-through (the ⋮ menu or Ctrl+Alt+X): the overlay passes clicks and keys outside its bars.
+  // v1.3.2: Click-through (W, the ⋮ menu or Ctrl+Alt+X). ADR-0055 (amended 26 Nov 2026): the whole overlay
+  // passes every click and key to the app behind it.
   const [clickThrough, setClickThrough] = useState(false);
+  // ADR-0055 (amended 26 Nov 2026): it is off as soon as the call is ending (safety net (c)), so a closing
+  // overlay never leaves clicks passing; the page unmounts with the call, so a new call starts with it off.
+  // Reset while rendering (React's pattern for state that follows a prop), so it stays off even if the
+  // ending were called off; and it cannot come on again while the call ends.
+  if (props.ending && clickThrough) setClickThrough(false);
+  const clickThroughOn = clickThrough && !props.ending;
+  // ADR-0055 (amended 26 Nov 2026): another app holds the Click-through shortcut this call, so it cannot
+  // turn the mode off: the overlay then keeps its bars clickable in the mode.
+  const [clickThroughKeyTaken, setClickThroughKeyTaken] = useState(false);
   // The Answer preferences dialog (⋮ menu).
   const [prefsOpen, setPrefsOpen] = useState(false);
   // The desktop shell can place the overlay (Reset size and position, presets; ADR-0035).
@@ -528,7 +542,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
       openaiAllowed: access.openai,
       ...(access.moreModels ? { moreModels: true, geminiAllowed: access.gemini } : {}),
       scriptBar,
-      clickThrough,
+      clickThrough: clickThroughOn,
+      ...(clickThroughKeyTaken ? { clickThroughKeyTaken: true } : {}),
       dictationSupported: props.dictation?.supported ?? false,
       dictating: props.dictation?.listening ?? false,
       // ADR-0101: in a browser, where the voice shortcut works (shown while a voice question listens).
@@ -557,7 +572,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     props.micDeviceId,
     props.themSourceLabel,
     scriptBar,
-    clickThrough,
+    clickThroughOn,
+    clickThroughKeyTaken,
     props.callStartedAt,
     props.dictation?.supported,
     props.dictation?.listening,
@@ -817,7 +833,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
       } else if (command.type === 'model') switchModel.current(command.model);
     });
     return () => {
-      link.publish({ ...compactStateRef.current, ended: true });
+      // ADR-0055 (amended 26 Nov 2026): Click-through never outlives the call (safety net (c)).
+      link.publish({ ...compactStateRef.current, clickThrough: false, ended: true });
       link.close();
       channel.current = null;
       void getPlatform()
@@ -887,8 +904,12 @@ export function LiveAnswers(props: LiveAnswersProps) {
             setScriptBar((on) => !on);
             openOverlay(sessionIdRef.current).catch(() => undefined);
           } else if (action === 'click-through') {
-            // v1.3.2: Ctrl+Alt+X from any app turns Click-through on or off.
+            // v1.3.2: Ctrl+Alt+X from any app turns Click-through on or off. ADR-0055 (amended 26 Nov 2026):
+            // the one way back from the overlay itself, since the whole overlay passes clicks while it is on.
             setClickThrough((on) => !on);
+          } else if (action === 'click-through-off') {
+            // ADR-0055 (amended 26 Nov 2026): the tray's "Turn click-through off" (a newer shell): only off.
+            setClickThrough(false);
           } else if (action === 'record') {
             // Desktop 1.5.0 (ADR-0068): Ctrl+Alt+R from any app: the bars ask Start or Stop (consent
             // is a click, never the shortcut alone).
@@ -909,10 +930,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
             setAskKiteCount((count) => count + 1);
           }
         },
-        (labels, answer, unavailable) => {
+        (labels, answer, unavailable, takenActions) => {
           setTaken(labels);
           setAnswerTaken(answer ?? null);
           setTakenUnavailable(unavailable ?? []);
+          setClickThroughKeyTaken(takenActions?.includes('click-through') ?? false);
         },
       ),
     [],
@@ -1205,6 +1227,25 @@ export function LiveAnswers(props: LiveAnswersProps) {
         <p role="status" className="bg-ui-surface px-3 py-2 text-[13px] text-ui-text">
           {compactNotice}
         </p>
+      )}
+      {clickThroughOn && (
+        // ADR-0055 (amended 26 Nov 2026), safety net (b): the overlay passes every click while Click-through is
+        // on, so this window (the desktop's call window) can always turn it off.
+        <div
+          role="status"
+          data-click-through-notice=""
+          className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
+        >
+          <p>
+            Click-through is on: every click on the overlay goes to the app behind it.
+            {clickThroughKeyTaken
+              ? ' Click W on bar 1, or turn it off here.'
+              : ` Press ${clickThroughKeyLabel(mac)}, or turn it off here.`}
+          </p>
+          <Button size="sm" variant="secondary" onClick={() => setClickThrough(false)}>
+            Turn click-through off
+          </Button>
+        </div>
       )}
       {(taken.length > 0 || takenUnavailable.length > 0) && (
         <p

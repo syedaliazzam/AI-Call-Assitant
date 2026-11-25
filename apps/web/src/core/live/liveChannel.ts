@@ -223,10 +223,17 @@ export interface CompactState {
   /** True while the overlay is the slim script bar (v1.0.2; Ctrl+Alt+S or the ⋮ menu). */
   scriptBar?: boolean;
   /**
-   * v1.3.2: Click-through is on (the ⋮ menu or Ctrl+Alt+X): outside the bars every click and key goes to
-   * the app behind the overlay. The live page holds it, like the script bar.
+   * v1.3.2: Click-through is on (W, the ⋮ menu or Ctrl+Alt+X). ADR-0055 (amended 26 Nov 2026): every click
+   * and key on the whole overlay, the bars included, goes to the app behind it; only the shortcut, the call
+   * window's "Turn click-through off" and the call ending turn it off. The live page holds it, like the
+   * script bar, and it is always false once the call ends.
    */
   clickThrough?: boolean;
+  /**
+   * ADR-0055 (amended 26 Nov 2026): true while another app holds the Click-through shortcut in this call, so
+   * it cannot turn the mode off: the bars then keep their clicks in Click-through mode (W turns it off).
+   */
+  clickThroughKeyTaken?: boolean;
   /** True when spoken questions can be dictated in this call (the microphone is running). */
   dictationSupported?: boolean;
   /** True while a spoken question is being dictated. */
@@ -417,7 +424,7 @@ export interface ScriptBarCommand {
 export interface ClickThroughCommand {
   /** Command type. */
   type: 'click-through';
-  /** True to let clicks and keys outside the bars go to the app behind. */
+  /** True to let clicks and keys on the whole overlay go to the app behind (ADR-0055 amended 26 Nov 2026). */
   on: boolean;
 }
 

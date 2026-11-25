@@ -9,7 +9,8 @@
  *          ADR-0110 (amended 25 Nov 2026): in a browser the desktop-only shortcuts (show or hide, moves,
  *          Click-through, Rec) say "Desktop app only"; a shortcut another app holds says whether it still works
  *          with Paramount AI in front (the page handles it) or not at all; on a Mac a note says macOS may not
- *          report a shortcut another app holds.
+ *          report a shortcut another app holds. ADR-0055 (amended 26 Nov 2026): when another app holds the
+ *          Click-through key, a warning says it is the one way to turn Click-through off from the overlay.
  * Used by: src/features/settings/Settings.tsx
  * Depends on: @kite/shared (hotkeyRows), src/platform, src/ui/KeyCap.tsx, src/ui/useIsMac.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3; docs/design/parakeet-parity.md
@@ -19,6 +20,7 @@
 import {
   desktopOnlyRow,
   hotkeyAccelerator,
+  hotkeyLabel,
   hotkeyRows,
   type HotkeyRow,
   type HotkeyStatus,
@@ -115,9 +117,35 @@ export function rowWhere(row: HotkeyRow, desktop: boolean): string {
  * Called from: HotkeyList; tests
  */
 export function conflictEffect(row: HotkeyRow): string {
+  // ADR-0055 (amended 26 Nov 2026): Click-through's key is the one way to turn the mode off from the overlay.
+  if (isClickThroughRow(row)) {
+    return 'cannot turn Click-through off, so the bars keep their clicks in Click-through mode (W turns it off)';
+  }
   return desktopOnlyRow(row)
     ? 'does not work during calls'
     : 'works only while Paramount AI is in front';
+}
+
+/**
+ * Whether a row is Click-through's (ADR-0055 amended 26 Nov 2026: its key is the way to turn the mode off).
+ *
+ * @param row The row.
+ * @returns True for the Click-through row.
+ * Called from: conflictEffect(), HotkeyList; tests
+ */
+export function isClickThroughRow(row: HotkeyRow): boolean {
+  return row.actions.includes('click-through');
+}
+
+/**
+ * ADR-0055 (amended 26 Nov 2026), safety net (d): the warning when another app holds the Click-through key.
+ *
+ * @param keys The key as the user reads it ("Ctrl+Alt+X", "⌘ ⌥ X").
+ * @returns The warning.
+ * Called from: HotkeyList; tests
+ */
+export function clickThroughClashWarning(keys: string): string {
+  return `Another app uses ${keys}, the shortcut that turns Click-through off. While Click-through is on, the whole overlay passes clicks to the app behind it and only that shortcut turns it off, so until you free it the bars keep their clicks in Click-through mode and W on bar 1 turns it off. The call window's "Turn click-through off" always works.`;
 }
 
 /**
@@ -168,6 +196,8 @@ export function HotkeyList() {
   );
   const rows = hotkeyRowsFor(positions, recording, mac);
   const conflicts = rows.filter((row) => rowHasConflict(row, statuses));
+  // ADR-0055 (amended 26 Nov 2026): Click-through's key taken gets a warning of its own.
+  const clickThroughClash = conflicts.find(isClickThroughRow);
   return (
     <>
       <p className="mb-3 text-[13px] text-ui-muted">
@@ -217,6 +247,15 @@ export function HotkeyList() {
           Another app uses {conflicts.map((row) => row.label).join(', ')}. Close that app or change
           its shortcut. Until then each one works only while Paramount AI is in front, or not at all
           during calls, as its row says.
+        </p>
+      )}
+      {clickThroughClash && (
+        <p
+          role="alert"
+          data-click-through-clash=""
+          className="mt-3 rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
+        >
+          {clickThroughClashWarning(hotkeyLabel(rowKeys(clickThroughClash, statuses, mac), mac))}
         </p>
       )}
     </>

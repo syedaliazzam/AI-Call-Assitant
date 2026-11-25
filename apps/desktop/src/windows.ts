@@ -7,8 +7,8 @@
  *          (`kite:open-compact`, `kite:close-compact`), and closed with the main window. The page
  *          sets its opacity and collapses it; global shortcuts show, hide and move it. Closing
  *          it brings back the main window, which a call may have minimised.
- *          v1.0.2 (ADR-0035): the window is see-through (transparent, with the native blur as a
- *          bonus), opens at the top centre at 560 × 420, can be put at a preset place, snaps to the
+ *          v1.0.2 (ADR-0035): the window is see-through (transparent; no native blur on Windows since
+ *          ADR-0039 or on macOS since ADR-0126), opens at the top centre at 560 × 420, can be put at a preset place, snaps to the
  *          screen's edges after a move, is resized from its edges by the page, and has a slim
  *          script-bar mode next to its full and collapsed modes.
  *          v1.0.4 (ADR-0040): ⛶ opens the full call window (the main window) and hides the overlay;
@@ -711,39 +711,35 @@ export function isResizeStep(value: unknown): value is OverlayResizeStep {
  * transparent window (Electron 44 docs: "Alpha in #AARRGGBB format is supported if transparent is
  * set to true"), which is why v1.0.1's overlay painted solid black behind its panel on Windows.
  *
- * The blur is a bonus: Windows' acrylic material and macOS's vibrancy blur what is behind. Windows
- * appears to draw acrylic only while the window is the focused one, and the overlay is shown
- * without focus (the meeting keeps the keyboard), so on Windows the blur is mostly seen while the
- * user is clicking or typing in the overlay. Windows 10 has no acrylic: the panel is then simply
- * see-through. A transparent window has no system frame, so it is not maximisable or full-screen
- * (double-clicking the drag bar must not cover the meeting), and on Windows and Linux its shadow
- * is off: the system shadow is a rectangle around the rounded panel. macOS draws the shadow from
- * the window's content, so it stays.
+ * No blur on any system: plain transparency only. Windows' acrylic was removed in v1.0.3 (ADR-0039);
+ * macOS's vibrancy ('hud', always active) was removed on 26 Nov 2026 (ADR-0126) for the same reason:
+ * it fills the whole window with a frosted material (dark in dark mode, fully opaque with "Reduce
+ * transparency" on), so a teammate saw no meeting behind the overlay even at 40 %. A transparent
+ * window has no system frame, so it is not maximisable or full-screen (double-clicking the drag bar
+ * must not cover the meeting). On Windows and Linux its shadow is off: the system shadow is a
+ * rectangle around the rounded panel. macOS draws the shadow from the window's content (the panels'
+ * shape), so it stays there.
  *
  * @param platform The operating system.
  * @returns The options to add.
  * Called from: compactWindowOptions(); tests
  */
 export function overlayGlass(platform: NodeJS.Platform): BrowserWindowConstructorOptions {
-  const seeThrough: BrowserWindowConstructorOptions = {
+  // A clear background, not a colour: a colour would hide what is behind the window. The same on every
+  // system since ADR-0126 (no vibrancy on macOS), so the opacity slider decides what shows through.
+  const clear: BrowserWindowConstructorOptions = {
     transparent: true,
     maximizable: false,
     fullscreenable: false,
-  };
-  if (platform === 'darwin') {
-    return { ...seeThrough, vibrancy: 'hud', visualEffectState: 'active' };
-  }
-  // A clear background, not a colour: a colour would hide what is behind the window.
-  const clear: BrowserWindowConstructorOptions = {
-    ...seeThrough,
     backgroundColor: '#00000000',
-    hasShadow: false,
   };
+  // ADR-0126: macOS keeps its default shadow, which it draws from the painted content (not a rectangle).
+  if (platform === 'darwin') return clear;
   // Windows (v1.0.3, ADR-0039): no acrylic. Measured on the real screen, Windows' acrylic blurs what
   // is behind into unreadable colour (and is drawn only for a focused window), which read as "not
   // see-through". Plain transparency shows the meeting behind the 70% panel; the panel's tint and
-  // the text shadow keep the text readable.
-  return clear;
+  // the text shadow keep the text readable. Windows and Linux: no system shadow (a rectangle).
+  return { ...clear, hasShadow: false };
 }
 
 /**

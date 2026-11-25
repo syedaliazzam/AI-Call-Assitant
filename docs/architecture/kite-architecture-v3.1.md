@@ -1,8 +1,8 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "4.63.0"
+version: "4.64.0"
 status: "Current: the single document the team builds from"
-date: "2026-11-25"
+date: "2026-11-26"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
 authoritative_source: "docs/architecture/kite-architecture-v3.1.md"
 doc_label: "ARCHITECTURE AND BUILD PLAN"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 4.63.0, **Current**: the only document to build from |
+| Version | 4.64.0, **Current**: the only document to build from |
+| Changes in 4.64.0 | **Click-through covers the whole overlay; the Mac overlay is plainly see-through** (ADR-0055 amended 26 Nov 2026; ADR-0126). §5: with Click-through on, every click on the overlay (both bars, the chat bar, the script bar, the panels, W's spot) goes to the app behind it, sent to the shell at once; nothing reacts to the pointer (`.k-pass-all`). Only Ctrl+Alt+X (⌘ ⌥ X) turns it off from the overlay; bar 1 shows "Click-through on — press Ctrl+Alt+X to turn off"; the call window has **Turn click-through off**; it ends with the call; Settings › Hotkeys warns when another app holds the key, and while one does in a call the bars keep their clicks (`CompactState.clickThroughKeyTaken`). Web only (works with Windows 1.7.4); a newer shell adds a tray **Turn click-through off** during a call (Mac 1.8.0; next Windows release). §7.3 (desktop, macOS only): `overlayGlass()` drops `vibrancy`/`visualEffectState`: transparent with a clear background as on Windows, keeping macOS's content-shaped shadow. |
 | Changes in 4.63.0 | **The Mac download only once the Mac app is published** (ADR-0125; web only). §10.3: `src/server/macRelease.ts` reads `mac-latest/latest-mac.yml` (published = 200 with a version and a .zip; 404, errors and timeouts = not published; reused 1 min / 10 min); public `GET /api/mac-release` → `{ published }` (`proxy.ts` `PUBLIC_PAGE_PATHS`). Every "Get it for Mac" dialog shows **Mac version coming soon** (no command, no .dmg) until then; `install-mac.sh` says the same on a 404 and installs nothing. It turns on by itself when `publish-mac.mjs` publishes `mac-latest`. Windows download unchanged. |
 | Changes in 4.62.0 | **Transcript and answer the same height; the answer alone centred** (ADR-0124; web only; amends ADR-0113 §5, ADR-0119). §5: side by side the transcript panel is exactly as tall as the answer panel (`--k-pair-height`, copied from the answer by a ResizeObserver) and scrolls inside itself with **Scroll to bottom**; only the answer sets the window's height; with both open the answer keeps its default height even before the first answer. The answer open alone is centred under the bars on every position (`panelsColumn()`); opening the transcript keeps the held height (`answerHoldKey` uses the window width and dragged share). |
 | Changes in 4.61.0 | **Your own spoken questions on a key press; no Voice mode** (ADR-0123; web only, no prompt change; amends ADR-0082 §4, ADR-0095 §1). §6.1: Ctrl+Enter answers the other person while they spoke within `ON_CALL_WINDOW_MS` (2 min) and their audio is connected, exactly as before; otherwise the user's own newest spoken question or request from the "You" transcript (`core/answer/ownQuestion.ts`). Ctrl+Shift+Space always answers the user's own newest question (it no longer listens); Ctrl+Alt+Enter still listens with a screenshot. Never automatic. Sent as mode `chat` (as a typed question). §5: cards say **Your question:** for the user's own words (`yours`); bar 2 shows a small **Them / You** hint (`CompactState.pressTarget`); bar 1's Voice toggle, the ⋮ Voice switch and the tip are gone (the engine stays, unused). Timing triggers `own-question`, `own-question-key`. |
