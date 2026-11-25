@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-14
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §3.3, §5, §7.1, §7.3, §7.4, §8.1 (version 4.22.0)
-- **Supersedes / superseded by:** amends ADR-0049 (the one-time upload), ADR-0055 (the launcher's Start card), ADR-0068 (Record on the Connect card), ADR-0069 (the separate warning bar), ADR-0071 (Buy credits), ADR-0075 (bar 1's buttons and fit steps). Keeps ADR-0042 (Private) and ADR-0061 (Click-through) semantics.
+- **Supersedes / superseded by:** amends ADR-0049 (the one-time upload), ADR-0055 (the launcher's Start card), ADR-0068 (Record on the Connect card), ADR-0069 (the separate warning bar), ADR-0071 (Buy credits), ADR-0075 (bar 1's buttons and fit steps). Keeps ADR-0042 (Private) and ADR-0061 (Click-through) semantics. Its one status bar is amended by ADR-0118: bar 2 always shows the words and stays when the transcript panel opens; the warnings have their own slim line.
 
 ## Context
 

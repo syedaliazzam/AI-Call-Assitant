@@ -1,11 +1,13 @@
 /**
  * File: apps/web/src/features/live/CompactView.tsx
  * Purpose: The overlay (the compact live view; spec S13–S16, ADR-0029, ADR-0041): separate pieces rather
- *          than one window-sized panel. Bar 1 (status, the Transcript, Rec, Auto answer and Click-through
- *          toggles, move, compact, timer, ⋮ and Exit; ADR-0082: no Answer, Screenshot or Chat buttons and
- *          no chat bar, the shortcuts do those), then bar 2, the one status bar (ADR-0082: the warnings and
- *          the live words share it; StatusBar.tsx), or the transcript panel in bar 2's place, whose header
- *          is the same status bar. The answer panel opens by itself when an
+ *          than one window-sized panel. Bar 1 (status, Rec, Auto answer and Click-through toggles, move,
+ *          compact, timer, ⋮ and Exit; ADR-0082: no Answer, Screenshot or Chat buttons and no chat bar, the
+ *          shortcuts do those), then bar 2, the transcript bar (ADR-0118, like ParakeetAI: always there during
+ *          a call, always the live words as phrase chips, with the level, Clear and expand buttons;
+ *          StatusBar.tsx), then the call's current warning in a slim line of its own (WarningLine.tsx; it
+ *          shared bar 2's line from ADR-0082 to ADR-0118), then the panels: the full transcript opens under
+ *          bar 2 (it no longer replaces it). The answer panel opens by itself when an
  *          answer starts; with both panels open they sit side by side when the window is wide enough, and
  *          stack when it is not. Compact shrinks everything to an icon. The panels are see-through with
  *          the opacity setting, and are remembered. The script bar (v1.0.2) replaces all of it with one
@@ -44,7 +46,8 @@
  *
  * ADR-0085: the transcript (left) and the answer (right) sit side by side from 600 CSS px wide, with a
  * divider between them (overlay/PanelSplit.tsx; remembered per device); below that they stack. A panel open
- * alone fills the width. The Transcript switch on bar 1 is there for every account and never gives way.
+ * alone fills the width. (ADR-0118 removed bar 1's Transcript switch: bar 2's level and expand buttons and
+ * Ctrl+Alt+T open and close the full transcript.)
  * The page is as tall as its window at every UI zoom (.k-zoom-screen), so zooming never adds a scrollbar.
  *
  * ADR-0094: bar 1's model chip and the ⋮ menu's Model row switch the answer model (Fast / Smart) for the
@@ -142,6 +145,7 @@ import { statusMessage } from './overlay/statusLine';
 import { TranscriptPanel } from './overlay/TranscriptPanel';
 import { BARS_ATTRIBUTE, GAP_ATTRIBUTE, useClickThrough } from './overlay/useClickThrough';
 import { usePopupDismiss } from './overlay/usePopupDismiss';
+import { WarningLine } from './overlay/WarningLine';
 
 /** The overlay's window-level settings (desktop app; a browser window cannot do these). */
 export interface OverlayWindowSettings {
@@ -435,7 +439,6 @@ export function CompactView(props: CompactViewProps) {
   const [icon, setIcon] = useState(false);
   // Clear hides the words on screen at once; the live page keeps them out from then on.
   const [clearedChips, setClearedChips] = useState<readonly string[]>([]);
-  const [questionCleared, setQuestionCleared] = useState<string | null>(null);
   const [scriptInput, setScriptInput] = useState(false);
   const [neededHeight, setNeededHeight] = useState(0);
   // ADR-0085: the transcript's share of the width side by side (the divider; remembered per device).
@@ -870,7 +873,6 @@ export function CompactView(props: CompactViewProps) {
   /** Clears the words on screen, in the strip and the panel. */
   const clearTranscript = () => {
     setClearedChips((state?.chips ?? []).map((chip) => chip.id));
-    setQuestionCleared(state?.liveQuestion ?? null);
     onCommand({ type: 'clear-transcript' });
   };
 
@@ -888,8 +890,6 @@ export function CompactView(props: CompactViewProps) {
   }
 
   const chips = (state?.chips ?? []).filter((chip) => !clearedChips.includes(chip.id));
-  const question =
-    state?.liveQuestion && state.liveQuestion !== questionCleared ? state.liveQuestion : null;
   const piece = pieceClass(glass);
   // A solid picture-in-picture window stays dark: nothing shows through it.
   const themeClass = glass && props.resolvedTheme === 'light' ? 'k-light' : 'k-dark';
@@ -922,34 +922,34 @@ export function CompactView(props: CompactViewProps) {
   // ADR-0105: the answer panel's default height, while an answer shows (none for the empty panel).
   const answerMin = state?.answer ? answerPanelMinHeight(fontScale) : null;
 
-  // ADR-0082: the one status bar (bar 2): the live words, or the current warning with its button.
+  // ADR-0118: bar 2, the transcript bar: always the live words, with the level, Clear and expand buttons.
   const statusBar = (
     <StatusBar
       state={state}
       chips={chips}
-      question={question}
-      words
-      transcriptOpen={false}
-      onTranscript={(open) => {
-        if (collapsed) collapse(false);
-        onPanels({ ...panels, transcript: open });
-      }}
-      onCommand={onCommand}
+      transcriptOpen={panels.transcript}
+      onTranscript={(open) => onPanels({ ...panels, transcript: open })}
       onClear={clearTranscript}
-      onCollapse={() => collapse(true)}
-      collapseLabel="Hide the status bar"
-      onList={(list) => setPopup(list)}
-      privateOff={privateOff.visible}
-      onPrivateOn={privateOff.turnOn}
-      privateOffInCall={privateOffInCall}
       mac={mac}
       levels={levels}
     />
   );
+  // ADR-0118: the call's current message (statusLine.ts) in a slim line of its own under bar 2, only while it
+  // applies; until ADR-0118 it replaced the live words on bar 2 (ADR-0082).
+  const message = statusMessage(state, privateOff.visible, privateOffInCall);
+  const warningLine = message ? (
+    <div className={`${piece} min-w-0`} {...{ [BARS_ATTRIBUTE]: '' }}>
+      <WarningLine
+        message={message}
+        onCommand={onCommand}
+        onList={(list) => setPopup(list)}
+        onPrivateOn={privateOff.turnOn}
+      />
+    </div>
+  ) : null;
   // ADR-0082: collapsed to bar 1, a warning that needs the user (a side that cannot be heard, the Answer key
-  // held by another app, a recording with Private off) still shows the status bar.
-  const alertWhileCollapsed =
-    collapsed && statusMessage(state, privateOff.visible)?.tone === 'alert';
+  // held by another app, a recording with Private off) still shows; ADR-0118: as the slim line alone.
+  const alertWhileCollapsed = collapsed && message?.tone === 'alert';
 
   return (
     // @container: buttons drop their key-caps when it is narrow, and the panels stack.
@@ -1021,9 +1021,6 @@ export function CompactView(props: CompactViewProps) {
                 : {})}
               // ADR-0095: the Voice toggle (hands-free talking to the assistant), where the live page says it.
               onVoice={(on: boolean) => onCommand({ type: 'voice-mode', on })}
-              // ADR-0085: the Transcript switch for every account (it was only with account sync).
-              transcriptOpen={panels.transcript}
-              onTranscript={(open: boolean) => onPanels({ ...panels, transcript: open })}
             />
           </div>
           {popup === 'menu' && (
@@ -1175,30 +1172,29 @@ export function CompactView(props: CompactViewProps) {
           )}
         </div>
 
-        {/* ADR-0082: no warning bars of their own any more (the call notices, the Answer key held elsewhere, a
-          screen recording with Private off): the status bar's line shows the current one with its button. */}
+        {/* ADR-0082: no warning bars of their own (the call notices, the Answer key held elsewhere, a screen
+          recording with Private off); ADR-0118: the current one is the slim line, which still shows collapsed
+          when it needs the user. */}
         {alertWhileCollapsed && !state?.ended && (
-          <div className={`${piece} shrink-0 ${UNDER_BAR}`} {...{ [BARS_ATTRIBUTE]: '' }}>
-            {statusBar}
-          </div>
+          <div className={`flex shrink-0 flex-col ${UNDER_BAR}`}>{warningLine}</div>
         )}
 
         {collapsed ? null : state?.ended ? (
           <p className={`${piece} shrink-0 p-3 text-ui-muted ${UNDER_BAR}`}>The call has ended.</p>
         ) : (
           <>
-            {!panels.transcript && (
-              // 1.6.3 (ADR-0075): bar 2 alone; Auto answer is on bar 1.
-              <div
-                ref={barsEnd}
-                {...{ [GAP_ATTRIBUTE]: '' }}
-                className={`flex shrink-0 gap-1.5 ${up ? 'items-end' : 'items-start'} ${UNDER_BAR}`}
-              >
-                <div className={`${piece} min-w-0 flex-1`} {...{ [BARS_ATTRIBUTE]: '' }}>
-                  {statusBar}
-                </div>
+            {/* ADR-0118: bar 2 is always there during a call (the full transcript opens under it), with the
+                warning line under it; on the bottom row mirrored (the line above bar 2, ADR-0056). */}
+            <div
+              ref={barsEnd}
+              {...{ [GAP_ATTRIBUTE]: '' }}
+              className={`flex shrink-0 ${up ? 'flex-col-reverse' : 'flex-col'} gap-1.5 ${UNDER_BAR}`}
+            >
+              <div className={`${piece} min-w-0`} {...{ [BARS_ATTRIBUTE]: '' }}>
+                {statusBar}
               </div>
-            )}
+              {warningLine}
+            </div>
             {(panels.transcript || panels.answer) && (
               // v1.3.2: side by side the panels are as tall as their content (items-start), so the space
               // under a shorter one is a gap; the window is fitted to the taller one (contentHeight).
@@ -1240,15 +1236,7 @@ export function CompactView(props: CompactViewProps) {
                         <TranscriptPanel
                           state={state}
                           onCommand={onCommand}
-                          onClear={clearTranscript}
-                          onCollapse={() => onPanels({ ...panels, transcript: false })}
-                          mac={mac}
-                          levels={levels}
                           fontScale={fontScale}
-                          onList={(list) => setPopup(list)}
-                          privateOff={privateOff.visible}
-                          onPrivateOn={privateOff.turnOn}
-                          privateOffInCall={privateOffInCall}
                         />
                       </div>
                     )}

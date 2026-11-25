@@ -439,11 +439,11 @@ test('d) a 40-minute call: hygiene prompts, echo, background speech', async () =
   await expect(page.getByRole('button', { name: 'Answer', exact: true }).first()).toBeVisible();
   const overlay = await context.newPage();
   await overlay.goto(`${origin}/compact-harness`);
-  // ADR-0082: the one status bar (was the "Live transcript bar"); its line shows the call's messages.
+  // ADR-0118: bar 2, the transcript bar; the call's messages have their own line under it.
   const strip = overlay.getByRole('group', { name: 'Status bar' }).first();
   await expect(strip).toBeVisible();
   /**
-   * The status bar's message with this key (statusLine.ts), wherever the status bar is.
+   * The warning line's message with this key (statusLine.ts).
    *
    * @param key The message's key.
    * @returns Its locator.
@@ -487,7 +487,7 @@ test('d) a 40-minute call: hygiene prompts, echo, background speech', async () =
   await say('you', 'THAT IS GOOD TO HEAR FROM THEM', 5);
   const transcript = page.getByLabel('Live transcript');
   await expect(transcript.getByRole('listitem', { name: 'You said' })).toHaveCount(1);
-  // One hint, once, on the status bar (ADR-0082: short words).
+  // One hint, once, on the warning line (ADR-0082: short words; ADR-0118: its own line).
   await expect(message('headphones')).toHaveText(/Speakers echoing — use headphones/);
   await message('headphones').getByRole('button', { name: 'OK' }).click();
   await expect(message('headphones')).toHaveCount(0);
@@ -499,9 +499,11 @@ test('d) a 40-minute call: hygiene prompts, echo, background speech', async () =
     'Unclear speech (2)',
   );
 
-  // The overlay's transcript panel shows the same, under its own bar. ADR-0085: it is open on a device's
-  // first call (this fresh profile), so its level button offers to hide it.
-  await expect(overlay.getByRole('switch', { name: 'Transcript' })).toBeChecked();
+  // The overlay's transcript panel shows the same, under bar 2 (ADR-0118). ADR-0085: it is open on a device's
+  // first call (this fresh profile), so bar 2's level button offers to hide it.
+  await expect(
+    overlay.getByRole('button', { name: 'Close the full transcript', exact: true }),
+  ).toBeVisible();
   await expect(
     overlay.getByRole('button', { name: 'Hide the transcript', exact: true }),
   ).toBeVisible();
@@ -512,7 +514,7 @@ test('d) a 40-minute call: hygiene prompts, echo, background speech', async () =
   // Thirty quiet minutes: pauses, once, with Resume. Until then the call is not lost.
   await context.clock.fastForward('31:00');
   await expect.poll(() => page.evaluate(() => window.kiteSim.pauses())).toBe(1);
-  await overlay.getByRole('button', { name: 'Close the transcript' }).click();
+  await overlay.getByRole('button', { name: 'Close the full transcript', exact: true }).click();
   await expect(message('paused')).toContainText('Listening is paused');
   await message('paused').getByRole('button', { name: 'Resume' }).click();
   await expect.poll(() => page.evaluate(() => window.kiteSim.resumes())).toBe(1);
@@ -592,7 +594,9 @@ test('the overlay: panels open with an answer, the arrows move, Clear clears the
   // Both panels at once: transcript above answer in a narrow window (side by side in a wide one).
   await overlay.setViewportSize({ width: 780, height: 700 });
   // ADR-0085: the transcript was open from the start (a device's first call); the answer opened beside it.
-  await expect(overlay.getByRole('switch', { name: 'Transcript' })).toBeChecked();
+  await expect(
+    overlay.getByRole('button', { name: 'Close the full transcript', exact: true }),
+  ).toBeVisible();
   const transcriptPanel = overlay.getByRole('region', { name: 'Transcript panel' });
   await expect(transcriptPanel).toBeVisible();
   await expect(answerPanel).toBeVisible();
@@ -815,9 +819,8 @@ test('ADR-0082: the voice question: Ctrl+Shift+Space listens on the status bar, 
   await expect(overlay.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
   // No message box on the overlay at all.
   await expect(overlay.getByLabel('Type a question')).toHaveCount(0);
-  const listening = overlay
-    .getByRole('group', { name: 'Status bar' })
-    .locator('[data-status="listening"]');
+  // ADR-0118: the warning line under bar 2 (no longer inside it).
+  const listening = overlay.locator('[data-status="listening"]');
   const before = received.length;
 
   // Ctrl+Shift+Space: the status bar says it is listening, with Cancel; no box opens.

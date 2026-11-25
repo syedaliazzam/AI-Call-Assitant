@@ -7,6 +7,8 @@
  * fills it; the answer's corner grip sits on the side that moves (bottom left on a right position) and its
  * Clear button always shows its key. ADR-0115: before any drag the answer alone is 62 % of the bars' width
  * and the pair beside the transcript the bars' whole width; the question carries a muted "Question:" label.
+ * ADR-0118: bar 2 (the transcript bar) stays with the words when the full transcript opens under it, a warning
+ * has its own line between them, and both are mirrored on the bottom row.
  */
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -69,15 +71,17 @@ afterEach(() => vi.unstubAllGlobals());
  *
  * @param position The overlay's position (undefined: none, as in a browser).
  * @param panels   Which panels are open.
+ * @param state    What the live page shows (a call with one answer by default).
  * @returns The markup.
  */
 function overlay(
   position: OverlayPreset | undefined,
   panels: OverlayPanels = { transcript: false, answer: true },
+  state: CompactState = ANSWERED,
 ): string {
   return renderToString(
     <CompactView
-      state={ANSWERED}
+      state={state}
       protection={{ supported: true, on: true }}
       onCommand={() => undefined}
       glass
@@ -190,5 +194,56 @@ describe('CompactView (ADR-0113)', () => {
     expect(overlay('top-center')).toContain('data-grip-side="right"');
     expect(overlay('top-right')).toContain('data-grip-side="left"');
     expect(overlay('bottom-right')).toContain('data-grip-side="left"');
+  });
+});
+
+/** A call where the other side cannot be heard (a warning with its button). */
+const SILENT_THEM: CompactState = {
+  ...ANSWERED,
+  callNotice: {
+    kind: 'them-silent',
+    text: "We can't hear the other side — check the audio source.",
+    detail: '',
+    action: { list: 'audio', label: 'Choose audio source' },
+  },
+};
+
+describe('CompactView (ADR-0118: the transcript bar like ParakeetAI)', () => {
+  it('keeps bar 2 with the live words when the full transcript opens, and the panel under it', () => {
+    const html = overlay('top-left', { transcript: true, answer: true });
+    const bar2 = html.indexOf('aria-label="Status bar"');
+    const panel = html.indexOf('aria-label="Transcript panel"');
+    expect(bar2).toBeGreaterThan(-1);
+    expect(panel).toBeGreaterThan(bar2);
+    // Only one status bar (the panel has no header of its own) and it still shows the words.
+    expect(html.split('aria-label="Status bar"')).toHaveLength(2);
+    expect(html).toContain('tell me about');
+    expect(html).toContain('aria-label="Close the full transcript"');
+    // Bar 1 has no Transcript switch any more.
+    expect(html).not.toContain('aria-label="Transcript"');
+  });
+
+  it('shows a warning in its own line under bar 2, never in place of the words', () => {
+    const html = overlay('top-left', { transcript: false, answer: true }, SILENT_THEM);
+    const bar2 = html.indexOf('aria-label="Status bar"');
+    const line = html.indexOf('data-status="them-silent"');
+    expect(line).toBeGreaterThan(bar2);
+    expect(line).toBeLessThan(html.indexOf('data-panels-block'));
+    expect(html).toContain('Choose audio source');
+    expect(html).toContain('tell me about');
+    // No line at all when nothing applies.
+    expect(overlay('top-left')).not.toContain('data-status=');
+  });
+
+  it('mirrors bar 2 and the warning line on the bottom row (the line above bar 2)', () => {
+    const top = overlay('top-left', { transcript: false, answer: true }, SILENT_THEM);
+    const bottom = overlay('bottom-left', { transcript: false, answer: true }, SILENT_THEM);
+    // The wrapper that holds bar 2 and the line: a column on the top row, reversed on the bottom row.
+    const wrapper = (html: string) =>
+      html.match(
+        /<div data-gap="" class="([^"]*)"><div class="[^"]*"[^>]*data-bars=""[^>]*><div role="group" aria-label="Status bar"/,
+      )?.[1] ?? '';
+    expect(wrapper(top)).toMatch(/(^| )flex-col( |$)/);
+    expect(wrapper(bottom)).toContain('flex-col-reverse');
   });
 });

@@ -1,11 +1,11 @@
 /**
- * Tests for apps/web/src/features/live/overlay/StatusBar.tsx and ControlBar.tsx (ADR-0082): the overlay's
- * status bar is one row (level button, one line, Clear, collapse; ADR-0085: no language control) whose line shows the live words
- * or the current warning with its button, never both and never a second warning bar; in the transcript
- * panel's header it shows only messages. Bar 1 has no Answer, Screenshot or Chat buttons any more, and a
- * Click-through switch with its state and tooltip where clicks can pass (none where they cannot). The
- * Auto answer and Click-through switches show the short labels "AA" and "W" (no icons) and keep their
- * full names in aria-label and the tooltip.
+ * Tests for apps/web/src/features/live/overlay/StatusBar.tsx, WarningLine.tsx and ControlBar.tsx. ADR-0118: bar 2
+ * (the transcript bar) is one row (level button, the live words as phrase chips, Clear, the expand button) that
+ * always shows the words and never a warning or a collapse button; the warning has its own slim line
+ * (WarningLine.tsx) with its button. ADR-0085: no language control. Bar 1 has no Answer, Screenshot, Chat or
+ * (ADR-0118) Transcript buttons, and a Click-through switch with its state and tooltip where clicks can pass (none
+ * where they cannot). The Auto answer and Click-through switches show the short labels "AA" and "W" (no icons) and
+ * keep their full names in aria-label and the tooltip.
  */
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -19,6 +19,8 @@ vi.mock('@/platform', () => ({
   }),
 }));
 const { StatusBar } = await import('@/features/live/overlay/StatusBar');
+const { WarningLine } = await import('@/features/live/overlay/WarningLine');
+const { statusMessage } = await import('@/features/live/overlay/statusLine');
 const { ControlBar } = await import('@/features/live/overlay/ControlBar');
 
 /** A call's overlay state with nothing to say. */
@@ -35,51 +37,97 @@ const QUIET: CompactState = {
 };
 
 /**
- * The status bar as HTML.
+ * The transcript bar as HTML.
  *
  * @param state The overlay state.
- * @param words True for bar 2, false for the transcript panel's header.
+ * @param open  True while the full transcript panel is open.
  * @returns The markup.
  */
-function bar(state: CompactState, words = true): string {
+function bar(state: CompactState, open = false): string {
   return renderToString(
     <StatusBar
       state={state}
       chips={state.chips}
-      question={null}
-      words={words}
-      transcriptOpen={!words}
+      transcriptOpen={open}
       onTranscript={() => undefined}
-      onCommand={() => undefined}
       onClear={() => undefined}
-      onCollapse={() => undefined}
-      collapseLabel="Hide the status bar"
-      onList={() => undefined}
-      privateOff={false}
-      onPrivateOn={() => undefined}
       mac={false}
     />,
   );
 }
 
-describe('StatusBar', () => {
-  it('is one row with the level button, the live words, Clear and collapse', () => {
+/**
+ * The warning line for a state, as HTML (empty when no message applies).
+ *
+ * @param state The overlay state.
+ * @returns The markup.
+ */
+function warning(state: CompactState): string {
+  const message = statusMessage(state, false);
+  return message
+    ? renderToString(
+        <WarningLine
+          message={message}
+          onCommand={() => undefined}
+          onList={() => undefined}
+          onPrivateOn={() => undefined}
+        />,
+      )
+    : '';
+}
+
+describe('StatusBar (ADR-0118: the transcript bar)', () => {
+  it('is one row with the level button, the live words, Clear and the expand button; no collapse', () => {
     const html = bar(QUIET);
     // ADR-0085: no answer-language control in the compact view.
     expect(html).not.toContain('Answer language');
-    expect(bar(QUIET, false)).not.toContain('Answer language');
     // ADR-0085: no title attributes (a native tooltip is a separate, unprotected window).
     expect(html).not.toMatch(/ title="/);
     expect(html).toContain('aria-label="Status bar"');
     expect(html).toContain('aria-label="Show the transcript"');
     expect(html).toContain('tell me about');
     expect(html).toContain('aria-label="Clear transcript"');
-    expect(html).toContain('aria-label="Hide the status bar"');
+    expect(html).toContain('aria-label="Open the full transcript"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).not.toContain('Hide the status bar');
     expect(html).not.toContain('data-status=');
   });
 
-  it("shows the warning with its button instead of the words: can't hear the other side", () => {
+  it('keeps showing the words while a warning applies (the warning is on its own line)', () => {
     const html = bar({
+      ...QUIET,
+      callNotice: {
+        kind: 'them-silent',
+        text: "We can't hear the other side — check the audio source.",
+        detail: '',
+        action: { list: 'audio', label: 'Choose audio source' },
+      },
+    });
+    expect(html).toContain('tell me about');
+    expect(html).not.toContain('Choose audio source');
+  });
+
+  it('shows up to ten chips in one line, oldest first, and names the open panel', () => {
+    const chips = Array.from({ length: 12 }, (_, i) => ({
+      id: `c${i}`,
+      speaker: 'them' as const,
+      text: `phrase ${i}`,
+    }));
+    const html = bar({ ...QUIET, chips }, true);
+    expect(html).not.toContain('phrase 1<');
+    expect(html).toContain('phrase 2<');
+    expect(html).toContain('phrase 11<');
+    expect(html.indexOf('phrase 2<')).toBeLessThan(html.indexOf('phrase 11<'));
+    expect(html).toContain('data-words-line');
+    expect(html).toContain('aria-label="Hide the transcript"');
+    expect(html).toContain('aria-label="Close the full transcript"');
+    expect(html).toContain('aria-pressed="true"');
+  });
+});
+
+describe('WarningLine (ADR-0118)', () => {
+  it("shows can't hear the other side with its button", () => {
+    const html = warning({
       ...QUIET,
       callNotice: {
         kind: 'them-silent',
@@ -95,15 +143,13 @@ describe('StatusBar', () => {
   });
 
   it('shows "Listening…" with Cancel while a voice question listens', () => {
-    const html = bar({ ...QUIET, dictating: true });
+    const html = warning({ ...QUIET, dictating: true });
     expect(html).toContain('Listening… (Esc cancels)');
     expect(html).toContain('>Cancel<');
   });
 
-  it('in the transcript panel shows messages only, never the words', () => {
-    expect(bar(QUIET, false)).not.toContain('tell me about');
-    expect(bar({ ...QUIET, headphonesHint: true }, false)).toContain('Speakers echoing');
-    expect(bar(QUIET, false)).toContain('aria-label="Hide the transcript"');
+  it('is nothing at all when no message applies', () => {
+    expect(warning(QUIET)).toBe('');
   });
 });
 
@@ -127,8 +173,6 @@ function bar1(state: CompactState, onClickThrough?: (on: boolean) => void): stri
       deviceList={null}
       onDeviceList={() => undefined}
       menuButton={{ current: null }}
-      transcriptOpen={false}
-      onTranscript={() => undefined}
       {...(onClickThrough ? { onClickThrough } : {})}
     />,
   );
@@ -159,15 +203,15 @@ describe('ControlBar (bar 1)', () => {
     expect(bar1(QUIET)).not.toContain('aria-label="Click-through"');
   });
 
-  it('ADR-0085: pins the device icons and the Transcript switch, for every account, outside the part that gives way', () => {
+  it('ADR-0085: pins the device icons outside the part that gives way; ADR-0118: no Transcript switch', () => {
     const html = bar1(QUIET, () => undefined);
     const pinned = html.indexOf('data-bar-pinned');
     const fitting = html.indexOf('data-fit-step');
     expect(pinned).toBeGreaterThan(-1);
-    // The switch and the device lists come before the part that gives way, inside the pinned group.
-    const transcript = html.indexOf('aria-label="Transcript"');
-    expect(transcript).toBeGreaterThan(pinned);
-    expect(transcript).toBeLessThan(fitting);
+    // ADR-0118: bar 2's level and expand buttons open the full transcript; bar 1 has no switch for it.
+    expect(html).not.toContain('aria-label="Transcript"');
+    // The device lists come before the part that gives way, inside the pinned group.
+    expect(html.indexOf('aria-label="Choose microphone"')).toBeGreaterThan(pinned);
     expect(html.indexOf('aria-label="Choose microphone"')).toBeLessThan(fitting);
     // Auto answer and Click-through are in the part that gives way.
     expect(html.indexOf('aria-label="Auto answer"')).toBeGreaterThan(fitting);
@@ -237,9 +281,9 @@ function visibleText(markup: string): string {
     .trim();
 }
 
-describe('the rename offer on the status bar (ADR-0093)', () => {
+describe('the rename offer on the warning line (ADR-0093, ADR-0118)', () => {
   it('shows the question with its two buttons', () => {
-    const html = bar({ ...QUIET, themName: 'Them', nameOffer: 'Sarah' });
+    const html = warning({ ...QUIET, themName: 'Them', nameOffer: 'Sarah' });
     expect(html).toContain('data-status="rename-them"');
     expect(html).toContain('Rename Them to Sarah?');
     expect(html).toContain('>Rename<');

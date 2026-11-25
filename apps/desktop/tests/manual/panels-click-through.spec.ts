@@ -222,7 +222,8 @@ test.beforeAll(async () => {
   );
   screenSize = await app.evaluate(({ screen }) => screen.getPrimaryDisplay().bounds);
   // Both panels, the way a user opens them (the page's own controls; no real input yet).
-  await overlay.getByRole('switch', { name: 'Transcript' }).click();
+  // ADR-0118: bar 2's expand button (bar 1's Transcript switch is gone).
+  await overlay.getByRole('button', { name: 'Open the full transcript' }).click();
   await call.evaluate(() => {
     const rig = (window as unknown as RigWindow).rig;
     rig.say('them', 'HI THANKS FOR JOINING');

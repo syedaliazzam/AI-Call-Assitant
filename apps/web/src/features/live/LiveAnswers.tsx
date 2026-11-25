@@ -187,6 +187,12 @@ export interface LiveAnswersProps {
 /** How many of the latest bubbles the overlay gets: the call window and Review have them all. */
 const OVERLAY_GROUPS = 150;
 
+/**
+ * ADR-0118: how many phrase chips the overlay's transcript bar gets (three words each): enough to fill a wide
+ * bar; a narrow one shows the newest that fit and scrolls the rest out (it had 6, of which it showed 4).
+ */
+const OVERLAY_CHIPS = 10;
+
 /** How many hidden echo lines in a call before the one-time "Use headphones" hint shows. */
 const HEADPHONES_HINT_AFTER = 3;
 
@@ -430,6 +436,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       chips: transcriptChips(
         visibleLines.filter((line) => !line.final || !looksGarbled(line.text)),
         terms,
+        OVERLAY_CHIPS,
       ),
       liveQuestion: liveQuestion(
         visibleLines.filter((line) => !line.final || !looksGarbled(line.text)),

@@ -490,10 +490,9 @@ test('overlay: three bars, the answer in full, one scroll area, at default and s
     expect(fits, 'the window itself does not scroll').toBe(true);
     await shot(watched, size, `overlay-${size.width}`);
 
-    // The current live question sits on the status bar (v1.1.0: not on the answer).
-    await expect(page.getByLabel('Current question from the other person')).toContainText(
-      'What would the Professional plan cost',
-    );
+    // The live words sit on bar 2 as phrase chips, the question's too (ADR-0118: no separate question line;
+    // v1.1.0: not on the answer).
+    await expect(page.getByLabel(/^Latest words/)).toContainText('Professional plan');
     // Collapse leaves only the controls.
     await page.getByRole('button', { name: 'Collapse the overlay' }).click();
     await expect(page.getByRole('region', { name: 'Latest answer' })).toHaveCount(0);
@@ -781,8 +780,7 @@ test('S13: bar 1 in order, 44 tall, nothing cut off; ADR-0082: no Answer, Screen
   expect(await barWords(page)).toEqual([
     'Choose audio source',
     'Choose microphone',
-    // ADR-0055: the Transcript pill with its switch.
-    'Transcript',
+    // ADR-0118: no Transcript pill any more (bar 2's level and expand buttons open the full transcript).
     // 1.6.3 (ADR-0075): Auto answer moved here from its floating pill.
     'Auto answer',
     // ADR-0094: the model chip next to Auto.
@@ -805,7 +803,6 @@ test('S13: bar 1 in order, 44 tall, nothing cut off; ADR-0082: no Answer, Screen
   expect(await barWords(page)).toEqual([
     'Choose audio source',
     'Choose microphone',
-    'Transcript',
     'Auto answer',
     'Model: Haiku',
     'Click-through',
@@ -833,7 +830,7 @@ test('S13: bar 1 in order, 44 tall, nothing cut off; ADR-0082: no Answer, Screen
   await watched.context.close();
 });
 
-test('S13: bar 2 is the one status bar, under bar 1; the level button opens the transcript; Auto answer is on bar 1 (1.6.3)', async () => {
+test('S13 (ADR-0118): bar 2 is the transcript bar, under bar 1; the level and expand buttons open the full transcript under it; Auto answer is on bar 1 (1.6.3)', async () => {
   const watched = await openOverlayView(BARS_SIZE, '&panels=none');
   const { page } = watched;
   const bar1 = (await page.getByRole('toolbar', { name: 'Overlay controls' }).boundingBox())!;
@@ -846,17 +843,23 @@ test('S13: bar 2 is the one status bar, under bar 1; the level button opens the 
   expect(bar2.y).toBeGreaterThanOrEqual(bar1.y + bar1.height);
   expect(bar2.width).toBeLessThanOrEqual(bar1.width + 1);
   expect(bar2.height).toBeCloseTo(44, 0);
-  // In order: the level button, the line (the live words), Clear and collapse. ADR-0085: no language
-  // control in the compact view (calls are in English; the session sets the language).
+  // In order: the level button, the line (the live words), Clear and the expand button (ADR-0118: no collapse;
+  // the bar stays all call). ADR-0085: no language control (calls are in English; the session sets it).
   const names = await region.evaluate((element) =>
     [...element.querySelectorAll('button')].map((button) => button.getAttribute('aria-label')),
   );
   expect(names).toEqual([
     'Show the transcript',
-    'Latest words: open the transcript',
+    'Latest words: open the full transcript',
     'Clear transcript',
-    'Hide the status bar',
+    'Open the full transcript',
   ]);
+  // ADR-0118: bar 1 has no Transcript switch any more.
+  await expect(
+    page
+      .getByRole('toolbar', { name: 'Overlay controls' })
+      .getByRole('switch', { name: 'Transcript' }),
+  ).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Answer language/ })).toHaveCount(0);
   await expect(
     region.getByRole('button', { name: 'Clear transcript' }).locator('kbd'),
@@ -878,13 +881,19 @@ test('S13: bar 2 is the one status bar, under bar 1; the level button opens the 
   await region.getByRole('button', { name: 'Show the transcript' }).click();
   const panel = page.getByRole('region', { name: 'Transcript panel' });
   await expect(panel).toBeVisible();
-  // ADR-0082: the panel's header is the same status bar (one on screen): its level button and collapse
-  // close the panel, and its line does not repeat the words that are in the panel.
+  // ADR-0118: bar 2 stays (one on screen), still showing the words, and the panel opens under it.
   await expect(region).toHaveCount(1);
-  const header = panel.getByRole('group', { name: 'Status bar' });
-  await expect(header.getByRole('button', { name: 'Hide the transcript' })).toBeVisible();
-  await expect(header.getByLabel('Latest words')).toHaveCount(0);
-  await header.getByRole('button', { name: 'Close the transcript' }).click();
+  await expect(region.getByLabel('Latest words')).toBeVisible();
+  await expect(panel.getByRole('group', { name: 'Status bar' })).toHaveCount(0);
+  const panelBox = (await panel.boundingBox())!;
+  expect(panelBox.y).toBeGreaterThanOrEqual(bar2.y + bar2.height);
+  await expect(region.getByRole('button', { name: 'Hide the transcript' })).toBeVisible();
+  // The expand button closes it again, and opens it.
+  await region.getByRole('button', { name: 'Close the full transcript', exact: true }).click();
+  await expect(panel).toHaveCount(0);
+  await region.getByRole('button', { name: 'Open the full transcript', exact: true }).click();
+  await expect(panel).toBeVisible();
+  await region.getByRole('button', { name: 'Hide the transcript' }).click();
   await expect(panel).toHaveCount(0);
   await expect(region.getByLabel('Latest words')).toBeVisible();
   await watched.context.close();
@@ -933,11 +942,8 @@ test('S13: a shell before 1.2.0 has no icon: compact collapses to bar 1 and open
   await expect(statusBar).toHaveCount(0);
   await page.getByRole('button', { name: 'Open the overlay' }).click();
   await expect(statusBar).toBeVisible();
-  // Bar 2's collapse does the same, and bar 1 opens it again.
-  await page.getByRole('button', { name: 'Hide the status bar' }).click();
-  await expect(statusBar).toHaveCount(0);
-  await page.getByRole('button', { name: 'Open the overlay' }).click();
-  await expect(statusBar).toBeVisible();
+  // ADR-0118: bar 2 has no collapse button of its own any more (it stays all call).
+  await expect(page.getByRole('button', { name: 'Hide the status bar' })).toHaveCount(0);
   await watched.context.close();
 });
 
@@ -1009,19 +1015,22 @@ const STATUS_CASES: readonly StatusCase[] = [
   },
 ];
 
-test('ADR-0082: the status bar shows the current message with its button; no separate warning bars', async () => {
+test('ADR-0118: the current message shows in a slim line under bar 2 with its button; the live words stay', async () => {
   const watched = await openOverlayView(BARS_SIZE, '&panels=none');
   const { page } = watched;
   const statusBar = page.getByRole('group', { name: 'Status bar' });
   for (const { status, key, text, button, sends, alert } of STATUS_CASES) {
     await page.goto(overlayUrl(`&panels=none&status=${status}`));
     await statusBar.waitFor();
-    const line = statusBar.locator(`[data-status="${key}"]`);
-    // The message takes the line's place: the live words are not shown with it.
+    const line = page.locator(`[data-status="${key}"]`);
+    // The message has its own line under bar 2; the live words stay on bar 2 (until ADR-0118 they gave way).
     await expect(line, status).toBeVisible();
     await expect(line.getByRole(alert ? 'alert' : 'status'), status).toHaveText(text);
-    await expect(statusBar.getByLabel('Latest words'), status).toHaveCount(0);
-    // One bar: nothing else on the overlay says it (the old warning bars under bar 1 are gone).
+    await expect(statusBar.getByLabel('Latest words'), status).toBeVisible();
+    await expect(statusBar.locator('[data-status]'), status).toHaveCount(0);
+    const bar2 = (await statusBar.boundingBox())!;
+    expect((await line.boundingBox())!.y, status).toBeGreaterThanOrEqual(bar2.y + bar2.height);
+    // One line: nothing else on the overlay says it.
     await expect(page.getByText(text), status).toHaveCount(1);
     await expect(page.getByRole('group', { name: 'Status bar' }), status).toHaveCount(1);
     await line.getByRole('button', { name: button, exact: true }).click();
@@ -1033,20 +1042,26 @@ test('ADR-0082: the status bar shows the current message with its button; no sep
     }
   }
 
-  // The "can't hear" message stays visible when the overlay collapses to bar 1 (it needs the user); the
-  // headphones hint does not.
-  await page.goto(overlayUrl('&panels=none&status=them-silent'));
-  await statusBar.getByRole('button', { name: 'Hide the status bar' }).click();
-  await expect(statusBar.locator('[data-status="them-silent"]')).toBeVisible();
-  await shot(watched, BARS_SIZE, 'call-status-collapsed-alert');
-  await page.goto(overlayUrl('&panels=none&status=headphones'));
-  await statusBar.getByRole('button', { name: 'Hide the status bar' }).click();
+  // The "can't hear" message stays visible when the overlay collapses to bar 1 (a shell before 1.2.0: bar 1's
+  // collapse; it needs the user), as the line alone; the headphones hint does not.
+  // No shell= in the address: a shell before 1.2.0, the only one with bar 1's collapse.
+  const oldShell = (extra: string) => `${origin}/?view=compact&glass=1&alpha=0.82${extra}`;
+  await page.goto(oldShell('&panels=none&status=them-silent'));
+  await page.getByRole('button', { name: 'Collapse the overlay' }).click();
+  await expect(page.locator('[data-status="them-silent"]')).toBeVisible();
   await expect(statusBar).toHaveCount(0);
+  await shot(watched, BARS_SIZE, 'call-status-collapsed-alert');
+  await page.goto(oldShell('&panels=none&status=headphones'));
+  await page.getByRole('button', { name: 'Collapse the overlay' }).click();
+  await expect(page.locator('[data-status]')).toHaveCount(0);
 
-  // With the transcript panel open, its header (the same status bar) carries the message.
+  // With the transcript panel open the line sits between bar 2 and the panel, outside the panel.
   await page.goto(overlayUrl('&panels=transcript&status=listening'));
   const panel = page.getByRole('region', { name: 'Transcript panel' });
-  await expect(panel.locator('[data-status="listening"]')).toBeVisible();
+  const listening = page.locator('[data-status="listening"]');
+  await expect(listening).toBeVisible();
+  await expect(panel.locator('[data-status]')).toHaveCount(0);
+  expect((await listening.boundingBox())!.y).toBeLessThan((await panel.boundingBox())!.y);
   await expect(page.getByRole('group', { name: 'Status bar' })).toHaveCount(1);
   await shot(watched, BARS_SIZE, 'call-status-listening');
   await watched.context.close();
@@ -1526,7 +1541,8 @@ test('1.6.3 overlay pictures: top and bottom rows, recording with Private off, t
       name: 'tooltip-top',
       size: DESKTOP_OVERLAY.default,
       extra: '&position=top-center&rec=on&private=off',
-      hover: 'Transcript',
+      // ADR-0118: bar 1 has no Transcript switch any more.
+      hover: 'Auto answer',
     },
     {
       name: 'tooltip-bottom',
@@ -1674,8 +1690,8 @@ test('1.6.3: ⋮ and Exit are always whole; bar 1 gives way in order at the defa
           await expect(bar.getByRole('img', { name: 'Drag here to move' })).toBeVisible();
           await expect(bar.getByRole('timer', { name: 'Call time' })).toHaveText(/^\d+:\d\d$/);
           if (sizeName === 'default') {
-            // The default window keeps the Transcript switch's word; Auto answer reads "AA" (24 Nov 2026).
-            await expect(bar.getByRole('switch', { name: 'Transcript' })).toHaveText(/Transcript/);
+            // Auto answer reads "AA" (24 Nov 2026); ADR-0118: no Transcript switch on bar 1.
+            await expect(bar.getByRole('switch', { name: 'Transcript' })).toHaveCount(0);
             await expect(bar.getByRole('switch', { name: 'Auto answer' })).toHaveText('AA');
           }
         }
@@ -1715,7 +1731,6 @@ function barControls(clickThrough: boolean): readonly BarControl[] {
     { role: 'img', name: /^Screen audio:/, tip: 'Screen audio: capturing' },
     { role: 'button', name: 'Choose microphone', tip: 'Choose microphone' },
     { role: 'img', name: /^Microphone:/, tip: 'Microphone: capturing' },
-    { role: 'switch', name: 'Transcript', tip: 'Transcript: Off · Ctrl+Alt+T' },
     { role: 'button', name: /^Recording, /, tip: 'Stop recording · Ctrl+Alt+R' },
     { role: 'switch', name: 'Auto answer', tip: 'Auto answer: Off' },
     // ADR-0094: the model chip.
@@ -1852,9 +1867,9 @@ test('1.6.3: tooltips with Click-through on, in the light theme, over a dark pag
   }, BACKDROPS.dark);
   await page.getByRole('toolbar', { name: 'Overlay controls' }).waitFor();
   await checkBarTips(page, DESKTOP_OVERLAY.default, 'below', false, 'light theme');
-  // Collapsed to bar 1 (the shell makes the window 56 tall): beside each control, still whole.
+  // A window only bar 1 tall (56; ADR-0118: bar 2 has no collapse any more, so the window is simply that short):
+  // beside each control, still whole.
   await page.goto(overlayUrl('&position=top-center&rec=on&private=off&panels=none'));
-  await page.getByRole('button', { name: 'Hide the status bar' }).click();
   await page.setViewportSize({ width: DESKTOP_OVERLAY.default.width, height: 56 });
   await checkBarTips(
     page,
@@ -1866,7 +1881,7 @@ test('1.6.3: tooltips with Click-through on, in the light theme, over a dark pag
   await watched.context.close();
 });
 
-test('ADR-0082: the default window keeps the Transcript word and the "AA" and "W" labels in every state; bar 1 fits up to 130 % zoom', async () => {
+test('ADR-0082: the default window keeps the "AA" and "W" labels in every state; bar 1 fits up to 130 % zoom', async () => {
   const watched = await openDesktopOverlay(DESKTOP_OVERLAY.default, '&position=top-center');
   const { page } = watched;
   const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
@@ -1889,7 +1904,6 @@ test('ADR-0082: the default window keeps the Transcript word and the "AA" and "W
       // At 100 % the words stay; zoomed in, they may give way to icons (measured), but the bar still fits.
       // Auto answer and Click-through show their short labels "AA" and "W" (24 Nov 2026), at any width.
       if (zoom !== 1) continue;
-      await expect(bar.getByRole('switch', { name: 'Transcript' }), name).toHaveText(/Transcript/);
       await expect(bar.getByRole('switch', { name: 'Auto answer' }), name).toHaveText('AA');
       if (extra.includes('ct=on')) {
         await expect(bar.getByRole('switch', { name: 'Click-through' }), name).toHaveText('W');
@@ -2036,14 +2050,12 @@ test('1.6.3: Auto answer is a toggle on bar 1; the recording warning shows once'
   await auto.click();
   expect(await watched.log()).toContainEqual({ type: 'auto-answer', on: true });
 
-  // The warning once: on the status bar (ADR-0082) with its fix; the Rec pill only "● Rec m:ss" and an
-  // amber dot.
+  // The warning once: on the warning line under bar 2 (ADR-0082, ADR-0118) with its fix; the Rec pill only
+  // "● Rec m:ss" and an amber dot.
   await expect(
     page.getByText('Private is off: Paramount AI will appear in your recording'),
   ).toHaveCount(1);
-  const warning = page
-    .getByRole('group', { name: 'Status bar' })
-    .locator('[data-status="private-off"]');
+  const warning = page.locator('[data-status="private-off"]');
   await expect(warning.getByRole('alert')).toHaveText(
     'Private is off: Paramount AI will appear in your recording',
   );
@@ -2125,8 +2137,8 @@ test('ADR-0094: the model chip sits next to Auto and gives way without pushing o
         await expect
           .poll(() => barFit(page), { message: name })
           .toMatchObject({ barFits: true, leftFits: true, exitInside: true, menuInside: true });
-        // The Transcript switch is pinned: always there and whole, whatever the chip does.
-        await expect(bar.getByRole('switch', { name: 'Transcript' }), name).toBeVisible();
+        // The device icons are pinned: always there and whole, whatever the chip does.
+        await expect(bar.getByRole('button', { name: 'Choose microphone' }), name).toBeVisible();
         // The chip keeps its word until Auto gives way to its bolt; then both are icons.
         const { step } = await barFit(page);
         await expect(chip, name).toHaveText(
@@ -2253,4 +2265,104 @@ test('ADR-0094: the chip and ⋮ open the model choice; Smart off shows its tool
   await page.getByRole('button', { name: 'Overlay menu' }).click();
   await expect(page.getByRole('radiogroup', { name: 'Answer model' })).toHaveCount(0);
   await watched.context.close();
+});
+
+/** A Mac's Chrome, for the Mac pictures (with navigator.platform set to MacIntel, which the app reads). */
+const MAC_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36';
+
+/**
+ * ADR-0118 / ADR-0119: the overlay window widths the pictures use (DIPs, which are CSS px at 100 % zoom). The
+ * desktop app opens the overlay at 40 % of the display's work area, 640–960 (apps/desktop/src/windows.ts).
+ */
+const PARITY_WIDTHS = [
+  // The default on a 13" MacBook Air (work area 1440–1470 pt), a 1366 or 1536 DIP Windows laptop, and 1920×1080
+  // at 125 % (1536 DIP): 40 % is under 640 on all of them.
+  { name: '640', width: 640 },
+  // The default on 1920×1080 at 100 %.
+  { name: '768', width: 768 },
+  // The largest default (a work area of 2400 DIP or more).
+  { name: '960', width: 960 },
+] as const;
+
+test('ADR-0118 / ADR-0119 pictures: bars, transcript and answer at 640, 768 and 960 px, Windows and Mac', async () => {
+  test.skip(!SHOT_DIR, 'pictures only (KITE_SCREENSHOT_DIR)');
+  test.setTimeout(300_000);
+  const cases: {
+    os: 'windows' | 'mac';
+    width: number;
+    name: string;
+    position: string;
+    status: string;
+  }[] = [];
+  for (const os of ['windows', 'mac'] as const) {
+    for (const size of PARITY_WIDTHS) {
+      cases.push({ os, width: size.width, name: size.name, position: 'top-center', status: '' });
+    }
+    // The bottom row (mirrored) and a warning, at the smallest default.
+    cases.push({ os, width: 640, name: '640', position: 'bottom-center', status: '' });
+    cases.push({ os, width: 640, name: '640', position: 'top-center', status: 'them-silent' });
+  }
+  const measured: unknown[] = [];
+  for (const item of cases) {
+    const context = await browser!.newContext({
+      viewport: { width: item.width, height: 620 },
+      // A Mac's Retina screen; Windows at 125 %.
+      deviceScaleFactor: item.os === 'mac' ? 2 : 1.25,
+      userAgent: item.os === 'mac' ? MAC_UA : WINDOWS_UA,
+    });
+    const page = await context.newPage();
+    if (item.os === 'mac') {
+      await page.addInitScript(() => {
+        Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'MacIntel' });
+      });
+    }
+    await page.goto(`${origin}/?view=gate`);
+    const status = item.status ? `&status=${item.status}` : '';
+    await page.goto(
+      `${origin}/?view=compact&glass=1&alpha=0.82&shell=1&position=${item.position}&rec=on&ct=off&panels=transcript,answer&os=${item.os}${status}`,
+    );
+    await page.getByRole('toolbar', { name: 'Overlay controls' }).waitFor();
+    await page.evaluate((image) => {
+      document.documentElement.style.backgroundImage = image;
+      document.documentElement.style.backgroundAttachment = 'fixed';
+    }, BACKDROPS.light);
+    await page.waitForTimeout(800);
+    const file = `${item.os}-${item.name}-${item.position}${item.status ? `-${item.status}` : ''}`;
+    await page.screenshot({ path: path.join(SHOT_DIR!, `${file}.png`) });
+    measured.push({
+      file,
+      ...(await page.evaluate(() => {
+        const rect = (selector: string) => {
+          const element = document.querySelector(selector);
+          if (!element) return null;
+          const r = element.getBoundingClientRect();
+          return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width) };
+        };
+        const area = document.querySelector('[data-panels-area]');
+        const transcript = rect('section[aria-label="Transcript panel"]');
+        const answer = rect('[data-answer-panel]');
+        return {
+          window: window.innerWidth,
+          bar1: rect('[role="toolbar"][aria-label="Overlay controls"]')?.width ?? null,
+          barsColumn: rect('[data-bars-column]')?.width ?? null,
+          panelsBlock: rect('[data-panels-block]')?.width ?? null,
+          direction: area ? getComputedStyle(area).flexDirection : null,
+          transcript,
+          answer,
+          sideBySide:
+            transcript !== null &&
+            answer !== null &&
+            transcript.x + transcript.width <= answer.x + 1 &&
+            Math.abs(transcript.y - answer.y) < 40,
+          fitStep: document.querySelector('[data-fit-step]')?.getAttribute('data-fit-step') ?? null,
+        };
+      })),
+    });
+    await context.close();
+  }
+  writeFileSync(
+    path.join(SHOT_DIR!, 'measurements.json'),
+    `${JSON.stringify(measured, null, 2)}\n`,
+  );
 });

@@ -1,13 +1,13 @@
 /**
  * File: apps/web/src/features/live/overlay/statusLine.ts
- * Purpose: What the overlay's one status bar says (ADR-0082). The warning bar and the transcript bar
- *          became one bar: its line shows the most important message there is, with its button, or else
- *          the live words. In order: listening paused, "Still in a call?", a voice question listening, a
+ * Purpose: What the overlay's warning line says (ADR-0082; ADR-0118: a slim line of its own under the
+ *          transcript bar, shown only while a message applies; from ADR-0082 to ADR-0118 it replaced the live
+ *          words on bar 2): the most important message there is, with its button. In order: listening paused, "Still in a call?", a voice question listening, a
  *          channel that hears nothing (with its device list), another app holding the Answer key, a screen
  *          recording with Private off, the other call notices (catching up, cloud transcription), why the
  *          last voice question sent nothing, the answers' notice, Private off during the call, the offer to
  *          rename the other person (ADR-0093: "Rename Them to Sarah?"), and the one-time headphones hint.
- * Used by: src/features/live/overlay/StatusBar.tsx (and through it TranscriptPanel.tsx)
+ * Used by: src/features/live/CompactView.tsx (it renders the message with overlay/WarningLine.tsx)
  * Depends on: src/core/live/liveChannel.ts (types), src/features/live/PrivateOffWarning.tsx (words)
  * Architecture: ADR-0082 (one status bar); ADR-0069 (call notices), ADR-0070 (Private off), ADR-0076 (G4)
  *
@@ -110,8 +110,8 @@ export const HEADPHONES_TEXT = 'Speakers echoing — use headphones';
  * @param privateOff True while a screen recording runs with Private off (usePrivateOffWhileRecording()).
  * @param privateOffInCall ADR-0085: true while Private is off during the call (where it can be on); quieter
  *                         than the recording warning, after the call's own notices.
- * @returns The message, or null for none (the line then shows the live words).
- * Called from: StatusBar.tsx; tests
+ * @returns The message, or null for none (ADR-0118: then there is no warning line).
+ * Called from: CompactView.tsx; tests
  */
 export function statusMessage(
   state: CompactState | null,

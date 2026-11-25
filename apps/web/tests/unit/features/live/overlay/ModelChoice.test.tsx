@@ -71,8 +71,6 @@ function bar(state: CompactState, withChip = true, withVoice = false): string {
       deviceList={null}
       onDeviceList={() => undefined}
       menuButton={{ current: null }}
-      transcriptOpen={false}
-      onTranscript={() => undefined}
       {...(withChip ? { onModel: () => undefined, modelOpen: false } : {})}
       {...(withVoice ? { onVoice: () => undefined } : {})}
     />,

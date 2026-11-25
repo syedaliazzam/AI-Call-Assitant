@@ -188,16 +188,17 @@ test('a click in a gap reaches the window behind, typing follows it; a bar keeps
   );
   expect(typed, 'typing went to the window behind').toBe('kite');
 
-  // A bar keeps its clicks: the Transcript pill switches the transcript panel.
-  const pill = overlay.getByRole('switch', { name: 'Transcript' });
-  const before = await pill.getAttribute('aria-checked');
+  // A bar keeps its clicks: bar 2's expand button (ADR-0118; bar 1's Transcript pill is gone) switches the
+  // full transcript panel.
+  const pill = overlay.getByRole('button', { name: /^(Open|Close) the full transcript$/ });
+  const before = await pill.getAttribute('aria-pressed');
   const box = (await pill.boundingBox())!;
   pointAt(
     Math.round(content.x + (box.x + box.width / 2) * zoom),
     Math.round(content.y + (box.y + box.height / 2) * zoom),
   );
   click();
-  await expect(pill).not.toHaveAttribute('aria-checked', before ?? 'false');
+  await expect(pill).not.toHaveAttribute('aria-pressed', before ?? 'false');
   const clicksAfter = await app.evaluate(() =>
     (
       globalThis as unknown as { behind: Electron.BrowserWindow }

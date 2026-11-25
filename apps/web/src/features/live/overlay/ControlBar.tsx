@@ -1,9 +1,9 @@
 /**
  * File: apps/web/src/features/live/overlay/ControlBar.tsx
  * Purpose: Bar 1 of the call bars (spec S13): the screen-audio and microphone icons, each with its ▾;
- *          the Transcript pill with its on/off switch (ADR-0055: it opens and closes the transcript panel,
- *          as the level button does); desktop 1.5.0 (ADR-0068): the Rec pill after the Transcript pill,
- *          where the app can record; 1.6.3 (ADR-0075): the Auto answer toggle (labelled "AA" since 24 Nov
+ *          desktop 1.5.0 (ADR-0068): the Rec pill after them, where the app can record (ADR-0118: the
+ *          Transcript pill that sat between them is gone; bar 2's level and expand buttons and Ctrl+Alt+T open
+ *          and close the full transcript); 1.6.3 (ADR-0075): the Auto answer toggle (labelled "AA" since 24 Nov
  *          2026); ADR-0082: the Click-through toggle (as Ctrl+Alt+X; labelled "W"), where clicks can pass; ADR-0094: the model chip (Fast / Smart / Fastest) next to
  *          Auto, which opens the model choice; ADR-0095: the Voice toggle (hands-free talking to the assistant)
  *          next to the model chip; then move and compact, the call timer, ⋮ and Exit
@@ -11,10 +11,10 @@
  *          (their shortcuts still work). The bar is the window's drag handle; its buttons opt out.
  *
  *          1.6.3 (ADR-0075): ⋮ and Exit are pinned on the right and never leave the window. ADR-0085: the
- *          device icons, the Transcript switch (every account) and, while recording, the Rec pill are
+ *          device icons and, while recording, the Rec pill are
  *          pinned on the left the same way: never hidden, never cut. When the bar has too little room, the
  *          rest gives way one step at a time, measured rather than guessed: first Rec's key-cap, then the
- *          word "Transcript", the Click-through pill (it becomes a square "W") and the timer's clock, then the
+ *          Click-through pill (it becomes a square "W") and the timer's clock, then the
  *          Auto answer pill (it becomes a square "AA"), the model chip's word (ADR-0094)
  *          and the word "Voice" (ADR-0095); after that
  *          things go: the move icon (the whole bar drags), the Click-through toggle (⋮ and Ctrl+Alt+X still
@@ -30,7 +30,7 @@
 'use client';
 
 import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
-import { AudioLines, Clock, ScrollText } from 'lucide-react';
+import { AudioLines, Clock } from 'lucide-react';
 import {
   useEffect,
   useLayoutEffect,
@@ -95,10 +95,6 @@ export interface ControlBarProps {
    * like any press outside it; data-popup-button only marks the buttons that open one.)
    */
   menuButton: RefObject<HTMLButtonElement | null>;
-  /** Whether the transcript panel is open (the Transcript pill's switch). */
-  transcriptOpen?: boolean;
-  /** Opens or closes the transcript panel (remembered with the panels). */
-  onTranscript?: (open: boolean) => void;
   /**
    * ADR-0082: turns Click-through on or off from its toggle on this bar (v1.3.2 to 1.6.3 an indicator showed
    * only while it was on). Absent where clicks cannot pass (a browser, an older shell): no toggle then. The
@@ -136,7 +132,7 @@ export interface ControlBarProps {
 const FIT = {
   /** From here: no key-cap on the Rec pill. */
   noRecKey: 1,
-  /** From here: the Transcript word gives way to its icon, Click-through's "W" pill to a square; no clock icon. */
+  /** From here: Click-through's "W" pill gives way to a square; no clock icon (ADR-0118: no Transcript word any more). */
   noWords: 2,
   /** From here: Auto answer's "AA" pill is a square, the model chip its icon (ADR-0094), Voice its waveform (ADR-0095). */
   iconAuto: 3,
@@ -158,14 +154,11 @@ const FIT_MOST = FIT.noTimer;
  * @param hotkey The shortcut's accelerator, if it has one.
  * @param mac    True on macOS.
  * @returns The tooltip's words.
- * Called from: ControlBar, TranscriptPill
+ * Called from: ControlBar
  */
 function tipText(name: string, hotkey: string | undefined, mac: boolean): string {
   return hotkey ? `${name} · ${tipShortcut(hotkey, mac)}` : name;
 }
-
-/** Ctrl+Alt+T: the transcript on or off while the bars have focus (ADR-0056; platform/keymap.ts). */
-const TRANSCRIPT_ACCELERATOR = 'CommandOrControl+Alt+T';
 
 /** Ctrl+Shift+Arrows: the six positions (ADR-0056; ADR-0095 moved them from Ctrl+Alt+Arrows). */
 const POSITION_ACCELERATOR = 'CommandOrControl+Shift+Arrows';
@@ -240,60 +233,6 @@ function VoiceToggle({
               : 'bg-ui-muted opacity-60'
         }`}
       />
-    </button>
-  );
-}
-
-/**
- * The Transcript pill (ADR-0055): the word and a small switch inside; on opens the transcript panel,
- * off closes it. When the bar is short of room the word gives way to an icon.
- *
- * @param props.open     True while the transcript panel is open.
- * @param props.disabled True before the live page answers, or once the call ended.
- * @param props.word     False to show the icon instead of the word.
- * @param props.mac      True on macOS.
- * @param props.onToggle Opens or closes the panel.
- * @returns The pill.
- * Rendered by: ControlBar
- */
-function TranscriptPill({
-  open,
-  disabled,
-  word,
-  mac,
-  onToggle,
-}: {
-  /** True while the transcript panel is open. */
-  open: boolean;
-  /** True before the live page answers, or once the call ended. */
-  disabled: boolean;
-  /** False to show the icon instead of the word. */
-  word: boolean;
-  /** True on macOS (the shortcut's name). */
-  mac: boolean;
-  /** Opens or closes the panel. */
-  onToggle: (open: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={open}
-      aria-label="Transcript"
-      data-tip={tipText(`Transcript: ${open ? 'On' : 'Off'}`, TRANSCRIPT_ACCELERATOR, mac)}
-      className={`${PILL} gap-2`}
-      onClick={() => onToggle(!open)}
-      disabled={disabled}
-    >
-      {word ? 'Transcript' : <ScrollText aria-hidden="true" size={16} />}
-      <span
-        aria-hidden="true"
-        className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-(--k-dur) ${open ? 'bg-ui-accent-fill' : 'bg-ui-control-strong'}`}
-      >
-        <span
-          className={`absolute left-0.5 size-3 rounded-full bg-white transition-transform duration-(--k-dur) ${open ? 'translate-x-3' : 'translate-x-0'}`}
-        />
-      </span>
     </button>
   );
 }
@@ -667,7 +606,6 @@ export function ControlBar(props: ControlBarProps) {
     autoOn,
     clickThroughOn,
     props.onClickThrough !== undefined,
-    props.onTranscript !== undefined,
     collapsed,
     onIcon !== undefined,
     state?.capturing ?? false,
@@ -687,7 +625,7 @@ export function ControlBar(props: ControlBarProps) {
       aria-label="Overlay controls"
       className="relative flex h-11 shrink-0 items-center gap-1 px-1.5 [-webkit-app-region:drag]"
     >
-      {/* ADR-0085: pinned on the left, always whole: what is captured, the Transcript switch, and the
+      {/* ADR-0085: pinned on the left, always whole: what is captured (ADR-0118: no Transcript switch), and the
           recording while it runs. */}
       <div data-bar-pinned="" className="flex shrink-0 items-center gap-1">
         <span className="inline-flex shrink-0 items-center">
@@ -710,20 +648,8 @@ export function ControlBar(props: ControlBarProps) {
         </span>
         <span className="w-1 shrink-0" />
 
-        {props.onTranscript && (
-          <TranscriptPill
-            open={props.transcriptOpen ?? false}
-            disabled={ended}
-            word={words}
-            mac={mac}
-            onToggle={(open) => {
-              if (collapsed) props.onCollapse(false);
-              props.onTranscript?.(open);
-            }}
-          />
-        )}
         {recording && props.onRecord && (
-          // Desktop 1.5.0 (ADR-0068): after the Transcript pill, in the same style.
+          // Desktop 1.5.0 (ADR-0068): after the device icons (ADR-0118: the Transcript pill is gone).
           <RecPill
             recording={recording}
             open={props.recordOpen ?? false}

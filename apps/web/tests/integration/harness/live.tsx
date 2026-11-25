@@ -455,6 +455,8 @@ function CompactHarness({
       glass={params.has('glass')}
       // ?theme=light: the overlay's light theme.
       resolvedTheme={params.get('theme') === 'light' ? 'light' : 'dark'}
+      // ?os=mac: as on a Mac (the shortcuts' names and the Mac wording; ADR-0118 / ADR-0120 pictures).
+      mac={params.get('os') === 'mac'}
       {...(alpha !== null
         ? {
             windowSettings: {
