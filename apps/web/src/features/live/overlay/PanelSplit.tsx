@@ -4,10 +4,10 @@
  *          side by side (ADR-0085): drag it to share the width, arrow keys move it while it has focus, a
  *          double-click puts it back to the default (40 % transcript). Each panel keeps its minimum width
  *          (CompactView.tsx: 240 and 340 CSS px). The split is remembered on this device (overlayPrefs.ts).
- *          Shown only side by side (from 600 CSS px wide); stacked panels have no divider.
+ *          Shown only side by side (from 600 CSS px of the window, ADR-0119); stacked panels have no divider.
  * Used by: src/features/live/CompactView.tsx
  * Depends on: src/core/storage/overlayPrefs.ts (OVERLAY_SPLIT, clampSplit), React
- * Architecture: ADR-0085
+ * Architecture: ADR-0085, ADR-0119
  *
  * It is not one of the bars (data-bars): in Click-through mode it passes clicks on like the panels do, and
  * the window's height is never measured from it. It is not a gap (data-gap) either, so in normal mode it
@@ -98,7 +98,7 @@ export function PanelSplit({ ratio, area, onMove, onCommit, up }: PanelSplitProp
       data-panel-split=""
       // 12 px to grab, sitting in the 6 px gap between the panels (its margins take back 18 px: the two
       // flex gaps, 12, and 6 of its own), so the panels stay 6 px apart as before.
-      className={`group relative z-10 -mx-[9px] hidden w-3 shrink-0 cursor-col-resize self-stretch touch-none @min-[600px]:flex ${up ? 'items-end pb-3' : 'items-start pt-3'} justify-center rounded-control focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] [-webkit-app-region:no-drag]`}
+      className={`group relative z-10 -mx-[9px] hidden w-3 shrink-0 cursor-col-resize self-stretch touch-none @min-[600px]/overlay:flex ${up ? 'items-end pb-3' : 'items-start pt-3'} justify-center rounded-control focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] [-webkit-app-region:no-drag]`}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.preventDefault();

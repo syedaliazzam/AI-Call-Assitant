@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-15
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5 (Overlay, compact view), §4 (protection), §7.3
-- **Supersedes / superseded by:** revises ADR-0082 in part (the overlay's default size of a third of the display, stacked panels, the status bar's language control); ADR-0055 (popups kept in the window only with account sync); revised in part by ADR-0113 (the answer panel has its own width: "one open panel fills the width" now holds only for the transcript); amended by ADR-0118 (no Transcript switch on bar 1)
+- **Supersedes / superseded by:** revises ADR-0082 in part (the overlay's default size of a third of the display, stacked panels, the status bar's language control); ADR-0055 (popups kept in the window only with account sync); revised in part by ADR-0113 (the answer panel has its own width: "one open panel fills the width" now holds only for the transcript); amended by ADR-0118 (no Transcript switch on bar 1); ADR-0119 restores "side by side from 600 CSS px of the window" (ADR-0113 had made it the block's width)
 - **Plan and measurements:** `docs/investigations/2026-11-15-compact-view-plan.md`
 
 ## Context

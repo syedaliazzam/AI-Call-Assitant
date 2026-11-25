@@ -591,8 +591,9 @@ test('the overlay: panels open with an answer, the arrows move, Clear clears the
   await answerFromOverlay(overlay);
   await expect(answerPanel.getByRole('heading', { name: 'Answer line' })).toContainText('Answer 5');
 
-  // Both panels at once: transcript above answer in a narrow window (side by side in a wide one).
-  await overlay.setViewportSize({ width: 780, height: 700 });
+  // Both panels at once: transcript above answer in a window under 600 CSS px (ADR-0119: from 600 they sit
+  // side by side, whatever bar 1's width; 780 stacked here until then).
+  await overlay.setViewportSize({ width: 560, height: 700 });
   // ADR-0085: the transcript was open from the start (a device's first call); the answer opened beside it.
   await expect(
     overlay.getByRole('button', { name: 'Close the full transcript', exact: true }),

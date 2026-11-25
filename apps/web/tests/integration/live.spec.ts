@@ -1150,15 +1150,18 @@ test('S15: the panels sit side by side when wide, stack when narrow; bubbles and
   const before = (await transcript.boundingBox())!.width;
   await page.mouse.move(splitBox.x + splitBox.width / 2, splitBox.y + 40);
   await page.mouse.down();
-  await page.mouse.move(splitBox.x + splitBox.width / 2 + 120, splitBox.y + 40, { steps: 6 });
+  // ADR-0119: the pair is 720 px here (bar 1 is narrower since ADR-0118), so a 60 px drag stays clear of the
+  // answer's 340 px minimum (it was 120 px when the pair followed a wider bar 1).
+  await page.mouse.move(splitBox.x + splitBox.width / 2 + 60, splitBox.y + 40, { steps: 6 });
   await page.mouse.up();
   const dragged = (await transcript.boundingBox())!.width;
-  expect(dragged).toBeGreaterThan(before + 100);
+  expect(dragged).toBeGreaterThan(before + 50);
   expect(
     Number(await page.evaluate(() => localStorage.getItem('kite.overlaySplit'))),
   ).toBeGreaterThan(0.45);
-  // As far as it goes: the answer keeps 340 px.
-  await page.mouse.move(splitBox.x + 160, splitBox.y + 40);
+  // As far as it goes: the answer keeps 340 px. The drag starts on the divider where it is now.
+  const movedBox = (await divider.boundingBox())!;
+  await page.mouse.move(movedBox.x + movedBox.width / 2, movedBox.y + 40);
   await page.mouse.down();
   await page.mouse.move(WIDE_SIZE.width - 20, splitBox.y + 40, { steps: 6 });
   await page.mouse.up();
@@ -1911,11 +1914,13 @@ test('ADR-0082: the default window keeps the "AA" and "W" labels in every state;
     }
   }
   // Narrower than the default, they do become icons (the narrowest window, everything on); Click-through
-  // is a square that still reads "W".
-  await page.setViewportSize(DESKTOP_OVERLAY.narrowest);
+  // is a square that still reads "W". The zoom goes back to 100 % first: in the app the window's width follows
+  // the zoom (apps/desktop/src/windows.ts zoomedWidth()), so bar 1 refits; resetting it after the resize left
+  // the fit of 130 % in place (it failed in full runs since ADR-0118).
   await page.evaluate(() => {
     document.documentElement.style.zoom = '';
   });
+  await page.setViewportSize(DESKTOP_OVERLAY.narrowest);
   await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveText('W');
   await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveAttribute(
     'aria-checked',

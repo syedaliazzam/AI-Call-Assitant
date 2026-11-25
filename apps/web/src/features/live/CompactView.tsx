@@ -396,7 +396,9 @@ function stackedExtentOf(panels: readonly HTMLElement[], up: boolean, height: nu
 /**
  * How the panels' area lays out its panels (1.6.3, ADR-0075). Top row: they hang from the bars, side by
  * side from 600 CSS px (ADR-0085; 900 before) or stacked below that (the transcript first). Bottom row: mirrored, so they sit on
- * the bars: side by side along the bottom, or stacked upward with the transcript nearest the bars.
+ * the bars: side by side along the bottom, or stacked upward with the transcript nearest the bars. ADR-0119: 600 px
+ * of the window (the root, container "overlay"), not of the panels' block, which since ADR-0113 was never wider
+ * than bar 1 and so stacked in every 640 px window.
  *
  * @param both True when both panels are open.
  * @param up   True on the bottom row (ADR-0056).
@@ -406,8 +408,8 @@ function stackedExtentOf(panels: readonly HTMLElement[], up: boolean, height: nu
 export function panelsLayout(both: boolean, up: boolean): string {
   if (!both) return up ? 'items-end' : 'items-start';
   return up
-    ? 'flex-col-reverse @min-[600px]:flex-row @min-[600px]:items-end'
-    : 'flex-col @min-[600px]:flex-row @min-[600px]:items-start';
+    ? 'flex-col-reverse @min-[600px]/overlay:flex-row @min-[600px]/overlay:items-end'
+    : 'flex-col @min-[600px]/overlay:flex-row @min-[600px]/overlay:items-start';
 }
 
 /** v1.3.2: the window's height follows the content in steps of this many pixels (fewer resizes). */
@@ -952,7 +954,8 @@ export function CompactView(props: CompactViewProps) {
   const alertWhileCollapsed = collapsed && message?.tone === 'alert';
 
   return (
-    // @container: buttons drop their key-caps when it is narrow, and the panels stack.
+    // @container: buttons drop their key-caps when it is narrow, and (ADR-0119: by its name "overlay") the
+    // panels stack under 600 CSS px.
     <div
       ref={root}
       {...{ [GAP_ATTRIBUTE]: '' }}
@@ -960,7 +963,7 @@ export function CompactView(props: CompactViewProps) {
       // ADR-0105: k-popup-open turns the drag areas off while a menu is open (theme.css), so a press on the
       // bars reaches the page and closes it.
       // ADR-0113: the bars' column lines up by the position's column (columnAlignClass), not always centred.
-      className={`${themeClass} k-overlay-root k-zoom-screen @container relative flex flex-col ${columnAlignClass(column)} ${up ? 'k-overlay-up' : ''} ${popup !== null ? 'k-popup-open' : ''} overflow-hidden text-[16px] text-ui-text`}
+      className={`${themeClass} k-overlay-root k-zoom-screen @container/overlay relative flex flex-col ${columnAlignClass(column)} ${up ? 'k-overlay-up' : ''} ${popup !== null ? 'k-popup-open' : ''} overflow-hidden text-[16px] text-ui-text`}
       style={rootStyle}
     >
       {onResize && !collapsed && <ResizeGrips onResize={onResize} />}
@@ -1210,7 +1213,14 @@ export function CompactView(props: CompactViewProps) {
                 <div
                   {...{ [GAP_ATTRIBUTE]: '' }}
                   data-panels-block=""
-                  className="@container flex min-h-0 max-w-full flex-1 flex-col"
+                  // ADR-0119: with both panels open in a window of 600 CSS px or more, at least as wide as the
+                  // window or 720 px, whichever is less (100cqw: the root, the nearest container), with no 100 %
+                  // cap. So they sit side by side even where bar 1 is narrower (the 640 default: 13" Mac,
+                  // 1366/1536 Windows laptops), and keep the width they had beside the bars before ADR-0118 made
+                  // bar 1 narrower (715 px measured at the 768 and 960 defaults). A wider bar 1 still sets it. It
+                  // overflows bar 1's column on the side the position's column allows (centred: both sides), never
+                  // the window.
+                  className={`@container flex min-h-0 max-w-full flex-1 flex-col ${both ? '@min-[600px]/overlay:min-w-[min(720px,100cqw)] @min-[600px]/overlay:max-w-none' : ''}`}
                   style={{
                     // ADR-0115: the user's width, else 62 % for the answer alone and the bars' width beside
                     // the transcript (panelsShare()); never under the button strip.
@@ -1231,7 +1241,7 @@ export function CompactView(props: CompactViewProps) {
                         data-panel=""
                         // ADR-0085: side by side its width is the split (at least 240); alone it fills the width. A
                         // container of its own, so its header's key-caps follow the panel's width, not the window's.
-                        className={`${piece} @container flex max-h-full min-h-0 flex-1 flex-col overflow-hidden ${both ? '@min-[600px]:min-w-[240px] @min-[600px]:grow-0 @min-[600px]:basis-(--k-split)' : ''}`}
+                        className={`${piece} @container flex max-h-full min-h-0 flex-1 flex-col overflow-hidden ${both ? '@min-[600px]/overlay:min-w-[240px] @min-[600px]/overlay:grow-0 @min-[600px]/overlay:basis-(--k-split)' : ''}`}
                       >
                         <TranscriptPanel
                           state={state}
@@ -1268,7 +1278,7 @@ export function CompactView(props: CompactViewProps) {
                         }
                         // ADR-0085: side by side it takes the rest, at least 340. ADR-0113: otherwise never narrower
                         // than its button strip (min-w-max: the text below the strip is size-contained).
-                        className={`${piece} flex max-h-full min-h-0 min-w-max flex-1 flex-col overflow-hidden ${both ? '[--k-stack-reserve:7.5rem] @min-[600px]:min-w-[340px] @min-[600px]:[--k-stack-reserve:0px]' : ''}`}
+                        className={`${piece} flex max-h-full min-h-0 min-w-max flex-1 flex-col overflow-hidden ${both ? '[--k-stack-reserve:7.5rem] @min-[600px]/overlay:min-w-[340px] @min-[600px]/overlay:[--k-stack-reserve:0px]' : ''}`}
                       >
                         <OverlayAnswer
                           state={state}

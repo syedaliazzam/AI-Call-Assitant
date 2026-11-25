@@ -247,3 +247,43 @@ describe('CompactView (ADR-0118: the transcript bar like ParakeetAI)', () => {
     expect(wrapper(bottom)).toContain('flex-col-reverse');
   });
 });
+
+describe('CompactView (ADR-0119: side by side from the window width)', () => {
+  it('makes the root the named container "overlay" that the panels follow', () => {
+    expect(rootClass(overlay('top-left'))).toContain('@container/overlay');
+    const area = classOf(
+      overlay('top-left', { transcript: true, answer: true }),
+      'data-panels-area',
+    );
+    expect(area).toContain('@min-[600px]/overlay:flex-row');
+    // The bottom row is mirrored, as before.
+    const bottom = classOf(
+      overlay('bottom-left', { transcript: true, answer: true }),
+      'data-panels-area',
+    );
+    expect(bottom).toContain('flex-col-reverse');
+    expect(bottom).toContain('@min-[600px]/overlay:items-end');
+  });
+
+  it('lets the pair be as wide as the window or 720 px (wider than bar 1) only with both panels open', () => {
+    const both = classOf(
+      overlay('top-center', { transcript: true, answer: true }),
+      'data-panels-block',
+    );
+    expect(both).toContain('@min-[600px]/overlay:min-w-[min(720px,100cqw)]');
+    expect(both).toContain('@min-[600px]/overlay:max-w-none');
+    // One panel alone keeps ADR-0113 / ADR-0115's width (the answer's share, the transcript the bars' width).
+    expect(classOf(overlay('top-center'), 'data-panels-block')).not.toContain('min-w-[min(');
+    expect(
+      classOf(overlay('top-center', { transcript: true, answer: false }), 'data-panels-block'),
+    ).not.toContain('min-w-[min(');
+  });
+
+  it('keeps each panel’s minimum (transcript 240, answer 340) side by side, by the window', () => {
+    const html = overlay('top-left', { transcript: true, answer: true });
+    expect(html).toContain('@min-[600px]/overlay:min-w-[240px]');
+    expect(html).toContain('@min-[600px]/overlay:min-w-[340px]');
+    // No query left on the block's own width.
+    expect(html).not.toMatch(/@min-\[600px\]:(flex-row|min-w|grow-0|basis|flex )/);
+  });
+});
