@@ -3,7 +3,8 @@
  * zones in a 2 × 3 grid, 16 DIPs from the work area's edges; which one the pointer is on (zoneAt); a
  * see-through window that takes no clicks and never takes focus; a drag shows the zones and highlights
  * the position nearest to the dragged overlay; a drop anywhere snaps to it; the zones follow the overlay
- * onto another display; macOS waits for a quiet moment.
+ * onto another display; macOS waits for a quiet moment; ADR-0120: on macOS the zones join every Space, full-screen
+ * ones too (once, when the window is made), and on Windows nothing changes.
  */
 import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +26,7 @@ class FakeWindow {
   hide = vi.fn();
   setIgnoreMouseEvents = vi.fn();
   setAlwaysOnTop = vi.fn();
+  setVisibleOnAllWorkspaces = vi.fn();
   setBounds = vi.fn();
   close = vi.fn(() => {
     this.destroyed = true;
@@ -212,6 +214,23 @@ describe('a drag', () => {
     expect(windows).toHaveLength(1);
     expect(windows[0]!.setBounds).toHaveBeenCalledWith(AREA);
     expect(windows[0]!.loadURL).toHaveBeenCalledTimes(2);
+  });
+
+  it('ADR-0120: on macOS joins every Space, full-screen ones too, once; on Windows does not', () => {
+    const mac = setup('darwin');
+    mac.zones.moving(mac.overlay);
+    mac.zones.moved();
+    vi.advanceTimersByTime(400);
+    mac.zones.moving(mac.overlay);
+    expect(mac.windows).toHaveLength(1);
+    expect(mac.windows[0]!.setVisibleOnAllWorkspaces).toHaveBeenCalledTimes(1);
+    expect(mac.windows[0]!.setVisibleOnAllWorkspaces).toHaveBeenCalledWith(true, {
+      visibleOnFullScreen: true,
+    });
+    vi.useRealTimers();
+    const windows = setup('win32');
+    windows.zones.moving(windows.overlay);
+    expect(windows.windows[0]!.setVisibleOnAllWorkspaces).not.toHaveBeenCalled();
   });
 
   it('on macOS, waits for a quiet moment, as "moved" fires all through a drag', () => {

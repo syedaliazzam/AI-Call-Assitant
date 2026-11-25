@@ -1,6 +1,6 @@
 # Mac release test (stage 6): build, install, use and update Paramount AI on a real Mac
 
-**What this is.** The first real test of Paramount AI on a Mac. Nothing for the Mac is released until every step below passes (ADR-0109, ADR-0110, ADR-0111).
+**What this is.** The first real test of Paramount AI on a Mac. Nothing for the Mac is released until every step below passes (ADR-0109, ADR-0110, ADR-0111; since 25 Nov 2026 also the overlay of ADR-0118 and ADR-0119 and the Mac fixes of ADR-0120).
 
 **Who:** the teammate with the build Mac. **Time:** about 2 hours, mostly waiting for builds.
 
@@ -10,7 +10,8 @@ Write down each step's result: ✅ or ❌, plus a short note for every ❌ (what
 - **A Mac with macOS 14.2 or later.** Apple menu ›  About This Mac shows the version. Note whether it says **Apple M…** (Apple chip) or **Intel**.
 - **Part C of `docs/deploy/mac-signing-certificate.md` done** on this Mac (the signing keychain).
 - **Your Paramount AI account.**
-- **The test address** from the developer: a private preview of the web app with these changes, for example `https://kite-call-assistant-git-mac-internal-release-….vercel.app`. The app normally opens the live site, which does not have the Mac changes yet.
+- **The test address** from the developer: the preview deployment of the web app with these changes, `https://kite-call-assistant-<id>-paramount-intelligence.vercel.app`. Previews are made with `vercel deploy` from the command line, which gives each deployment its own address and no fixed branch address, so use the exact one the developer sends for the commit you built. The app normally opens the live site, which does not have the Mac changes yet.
+- **The commit** the developer names (`git log --oneline -1` in step 1.3 must show it).
 - **Headphones**, and a YouTube interview video (it plays the "other side").
 - **Invented data only.** A made-up company and documents; never a real customer call.
 
@@ -48,7 +49,10 @@ The app then shows the test web app (sign in once there). Opened any other way, 
    cd AI-Call-Assitant
    git checkout mac-internal-release
    git pull
+   git log --oneline -1
    ```
+
+   The last line must start with the commit the developer named.
 
 4. Check it is ready:
    - `ls apps/desktop/build/mac-signing/` lists **certificate.pem**;
@@ -158,7 +162,7 @@ Make a session (any type, invented details). Put on headphones. Open a YouTube i
 5. **Settings › Hotkeys** (open it from the call's ⋮ › Dashboard, or after the call) lists the Mac keys with ⌃ ⌥ and ⌘ symbols, and says nothing is "In use by another app". If something is, note which (window tools such as Rectangle use ⌃⌥ arrows).
 6. **Full screen.** Make the YouTube window full screen (the green button, or ⌃⌘F). **Expected:** the bars float over the full-screen video. When the bars first opened, the Dock icon may have blinked once: note whether it did.
 7. **Screenshot answer:** press **⌘ ⇧ ↵**. **Expected:** the answer is about the video page, not about Paramount AI's own bars.
-8. **Private.** Open the bars' **⋮** menu. **Expected:** under **Private**, the line *"On Mac, share a single window or tab, not your entire screen."*
+8. **Private.** Open the bars' **⋮** menu. **Expected:** under **Private**, the line *"On Mac, share a single window or tab, not your entire screen."* Then turn **Private** off in that menu. **Expected:** a slim line under the transcript bar says *"Private is off. On a Mac, Private hides the overlay when you share a window or tab, not your entire screen."* with **Turn on**. Click **Turn on**: the line goes. (ADR-0120)
 9. **Private in a share** (needs a phone):
    - join a Google Meet from Chrome on the Mac and from your phone;
    - on the Mac, share your **entire screen**;
@@ -173,7 +177,15 @@ Make a session (any type, invented details). Put on headphones. Open a YouTube i
 12. **Recording** (only if your account can record): start a recording with the Rec pill or **⌘ ⌥ R**, talk for 30 seconds, stop it.
     - **Expected:** macOS asks once for the **Documents** folder, with our sentence. Allow it.
     - The recording saves and plays from Meetings.
-13. **End** the call. **Expected:** the notes are written as usual.
+13. **The transcript bar** (ADR-0118). Keep the video playing.
+    - **Bar 1** (the top bar) has **no** Transcript switch.
+    - **Bar 2** is always there. On it: the green level icon, the latest words as small chips moving in one line, **Clear**, and an expand icon (⤢).
+    - Click **⤢**. **Expected:** the full transcript opens **under** bar 2, which stays with its words. Click it again (or the green icon): the full transcript closes.
+    - Unplug or mute the other side (pause the video for a minute, or pick a silent audio source). **Expected:** a slim line under bar 2 says *"Can't hear the other side"* with **Choose audio source**, while bar 2 still shows its chips.
+14. **Side by side** (ADR-0119). Use the overlay at the size it opened with (do not widen it). Open the full transcript and get an answer (**⌘ ↵**). **Expected:** the transcript on the **left** and the answer on the **right**, next to each other (before this change they were stacked). Write down the window's width if you can (Mission Control or a screenshot's size).
+15. **No Chromium zoom** (ADR-0120). Click on the bars, then press **⌘ +** three times and **⌘ −** three times. **Expected:** nothing changes. **⌃ ⌥ =** and **⌃ ⌥ −** still zoom the bars, and **⌃ ⌥ 0** puts them back. The **View** menu has only **Enter Full Screen**.
+16. **Snap zones over a full-screen meeting** (ADR-0120). With the YouTube window still full screen (step 6), drag the bars by their move icon. **Expected:** the six snap zones show over the full-screen video, and dropping snaps the bars there.
+17. **End** the call. **Expected:** the notes are written as usual.
 
 | # | Check | Result |
 |---|---|---|
@@ -190,6 +202,13 @@ Make a session (any type, invented details). Put on headphones. Open a YouTube i
 | 5.11 | ⌘R / ⌘W do nothing to the bars; menu has no Reload; ⌘C/⌘V work | |
 | 5.12 | Menu bar icon sharp, its menu works | |
 | 5.13 | Recording: Documents question, saves and plays | |
+| 5.14 | Bar 1 has no Transcript switch; bar 2 always shows the word chips, Clear and ⤢ | |
+| 5.15 | ⤢ opens the full transcript under bar 2 (bar 2 stays); it closes again | |
+| 5.16 | A warning shows in a slim line under bar 2; the chips stay | |
+| 5.17 | At the size it opened with: transcript left, answer right (window width: …) | |
+| 5.18 | ⌘ + / ⌘ − do nothing; ⌃⌥ = / − / 0 zoom; View menu has only Full Screen | |
+| 5.19 | Private off: the Mac line with Turn on; Turn on clears it | |
+| 5.20 | Snap zones show over a full-screen window | |
 
 ## 6. The update keeps the permissions (20 min)
 
@@ -281,6 +300,8 @@ This is the most important part. The app updates itself to 1.7.99 from this Mac,
 
 - This file's tables, filled in (✅ / ❌ and notes);
 - the **macOS version** and the **Mac model** (Apple chip or Intel);
-- for any ❌, a photo or screenshot that shows **no call content** (no transcript, answer or document text).
+- for any ❌, a photo or screenshot that shows **no call content** (no transcript, answer or document text);
+- the **commit** you built (`git log --oneline -1`) and the **test address** you used;
+- for a build that did not say **ALL CHECKS PASSED**, its whole PASS / FAIL list (step 2).
 
 Then remove the test builds: `rm -rf ~/paramount-test`. Keep Paramount AI installed: it will update itself to the real 1.8.0 once it is released.

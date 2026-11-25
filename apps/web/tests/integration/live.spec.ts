@@ -421,9 +421,15 @@ test('the Connect card: audio source, microphone, tips, and how to connect', asy
       'href',
       '/',
     );
-    await page.getByText('Need it for macOS?').hover();
-    await expect(page.getByRole('tooltip')).toHaveText('Coming soon');
+    // ADR-0109: "Need it for macOS?" opens the Mac install steps (until the Mac release: a "Coming soon"
+    // tooltip).
     await shot(watched, size, 'connect');
+    await page.getByRole('button', { name: 'Need it for macOS?' }).click();
+    const macDialog = page.getByRole('dialog', { name: 'Get Paramount AI for Mac' });
+    await expect(macDialog).toBeVisible();
+    await expect(macDialog).toContainText('install-mac.sh');
+    await page.keyboard.press('Escape');
+    await expect(macDialog).toHaveCount(0);
     // Each way of calling opens a short how-to for this platform.
     await page.getByRole('button', { name: 'Ways of calling' }).click();
     await expect(

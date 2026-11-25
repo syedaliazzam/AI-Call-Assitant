@@ -614,7 +614,7 @@ export const ACCURATE_MAX_SECONDS = 30;
 
 /** Where the accurate-transcription engine stands on this computer (ADR-0034). */
 export type AccurateState =
-  /** No engine build for this computer (only Windows x64 and macOS arm64 ship one). */
+  /** No engine build for this computer (Windows x64 ships one, and the Mac app since 1.8.0 for both Apple and Intel chips: ADR-0109's universal build stages darwin-arm64 and darwin-x64). */
   | 'unavailable'
   /** Available; the model is not downloaded. */
   | 'not-downloaded'

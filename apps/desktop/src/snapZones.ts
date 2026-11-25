@@ -9,7 +9,7 @@
  * Used by: src/main.ts, src/windows.ts (reports the drag)
  * Depends on: electron (BrowserWindow, Screen types), src/security.ts (secureWebPreferences),
  *             src/positions.ts, src/windows.ts (types), @kite/shared (SNAP_PRESETS)
- * Architecture: docs/architecture/kite-architecture-v3.1.md §5, §7.3; ADR-0041
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §5, §7.3; ADR-0041; ADR-0120 (Mac Spaces)
  *
  * It is a momentary drawing aid, so it stays out of the taskbar; Kite itself never does (CLAUDE.md).
  * Screen-share protection applies to it like every Kite window, so a protected overlay's zones do not
@@ -204,6 +204,13 @@ export function createSnapZones(deps: SnapDeps): OverlayDragWatcher & {
       zonesWindow = deps.createWindow(snapWindowOptions(area, deps.preloadPath, deps.appVersion));
       zonesWindow.setIgnoreMouseEvents(true);
       zonesWindow.setAlwaysOnTop(true, 'floating');
+      // ADR-0120: on a Mac, on every Space, full-screen ones too, as the overlay is (ADR-0111 §3,
+      // floatOverFullScreen() in windows.ts): over a full-screen meeting the zones were left on the normal
+      // desktop. Done once, when the window is made (it is reused for every drag), so the Dock icon's short
+      // blink that Electron's call causes happens at most once per run.
+      if (deps.platform === 'darwin') {
+        zonesWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      }
     } else {
       zonesWindow.setBounds(area);
     }
