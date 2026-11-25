@@ -210,6 +210,7 @@ function AnswerCard(props: AnswerCardProps) {
           answerLabel
           headlineLabel="Answer line"
           claims={entry.claims ?? []}
+          cutOff={entry.cutOff === true}
           hideEmptyHeadline={Boolean(entry.unavailable || entry.problem || stoppedEmpty(entry))}
           {...(entry.meta?.target ? { target: entry.meta.target } : {})}
           {...(props.copy ? { copy: props.copy } : {})}

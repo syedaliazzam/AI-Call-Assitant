@@ -690,6 +690,11 @@ export type AnswerEvent =
        * there (no text was sent); the browser asks again once. Absent otherwise.
        */
       templated?: true;
+      /**
+       * ADR-0121: present when the reply reached its output-token limit (stop reason 'max_tokens'), so its
+       * end is missing; the card shows "Answer cut off". Absent otherwise (and for a warm-up).
+       */
+      cutOff?: true;
     }
   | {
       /** Event name. */

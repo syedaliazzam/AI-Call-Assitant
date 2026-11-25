@@ -213,6 +213,11 @@ export interface AnswerEntry {
   /** Words the claim check could not find in the documents or the call (ADR-0030). */
   claims?: string[];
   /**
+   * ADR-0121: the reply reached its output-token limit, so its end is missing (the card, the overlay and the
+   * review say "Answer cut off"). Saved with the answer. Absent otherwise.
+   */
+  cutOff?: true;
+  /**
    * ADR-0076 (E3 rule 2): the press gave up waiting for the other side's last words, so the question may
    * be incomplete (the card says so). In memory only.
    */
@@ -268,6 +273,7 @@ function toStored(
     ...(entry.reported ? { reported: true } : {}),
     ...(entry.meta ? { meta: entry.meta } : {}),
     ...(entry.claims?.length ? { claims: entry.claims } : {}),
+    ...(entry.cutOff ? { cutOff: true as const } : {}),
     ...(entry.sourceLineId ? { sourceLineId: entry.sourceLineId } : {}),
     ...(entry.rerunOf ? { rerunOf: entry.rerunOf } : {}),
   };
@@ -1544,6 +1550,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
               ...(meta ? { meta } : {}),
               ...(cleanQuestion ? { cleanQuestion } : {}),
               ...(claims.length > 0 ? { claims } : {}),
+              // ADR-0121: the reply reached its output limit; the card says its end is missing.
+              ...(done.cutOff ? { cutOff: true as const } : {}),
             };
             update(entry.id, finished);
             finishedRef.current = [

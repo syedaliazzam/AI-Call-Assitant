@@ -332,6 +332,11 @@ export interface StoredAnswer {
    */
   claims?: string[];
   /**
+   * ADR-0121: the reply reached its output-token limit, so its end is missing (the review says "Answer cut
+   * off"). Missing on complete answers and on answers saved before ADR-0121.
+   */
+  cutOff?: true;
+  /**
    * v1.1.0 (ADR-0041): when the call this answer belongs to connected (Unix ms), so a session's calls
    * stay apart in the history. Filled in for older answers by the version 8 upgrade, which estimates
    * it from long gaps (core/storage/migrate.ts).

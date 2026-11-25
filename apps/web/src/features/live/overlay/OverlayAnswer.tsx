@@ -225,6 +225,7 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
                     headlineLabel="Answer line"
                     hideEmptyHeadline={answer.status === 'cancelled' || answer.status === 'error'}
                     claims={answer.claims}
+                    cutOff={answer.cutOff === true}
                     {...(answer.meta?.target ? { target: answer.meta.target } : {})}
                     {...(props.copy ? { copy: props.copy } : {})}
                   />

@@ -95,6 +95,8 @@ export interface CompactAnswer {
   meta?: AnswerMeta;
   /** Words the claim check could not find, to underline (ADR-0030). */
   claims: string[];
+  /** ADR-0121: the reply reached its output limit, so its end is missing (the card says so). Absent otherwise. */
+  cutOff?: boolean;
   /** When it was asked (Unix ms). */
   askedAt: number;
   /** The user's rating. */

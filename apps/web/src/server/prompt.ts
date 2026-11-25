@@ -147,8 +147,31 @@ const NOT_GIVEN = '(not given)';
  * Most tokens an answer may use. A headline and five short bullets need about 150. A coding answer
  * (steps, complexity, edge cases, code, what to say) and a private answer need far more (ADR-0030);
  * the limit only stops a runaway reply, and the shape rules keep ordinary answers short.
+ * ADR-0121: screenshot answers have their own, larger limit (SCREENSHOT_MAX_TOKENS).
  */
 export const ANSWER_MAX_TOKENS = 1_500;
+
+/**
+ * ADR-0121: most tokens a screenshot answer may use (mode 'screenshot': Ctrl+Shift+Enter, the Screenshot
+ * button, and Ctrl+Alt+Enter with a spoken question). A coding problem on screen is answered with the
+ * approach, the steps, the whole code, the complexity and a "Say" line (ADR-0107). Measured on 25 Nov 2026
+ * (Claude Haiku, an invented Java scheduler problem): cut off at 1,500 in 2 of 2 runs, with the code block
+ * left open; 1,995–2,437 tokens when allowed to finish. 4,000 is about 1.6 times the longest; only the
+ * tokens written are billed, and Claude Sonnet writes 4,000 in about 25 s, inside the 60 s limit. The
+ * first word comes as fast as before: the limit does not change the prompt.
+ */
+export const SCREENSHOT_MAX_TOKENS = 4_000;
+
+/**
+ * ADR-0121: the output limit for a live reply of this mode.
+ *
+ * @param mode The request's mode ('kite' has its own limit and is not passed here).
+ * @returns SCREENSHOT_MAX_TOKENS for 'screenshot', else ANSWER_MAX_TOKENS.
+ * Called from: app/api/answer/route.ts; tests
+ */
+export function liveMaxTokens(mode: AnswerRequest['mode']): number {
+  return mode === 'screenshot' ? SCREENSHOT_MAX_TOKENS : ANSWER_MAX_TOKENS;
+}
 
 /** The placeholder user turn of a warm-up: read while the cache is written, never answered. */
 export const WARM_MESSAGE = 'Warm-up: no answer is needed.';

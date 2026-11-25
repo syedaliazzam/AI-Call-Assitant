@@ -480,6 +480,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
               headline: parts.headline,
               ...(entry.meta ? { meta: entry.meta } : {}),
               claims: entry.claims ?? [],
+              // ADR-0121: the reply reached its output limit (the overlay card says so).
+              ...(entry.cutOff ? { cutOff: true } : {}),
               askedAt: entry.askedAt,
               rating: entry.rating,
               reported: entry.reported ?? false,
