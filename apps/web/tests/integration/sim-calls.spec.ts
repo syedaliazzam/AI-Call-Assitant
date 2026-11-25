@@ -872,6 +872,39 @@ test('ADR-0082: the voice question: Ctrl+Shift+Space listens on the status bar, 
   await expect(page.getByLabel('Live transcript')).not.toContainText(/on my screen/i);
 });
 
+test('ADR-0121: a screenshot voice question the user talks over sends the image once', async () => {
+  await openCall('desktop');
+  const overlay = await context.newPage();
+  await overlay.goto(`${origin}/compact-harness`);
+  await expect(overlay.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
+  const listening = overlay.locator('[data-status="listening"]');
+  const before = received.length;
+
+  // Ctrl+Alt+Enter: a screenshot, then the question in two utterances. The second comes within the hold
+  // (0.3 s) of the first, which is what cancels a held answer (ADR-0101).
+  await overlay.locator('body').click({ position: { x: 2, y: 2 } });
+  await overlay.keyboard.press('Control+Alt+Enter');
+  await expect(listening).toBeVisible();
+  // 150 ms apart, as speech arrives: the held answer of the first part has been sent by then.
+  await page.evaluate(async () => {
+    window.kiteSim.dictate('WHAT DOES THIS');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    window.kiteSim.dictate('ERROR MEAN');
+  });
+  await expect
+    .poll(() => received.slice(before).filter((request) => request.image).length, {
+      timeout: 4_000,
+    })
+    .toBeGreaterThan(0);
+  // Time for any other request to arrive.
+  await overlay.waitForTimeout(1_000);
+  const withImage = received.slice(before).filter((request) => request.image);
+  // Before ADR-0121 the first, cancelled attempt was sent (and billed) with the image too: two requests.
+  expect(withImage.map((request) => request.question)).toEqual(['WHAT DOES THIS ERROR MEAN']);
+  expect(withImage[0]!.mode).toBe('screenshot');
+  await expect(overlay.getByRole('heading', { name: 'Answer line' })).toBeVisible();
+});
+
 test('keyboard pass: every control of the overlay and the panel can be reached and used', async () => {
   const { say } = await openCall();
   const overlay = await context.newPage();

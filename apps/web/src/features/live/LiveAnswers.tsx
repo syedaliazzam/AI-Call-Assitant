@@ -947,7 +947,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     // ADR-0101: a voice question is answered as soon as the user stops: held hidden at the first
     // end-of-speech signal, shown when they have really finished, cancelled silently if they go on, and asked
     // again on the same card with the whole question if they go on just after it was shown. The screenshot
-    // taken before a Ctrl+Alt+Enter question goes with every one of these.
+    // taken before a Ctrl+Alt+Enter question goes with every one of these. ADR-0121: except the held one: a
+    // question with a screenshot is sent only when it is shown, so a cancelled attempt never sends the image.
     /** The card of the question being asked now, and whether its answer is still held hidden. */
     let card: { id: string; held: boolean } | null = null;
     /**
@@ -973,9 +974,22 @@ export function LiveAnswers(props: LiveAnswersProps) {
     const usedShot = (id: string | null, image: string | null) => {
       if (id && image) voiceShotCard.current = id;
     };
+    /**
+     * ADR-0121: true while a question with a screenshot waits out its hold without a request. A held request
+     * that the user talks over is cancelled, but it was already sent with the whole image (about 2,000 input
+     * tokens, billed, and counted against the daily limit) and each new attempt sent it again. With a
+     * screenshot the question is therefore sent once, when it is shown (at most VOICE_HOLD_MS, 0.3 s, later;
+     * at once on a strong end of speech); without one, nothing changes.
+     */
+    let shotWaiting = false;
     dictation.setVoiceHandler({
       speculate: (text, _target, timing) => {
         const image = shotForNewQuestion();
+        if (image) {
+          // ADR-0121: nothing is sent yet; show() sends it with the screenshot once the hold is over.
+          shotWaiting = true;
+          return;
+        }
         const id = actions.current.voiceAsk(text, {
           image,
           held: true,
@@ -985,6 +999,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         card = id ? { id, held: true } : null;
       },
       show: (text, _target, timing) => {
+        shotWaiting = false;
         if (card?.held) {
           actions.current.voiceShow(card.id);
           card = { id: card.id, held: false };
@@ -1000,12 +1015,20 @@ export function LiveAnswers(props: LiveAnswersProps) {
         card = id ? { id, held: false } : null;
       },
       cancel: () => {
+        if (shotWaiting) {
+          // ADR-0121: the user went on speaking before a screenshot question was sent: nothing to cancel,
+          // nothing paid; the screenshot stays free for the whole question.
+          shotWaiting = false;
+          card = null;
+          return;
+        }
         if (card?.held) actions.current.voiceCancel(card.id);
         // ADR-0107: the user went on speaking: the same question continues, so the screenshot stays free for it.
         if (card && voiceShotCard.current === card.id) voiceShotCard.current = null;
         card = null;
       },
       extend: (text, _target, timing) => {
+        shotWaiting = false;
         // The same question, asked again on its card: it keeps its screenshot.
         const image = voiceShot.current;
         const id = actions.current.voiceAsk(text, {
