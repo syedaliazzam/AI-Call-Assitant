@@ -86,6 +86,28 @@ export function isRetiredModel(model: AnswerModel): boolean {
 }
 
 /**
+ * ADR-0121: answer models that are hidden but kept dormant. No model list or picker shows them, and the app
+ * moves a session or default set to one to Claude Haiku ('fast'), as for a retired model. Unlike a retired
+ * model, the server code stays as it was behind the model's own admin switch, so bringing it back is
+ * removing it from here and adding its list row again.
+ * - `groq`: switched off in Admin on 18 Nov 2026 (ADR-0101); 19 of 20 measured answers fell back to Claude
+ *   Haiku because Groq refused them (18 rate limits, 1 request too large; benchmark-results.md, 17 Nov 2026).
+ *   Its switch (`groq_model_enabled`) is off and no longer shown in Admin › Usage.
+ */
+export const HIDDEN_ANSWER_MODELS: readonly AnswerModel[] = ['groq'];
+
+/**
+ * ADR-0121: whether a model is hidden (HIDDEN_ANSWER_MODELS).
+ *
+ * @param model The answer model.
+ * @returns True when no list offers it and a stored choice of it moves to Claude Haiku.
+ * Called from: apps/web/src/core/session/modelChoices.ts, apps/web/src/core/session/retireModels.ts; tests
+ */
+export function isHiddenModel(model: AnswerModel): boolean {
+  return HIDDEN_ANSWER_MODELS.includes(model);
+}
+
+/**
  * ADR-0099: who serves an answer model. 'claude' is Anthropic (Haiku and Sonnet); the other three are the
  * third-party providers, each with its own admin switch and usage count.
  */

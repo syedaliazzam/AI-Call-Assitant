@@ -40,7 +40,7 @@ import {
   type AnswerModelAccess,
 } from '@/core/session/modelAccess';
 import { modelOff } from '@/core/session/modelChoices';
-import { mustMoveToHaiku } from '@/core/session/retireModels';
+import { mustMoveToHaiku, offeredModel } from '@/core/session/retireModels';
 import { callTimings } from '@/core/live/callTimings';
 import {
   clampStep,
@@ -269,11 +269,15 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const [style, setStyle] = useState(props.session.preferences.style);
   // ADR-0094: the overlay's model chip and ⋮ Model row can switch the model during a call. It follows the
   // session too when that changes (Edit session in another window), while rendering as React advises.
-  const [model, setModel] = useState<AnswerModel>(props.session.preferences.model);
+  // ADR-0121: a session still set to a hidden model (Groq) is asked as Claude Haiku from the first answer,
+  // before its stored choice has moved (below), so no request names a model no list offers.
+  const [model, setModel] = useState<AnswerModel>(() =>
+    offeredModel(props.session.preferences.model),
+  );
   const [seenSessionModel, setSeenSessionModel] = useState(props.session.preferences.model);
   if (props.session.preferences.model !== seenSessionModel) {
     setSeenSessionModel(props.session.preferences.model);
-    setModel(props.session.preferences.model);
+    setModel(offeredModel(props.session.preferences.model));
   }
   // ADR-0094: Smart is off once the server says an admin has turned the deeper model off (it then shows
   // disabled in the overlay). ADR-0095: Groq, and ADR-0099: the Gemini and GPT models, are off until the server
@@ -296,11 +300,15 @@ export function LiveAnswers(props: LiveAnswersProps) {
   // ADR-0101: a session still set to Groq while Groq is off moves to Claude Haiku in its stored preferences
   // (the overlay already shows Claude Haiku, and the server answers it with Claude Haiku, never asking Groq).
   // ADR-0104: the same for a retired model (Gemini 3.6 Flash).
+  // ADR-0121: the same for a hidden model (Groq); `model` already says 'fast' for it, so the stored choice is
+  // checked as well.
   const sessionIdForModel = props.session.id;
+  const storedModel = props.session.preferences.model;
   useEffect(() => {
-    if (!accessKnown || !mustMoveToHaiku(model, access)) return;
+    if (!accessKnown) return;
+    if (!mustMoveToHaiku(model, access) && !mustMoveToHaiku(storedModel, access)) return;
     updateSessionPreferences(sessionIdForModel, { model: 'fast' }).catch(() => undefined);
-  }, [accessKnown, access, model, sessionIdForModel]);
+  }, [accessKnown, access, model, storedModel, sessionIdForModel]);
   // The answers use the new style and model from the next answer: one already streaming keeps its request.
   const session = useMemo(
     () => ({ ...props.session, preferences: { ...props.session.preferences, style, model } }),

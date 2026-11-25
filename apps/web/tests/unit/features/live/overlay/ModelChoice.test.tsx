@@ -8,6 +8,7 @@
  * place) and Zoom, Theme, Opacity and Answer text size are in the Display sheet, so the menu fits a laptop.
  * Clicks, the popover, the toast and the fit rules are covered in tests/integration/live.spec.ts and
  * answers.spec.ts. ADR-0102: every account's list has the GPT models; the Gemini rows only with moreModels.
+ * ADR-0121: Groq is hidden: no row in any list, whatever its switch, and a call still set to it is named Claude Haiku.
  */
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -103,13 +104,14 @@ describe('the model choice (ADR-0094)', () => {
   it('names each model by its short name (ADR-0102)', () => {
     expect(modelName('fast')).toBe('Haiku');
     expect(modelName('smart')).toBe('Sonnet');
-    expect(modelName('groq')).toBe('Groq');
+    // ADR-0121: Groq is hidden, so a call still set to it is named Claude Haiku.
+    expect(modelName('groq')).toBe('Haiku');
   });
 
   it('says what the switch means in its toast', () => {
     expect(modelSwitchToast('smart')).toBe('Claude Sonnet on');
     expect(modelSwitchToast('fast')).toBe('Claude Haiku on');
-    expect(modelSwitchToast('groq')).toBe('Groq on');
+    expect(modelSwitchToast('groq')).toBe('Claude Haiku on');
   });
 
   it('offers no choice when the live page does not say its model (an older live page)', () => {
@@ -148,11 +150,11 @@ describe('the model choice (ADR-0094)', () => {
     );
     expect(html).toMatch(/aria-checked="false"[^>]*data-model="fast"/);
     expect(html).toMatch(/aria-checked="true"[^>]*data-model="smart"/);
-    expect(html).toMatch(/aria-checked="false"[^>]*data-model="groq"/);
+    expect(html).not.toContain('data-model="groq"');
     expect(html).not.toContain('aria-disabled');
   });
 
-  it('shows Fastest (Groq) disabled while Groq is off (ADR-0095)', () => {
+  it('ADR-0121: offers no Groq row, whatever its switch says', () => {
     const html = renderToString(
       <ModelOptions
         label="Model"
@@ -163,10 +165,10 @@ describe('the model choice (ADR-0094)', () => {
         onClose={() => undefined}
       />,
     );
-    expect(html).toMatch(/aria-disabled="true"[^>]*data-model="groq"/);
+    expect(html).not.toContain('data-model="groq"');
     expect(html).not.toMatch(/aria-disabled="true"[^>]*data-model="smart"/);
     expect(modelOff('groq', { smartAllowed: true, groqAllowed: false })).toBe(true);
-    expect(modelOff('groq', { smartAllowed: true, groqAllowed: true })).toBe(false);
+    expect(modelOff('groq', { smartAllowed: true, groqAllowed: true })).toBe(true);
     expect(modelOff('fast', { smartAllowed: false, groqAllowed: false })).toBe(false);
   });
 
@@ -228,8 +230,9 @@ describe('bar 1 and the ⋮ menu (ADR-0094)', () => {
       /aria-expanded="false"[^>]*aria-label="Model: Claude Haiku \(Recommended\)"/,
     );
     expect(html).not.toContain('aria-label="Answer model"');
+    // ADR-0121: a call still set to the hidden Groq is named Claude Haiku.
     expect(menu({ ...STATE, model: 'groq', groqAllowed: true })).toContain(
-      'aria-label="Model: Groq (Fastest)"',
+      'aria-label="Model: Claude Haiku (Recommended)"',
     );
     const { model: _model, ...older } = STATE;
     expect(menu(older)).not.toContain('data-menu-row="model"');
@@ -302,7 +305,7 @@ describe('Voice mode on bar 1 and in the ⋮ menu (ADR-0095)', () => {
 });
 
 describe('ADR-0099: the new-models rollout in the overlay', () => {
-  it("lists the rollout's six choices in order, with their tags, and disables the providers that are off", () => {
+  it("lists the rollout's five choices in order, with their tags, and disables the providers that are off", () => {
     const html = renderToString(
       <ModelOptions
         label="Model"
@@ -322,10 +325,11 @@ describe('ADR-0099: the new-models rollout in the overlay', () => {
       'GPT-5.6 Terra',
       'Claude Haiku (Recommended)',
       'Claude Sonnet',
-      'Groq (Fastest)',
     ].map((label) => html.indexOf(label));
     expect(order.every((at) => at >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // ADR-0121: Groq is hidden.
+    expect(html).not.toContain('Groq');
     expect(html).toMatch(/aria-disabled="true" data-model="gpt-luna"/);
     expect(html).not.toMatch(/aria-disabled="true" data-model="gemini-lite"/);
     // ADR-0104: Gemini 3.6 Flash is retired.
@@ -349,11 +353,11 @@ describe('ADR-0099: the new-models rollout in the overlay', () => {
       'GPT-5.6 Terra',
       'Claude Haiku (Recommended)',
       'Claude Sonnet',
-      'Groq (Fastest)',
     ].map((label) => html.indexOf(label));
     expect(order.every((at) => at >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(html).not.toContain('Gemini');
+    expect(html).not.toContain('Groq');
     expect(html).not.toContain('aria-disabled');
   });
 
@@ -361,7 +365,6 @@ describe('ADR-0099: the new-models rollout in the overlay', () => {
     expect(modelSwitchToast('gemini-lite')).toBe('Gemini 3.5 Flash Lite on');
     expect(modelSwitchToast('gpt-luna')).toBe('GPT-5.6 Luna on');
     expect(modelRefusedToast('gpt-terra')).toBe('GPT-5.6 Terra is turned off by your admin');
-    expect(modelRefusedToast('groq')).toBe('Groq is turned off by your admin');
     expect(modelName('gpt-luna')).toBe('Luna');
   });
 });

@@ -3,8 +3,8 @@
  * Purpose: The answer-model choices as a person reads them, in one place, so the session wizard's AI
  *          preferences, Settings, the review and the overlay's chip and ⋮ Model row say the same thing. One list
  *          in the developer's order (ADR-0099): Gemini 3.5 Flash Lite, GPT-5.6 Luna (Fast), GPT-5.6 Terra,
- *          Claude Haiku (Recommended), Claude Sonnet, Groq (Fastest) (ADR-0104: Gemini 3.6 Flash retired, and
- *          "Recommended" moved to Claude Haiku). ADR-0102: every account sees it; the Gemini rows only the accounts
+ *          Claude Haiku (Recommended), Claude Sonnet (ADR-0104: Gemini 3.6 Flash retired, and "Recommended" moved
+ *          to Claude Haiku; ADR-0121: Groq hidden). ADR-0102: every account sees it; the Gemini rows only the accounts
  *          in the Gemini rollout (KITE_ANSWER_MODELS_USERS). Also which choices are off for this account (an
  *          admin's switch, no server key).
  * Used by: src/features/session-setup/labels.ts, src/features/session-setup/PreferencesStep.tsx,
@@ -17,7 +17,7 @@
  *
  * No React here (core/): plain data and pure functions.
  */
-import { isRetiredModel, providerOf, type AnswerModel } from '@kite/shared';
+import { isHiddenModel, isRetiredModel, providerOf, type AnswerModel } from '@kite/shared';
 import type { AnswerModelAccess } from './modelAccess';
 
 /** One model choice. */
@@ -61,12 +61,13 @@ export const ROLLOUT_MODEL_CHOICES: readonly ModelChoiceEntry[] = [
   entry('gpt-terra', 'Terra', 'GPT-5.6 Terra'),
   entry('fast', 'Haiku', 'Claude Haiku', 'Recommended'),
   entry('smart', 'Sonnet', 'Claude Sonnet'),
-  entry('groq', 'Groq', 'Groq', 'Fastest'),
+  // ADR-0121: Groq ("Groq (Fastest)") is hidden (HIDDEN_ANSWER_MODELS): no row, so no list offers it; a session
+  // still set to it is named and answered as Claude Haiku until it is moved (retireModels.ts).
 ];
 
 /**
  * ADR-0102: the choices for every account outside the Gemini rollout: the same list, words and order without
- * the Gemini rows (GPT-5.6 Luna (Fast), GPT-5.6 Terra, Claude Haiku, Claude Sonnet, Groq (Fastest)).
+ * the Gemini rows (GPT-5.6 Luna (Fast), GPT-5.6 Terra, Claude Haiku, Claude Sonnet).
  */
 export const STANDARD_MODEL_CHOICES: readonly ModelChoiceEntry[] = ROLLOUT_MODEL_CHOICES.filter(
   (choice) => providerOf(choice.value) !== 'gemini',
@@ -113,7 +114,8 @@ export function modelEntry(model: AnswerModel): ModelChoiceEntry {
  */
 export function modelOff(model: AnswerModel, access: AnswerModelAccess): boolean {
   const provider = providerOf(model);
-  if (isRetiredModel(model)) return true;
+  // ADR-0121: a hidden model (Groq) is off like a retired one.
+  if (isRetiredModel(model) || isHiddenModel(model)) return true;
   if (model === 'smart') return !access.smart;
   if (provider === 'groq') return !access.groq;
   if (provider === 'gemini') return !access.gemini;
