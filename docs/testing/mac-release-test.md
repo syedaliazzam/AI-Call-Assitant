@@ -4,13 +4,12 @@
 
 **Who:** the teammate with the build Mac. **Time:** about 2 hours, mostly waiting for builds.
 
-> **Tonight (25 Nov 2026 evening): bug-fix batch 1 is folded in.**
-> - **The commit to pull:** `mac-internal-release` now ends with a docs commit (this file and the release runbook) on top of **`db52329`** (bug-fix batch 1, ADR-0121, and the answers-test update). In step 1.3, `git log --oneline -2` must show that docs commit first and `db52329` second. The developer also sends both.
-> - **The test address:** in **Tonight's test address** below. That preview was deployed from `db52329`; the docs commit on top changes documents only.
-> - **Builds 1.7.98 / 1.7.99 are unaffected.** Batch 1 is web-only: nothing under `apps/desktop` changed since `6205ad3` (last desktop change: the ADR-0120 fixes and the jump-key smoke test). If you already built 1.7.98 and 1.7.99 from `6205ad3`, keep them and skip section 2. If not, build them from the new commit; they are the same app.
-> - **New checks:** section **5b** (screenshot code answers complete, no Groq, one answer for screenshot + voice, notes as before).
->
-> **Tonight's test address:** `https://kite-call-assistant-e17lnh4eo-paramount-intelligence.vercel.app`
+> **Tonight (25 Nov 2026 evening): the test runs against PRODUCTION.**
+> - **The web app is live.** Everything on `mac-internal-release` (the Mac overlay work, bug-fix batch 1 and WP3: the chat bar, your own questions on ⌘↵ / ⌘⇧Space, transcript and answer the same height) went to production on 25 Nov 2026 (`main` @ `4b980c0`, https://kite-call-assistant-bj7xmwyz8-paramount-intelligence.vercel.app). So: **no test address, no preview and no `--kite-url`**. Open Paramount AI normally; it shows the live site, `call.paramountintelligence.co`. Sign in with your normal account.
+> - **The commit to pull:** `mac-internal-release`, as before. In step 1.3, `git log --oneline -2` shows a docs commit (this file and the runbook) first and **`d51786c`** second. `d51786c` is exactly the code production runs (`main` @ `4b980c0` merges it with no other change).
+> - **Builds 1.7.98 / 1.7.99 are unaffected.** Nothing under `apps/desktop` changed since `6205ad3` (the ADR-0120 fixes): bug-fix batch 1, WP3 and the Mac-download switch are web-only. If you already built 1.7.98 and 1.7.99 from `6205ad3`, keep them and skip section 2. If not, build them from `4b980c0`; they are the same app.
+> - **The Mac download says "Mac version coming soon" until the Mac app is published** (ADR-0125). Production asks GitHub whether the `mac-latest` release has its `latest-mac.yml`; tonight it has none yet, so every "Get it for Mac" place shows **Mac version coming soon** and `install-mac.sh` says so too. It turns on by itself, within a minute, once the developer publishes 1.8.0 with `publish-mac.mjs` (runbook (a)): no deploy.
+> - **New checks:** section **5b** (batch 1) and section **5c** (WP3).
 
 Write down each step's result: ✅ or ❌, plus a short note for every ❌ (what you saw).
 
@@ -18,7 +17,7 @@ Write down each step's result: ✅ or ❌, plus a short note for every ❌ (what
 - **A Mac with macOS 14.2 or later.** Apple menu ›  About This Mac shows the version. Note whether it says **Apple M…** (Apple chip) or **Intel**.
 - **Part C of `docs/deploy/mac-signing-certificate.md` done** on this Mac (the signing keychain).
 - **Your Paramount AI account.**
-- **The test address** from the developer: the preview deployment of the web app with these changes, `https://kite-call-assistant-<id>-paramount-intelligence.vercel.app`. Previews are made with `vercel deploy` from the command line, which gives each deployment its own address and no fixed branch address, so use the exact one the developer sends for the commit you built. The app normally opens the live site, which does not have the Mac changes yet.
+- **The live site:** `https://call.paramountintelligence.co` (production). Tonight's test uses it; there is no preview.
 - **The commit** the developer names (`git log --oneline -1` in step 1.3 must show it).
 - **Headphones**, and a YouTube interview video (it plays the "other side").
 - **Invented data only.** A made-up company and documents; never a real customer call.
@@ -29,13 +28,7 @@ Write down each step's result: ✅ or ❌, plus a short note for every ❌ (what
 - To stop something that keeps running, press **Ctrl+C**.
 - "Repository folder" means the folder where the code is, for example `~/AI-Call-Assitant`.
 
-**Opening Paramount AI for this test.** Whenever this guide says *open Paramount AI for the test*, quit it first (**⌘ Q**) if it is running, then run this in Terminal with the test address:
-
-```
-open -a "Paramount AI" --args --kite-url=<test address>
-```
-
-The app then shows the test web app (sign in once there). Opened any other way, it shows the live site.
+**Opening Paramount AI for this test.** Whenever this guide says *open Paramount AI for the test*, quit it first (**⌘ Q**) if it is running, then open it normally (Applications, Launchpad or the Dock). It shows the live site. Do **not** use `--kite-url` tonight.
 
 ---
 
@@ -60,7 +53,7 @@ The app then shows the test web app (sign in once there). Opened any other way, 
    git log --oneline -2
    ```
 
-   The two lines must start with the commits the developer named (tonight: the docs commit, then `db52329`). If you cloned before, `git pull` on `mac-internal-release` is enough: it moves forward with no merge.
+   The two lines must start with the commits the developer named (tonight: the docs commit, then `d51786c`). If you cloned before, `git pull` on `mac-internal-release` is enough: it moves forward with no merge.
 
 4. Check it is ready:
    - `ls apps/desktop/build/mac-signing/` lists **certificate.pem**;
@@ -217,7 +210,7 @@ Make a session (any type, invented details). Put on headphones. Open a YouTube i
 | 5.11 | ⌘R / ⌘W do nothing to the bars; menu has no Reload; ⌘C/⌘V work | |
 | 5.12 | Menu bar icon sharp, its menu works | |
 | 5.13 | Recording: Documents question; the Mac recording line (no Turn on); saves and plays; bars in the video? | |
-| 5.14 | Bar 1 has no Transcript switch; bar 2 always shows the word chips, Clear and ⤢ | |
+| 5.14 | Bar 1 has no Transcript switch and no Voice toggle, and has **Chat ⌘⌥K**; bar 2 always shows the word chips, the **Them / You** hint, Clear and ⤢ | |
 | 5.15 | ⤢ opens the full transcript under bar 2 (bar 2 stays); it closes again | |
 | 5.16 | A warning shows in a slim line under bar 2; the chips stay | |
 | 5.17 | At the size it opened with: transcript left, answer right (window width: …) | |
@@ -244,6 +237,32 @@ A new call in the desktop app, opened for the test as above. Keep headphones on 
 | 5b.2 | No Groq in the model chip, ⋮ › Model, Settings or AI preferences | |
 | 5b.3 | ⌘⌥↵ with a two-part spoken question: one answer card | |
 | 5b.4 | Notes written as before, no "stop early" line | |
+
+## 5c. WP3: the chat bar, your own questions, the same height (20 min)
+
+A new call in the desktop app (opened normally: production). Headphones on, a YouTube interview video ready in Chrome. Invented questions only.
+
+1. **Chat.** Bar 1 has **Chat** with **⌘⌥K** on it, and no Voice button. Click **Chat**. **Expected:** a bar opens right under bar 1 with **Enter a message…**, **Send ↵** and **×**; no Screenshot button. Do not click into the box: type a few letters in TextEdit (or the meeting's chat). **Expected:** they go to TextEdit, not to Paramount AI. Now click into the box, type *"What is a good closing question for an interview?"* and press **Return**. **Expected:** an answer card with **Your question:** before the question; the box empties and stays open; typing goes back to TextEdit. Click **×**: the bar closes.
+2. **⌘⌥K during the call:** with TextEdit in front, press **⌘⌥K**. **Expected:** the chat bar opens, and your typing still goes to TextEdit until you click into the box.
+3. **Bottom row:** press **⌃⌘↓** to move the bars to the bottom row, open Chat. **Expected:** the chat bar sits **above** bar 1 (mirrored). Press **⌃⌘↑** to go back.
+4. **On a call, ⌘↵ answers them.** Play the video until the interviewer asks a question. **Expected:** bar 2 shows **⌘↵ Them**. Press **⌘↵**: the card says **Question:** and answers the video's question.
+5. **You ask aloud on the call:** pause the video, say *"How long should my answer to that be?"*, then press **⌘↵**. **Expected:** **not** your question: their earlier answer is shown again (or their newest question is answered). Now press **⌘⇧Space**. **Expected:** a card **Your question: How long should my answer to that be?**, and nothing starts listening.
+6. **On your own after two minutes:** keep the video paused and stay quiet for **2 minutes**. **Expected:** bar 2's hint changes to **⌘↵ You** (green) by itself. Say *"Explain the difference between a process and a thread."*, then *"Okay, thanks."*, then press **⌘↵**. **Expected:** **Your question:** with the process / thread question (not "Okay, thanks"). Press **⌘↵** again: no new card ("Showing the earlier answer").
+7. **Never automatic:** turn **AA** (auto answer) on, stay on your own and ask aloud *"What is a monad?"*, wait 10 seconds. **Expected:** no card appears by itself. Turn AA off.
+8. **Same height:** open the full transcript (⤢) with an answer shown, at the size the overlay opened with. **Expected:** transcript left, answer right, **exactly the same height**; the transcript scrolls inside its panel; scroll it up and **Scroll to bottom** appears. Close the transcript: the answer sits **centred** under the bars. Open it again: the height stays the same.
+9. **⌘⇧↵** and **⌘⌥↵** still work as in 5.8 and 5b.3.
+
+| # | Check | Result |
+|---|---|---|
+| 5c.1 | Chat ⌘⌥K on bar 1, no Voice; the chat bar has Enter a message…, Send ↵, ×, no Screenshot; typing stays in TextEdit until you click the box; Send answers with "Your question:" | |
+| 5c.2 | ⌘⌥K opens the chat bar without taking the keyboard | |
+| 5c.3 | Bottom row: the chat bar above bar 1 | |
+| 5c.4 | On a call: hint "⌘↵ Them"; ⌘↵ answers the video's question ("Question:") | |
+| 5c.5 | You ask aloud on the call: ⌘↵ does not answer you; ⌘⇧Space does ("Your question:"), nothing listens | |
+| 5c.6 | After 2 quiet minutes the hint says "You"; ⌘↵ answers your question, not "Okay, thanks"; a second ⌘↵ asks nothing new | |
+| 5c.7 | With AA on, your spoken question is never answered by itself | |
+| 5c.8 | Transcript and answer the same height; transcript scrolls with Scroll to bottom; the answer alone centred; reopening keeps the height | |
+| 5c.9 | ⌘⇧↵ and ⌘⌥↵ unchanged | |
 
 ## 6. The update keeps the permissions (20 min)
 
@@ -318,25 +337,25 @@ This is the most important part. The app updates itself to 1.7.99 from this Mac,
 
 ## 8. Chrome on this Mac (10 min)
 
-1. In Chrome, go to the **test address**, sign in, open a session and click **Connect**.
+1. In Chrome, go to **`https://call.paramountintelligence.co`**, sign in, open a session and click **Connect**.
 2. In Chrome's share window, pick **Window**, choose any window and share. **Expected:** Paramount AI says *"On a Mac only a browser tab shares its sound…"*.
 3. Connect again, pick the **YouTube tab** and turn on **Also share tab audio**. **Expected:** both sides are transcribed.
 4. With the Paramount AI tab in front, **⌃ ⌥ ←** and **⌃ ⌥ →** move through the answers, and **⌘ ←** does nothing in Paramount AI.
-5. In the sidebar, the desktop app card says **Paramount AI for Mac**, and **Don't have it? Get it for Mac** opens the install steps with the Terminal line and a Copy button.
+5. In the sidebar, the desktop app card says **Paramount AI for Mac**, and **Don't have it? Get it for Mac** opens a box that says **Mac version coming soon** (tonight, before 1.8.0 is published): no Terminal line and no .dmg link (ADR-0125). After the developer publishes 1.8.0 (runbook (a)), reload the page: the same box shows the Terminal line and a Copy button.
 
 | # | Check | Result |
 |---|---|---|
 | 8.1 | Window share: the Mac message about tabs | |
 | 8.2 | Tab with audio: both sides transcribed | |
 | 8.3 | ⌃⌥ arrows work in the tab; ⌘← left alone | |
-| 8.4 | Sidebar card offers the Mac app and its install steps | |
+| 8.4 | Sidebar card offers the Mac app; tonight its box says **Mac version coming soon** (no command); after publishing, the install steps | |
 
 ## 9. Send the developer
 
 - This file's tables, filled in (✅ / ❌ and notes);
 - the **macOS version** and the **Mac model** (Apple chip or Intel);
 - for any ❌, a photo or screenshot that shows **no call content** (no transcript, answer or document text);
-- the **commit** you built (`git log --oneline -1`) and the **test address** you used;
+- the **commit** you built (`git log --oneline -1`); the site was production (`call.paramountintelligence.co`);
 - for a build that did not say **ALL CHECKS PASSED**, its whole PASS / FAIL list (step 2).
 
 Then remove the test builds: `rm -rf ~/paramount-test`. Keep Paramount AI installed: it will update itself to the real 1.8.0 once it is released.

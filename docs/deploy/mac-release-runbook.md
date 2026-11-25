@@ -8,7 +8,14 @@
 
 **Rules:** do the steps in order. Stop at the first ❌ and use the rollback section. No secret is ever printed or pasted.
 
+> **Status on 25 Nov 2026: section (b) is done; the web app is in production before the Mac app.**
+> - `mac-internal-release` (code @ `d51786c`: the Mac work, bug-fix batch 1, WP3 = ADR-0122 to ADR-0124, and the Mac-download switch ADR-0125) was merged into `main` @ `4b980c0` and deployed to production: https://kite-call-assistant-bj7xmwyz8-paramount-intelligence.vercel.app, aliased to `call.paramountintelligence.co`.
+> - **The Mac download switches on by itself** (ADR-0125). Until `mac-latest` has its `latest-mac.yml`, every "Get it for Mac" box says **Mac version coming soon** (no command, no .dmg) and `install-mac.sh` says the same and installs nothing. Publishing 1.8.0 with `publish-mac.mjs` in (a) turns the download on within a minute: no deploy, no setting.
+> - **Tonight's Mac test runs against production** (`docs/testing/mac-release-test.md`: no `--kite-url`, no preview). After it passes, do (a), then (c). Skip (b) (done) except its checks, which you may repeat.
+> - **The previous production deployment** (`main` @ `4aba5b5`, for a rollback): https://kite-call-assistant-1xpy0tbkc-paramount-intelligence.vercel.app.
+
 **Decisions** (ADR-0109, ADR-0118, ADR-0119, ADR-0120, ADR-0110 amendment; ADR-0121 bug-fix batch 1, folded in on 25 Nov 2026):
+- **WP3 (ADR-0122 to ADR-0124) and ADR-0125 changed no prompt text either.** Your own spoken questions go as mode `chat`, the request a typed question already made. The two screenshot groups the 4,000-token limit touches were run on 25 Nov 2026 on `d51786c`: `--only=screen-only` **9.14** (gate ≥ 8; hidden line 14/14, never empty 14/14, all private 14/14, code ran 4/4) and `--only=screenshot-types` **9.36** (gate ≥ 8; code ran 4/4), 56 requests, $0.10.
 - **No prompt text changed, so no full eval.** The Mac work changed no answer prompt or answer code. Batch 1 (ADR-0121) changed no prompt text; it changed the notes' reading of a cut-off reply (`eval:notes` 9.78 before and after) and the screenshot answers' output limit (1,500 → 4,000 tokens; measured complete on a long coding problem). The eval groups that limit touches, `--only=screen-only` and `--only=screenshot-types`, have not been run: running them before (b) is the developer's choice (get the request count with `--dry-run` first).
 - **No Windows desktop release.** Every desktop change is Mac-only, and the web changes reach Windows by the web deploy.
 
@@ -32,8 +39,8 @@
 
 ## (a) Build and publish the Mac 1.8.0 release
 
-**Order matters:**
-1. Publish the Mac release **before** the production web deploy. Once the site is live it tells Mac users to run the installer, which downloads from `mac-latest`.
+**Order:**
+1. Since 25 Nov 2026 the web app is live **before** the Mac release, safely: until `mac-latest` is published the site and `install-mac.sh` say "Mac version coming soon" (ADR-0125). Publishing is what turns the Mac download on.
 2. Inside the release, the zip and blockmap go up first and `latest-mac.yml` last. The script does this, so an app checking for updates never sees a version whose zip is missing.
 
 **On the build Mac (teammate), about 30 min:**
@@ -95,7 +102,9 @@
    - `https://github.com/Zainpak123/kite-releases/releases/download/mac-latest/latest-mac.yml` shows `version: 1.8.0`.
    - The Windows "latest" release is still 1.7.4, so Windows apps are unaffected.
 
-## (b) Merge `mac-internal-release` into `main` and deploy production
+## (b) Merge `mac-internal-release` into `main` and deploy production (done on 25 Nov 2026)
+
+**Done:** `main` @ `4b980c0`, https://kite-call-assistant-bj7xmwyz8-paramount-intelligence.vercel.app. The steps below are how it was done; repeat only the checks in 6 to 8 if you want to.
 
 `main` is checked out in the worktree `D:\Paramount Intelligence\AI Call Assistant\AI-Call-Assitant-hidden-line`. Merge there; your primary checkout cannot switch to `main` while that worktree holds it.
 
@@ -146,6 +155,7 @@
    ```
 
    - The first must print the script's first lines (`#!/bin/bash`…), not HTML.
+   - ADR-0125: `curl.exe -s https://call.paramountintelligence.co/api/mac-release` prints `{"published":false}` before (a), and `{"published":true}` within a minute after it.
    - The second must be a 302 to `…/releases/latest/download/Paramount-AI-Setup-1.7.4.exe`.
 7. **Production end-to-end suites.** Manual, never CI. They use the e2e test account, and the desktop ones build the shell locally.
    - **Free (no Claude requests), run all:**
@@ -224,8 +234,8 @@ On the build Mac (and on each team Mac, at any time after (b)):
 
 | What broke | Do this |
 |---|---|
-| **The web app** (any user) | 1. `vercel ls --prod`, then `vercel rollback <previous production URL>`: everyone is on the old site within a minute. 2. Fix forward on a branch. 3. Before the next deploy, `git revert -m 1 <merge commit>` on `main` if the merge itself is the problem, so it is not deployed again. After a rollback, new deploys need `vercel promote`. |
-| **The Mac app 1.8.0** (Mac users only) | Stop it spreading: on the `mac-latest` release, delete **only** `latest-mac.yml` (apps then find no update). Macs that already have 1.8.0 keep it, because the updater never goes back a version. Fix forward: build **1.8.1** with the fix (or the old code), publish it, and every Mac updates. A Mac that must change at once: run the install command again after publishing. |
+| **The web app** (any user) | 0. Tonight's previous production deployment is https://kite-call-assistant-1xpy0tbkc-paramount-intelligence.vercel.app (`main` @ `4aba5b5`): from a folder linked to `kite-call-assistant` run `vercel rollback https://kite-call-assistant-1xpy0tbkc-paramount-intelligence.vercel.app --yes` (about 10 s; `vercel inspect` then shows `call.paramountintelligence.co` on it). 1. In general: `vercel ls --prod`, then `vercel rollback <previous production URL>`: everyone is on the old site within a minute. 2. Fix forward on a branch. 3. Before the next deploy, `git revert -m 1 <merge commit>` on `main` if the merge itself is the problem, so it is not deployed again. After a rollback, new deploys need `vercel promote`. |
+| **The Mac app 1.8.0** (Mac users only) | Stop it spreading: on the `mac-latest` release, delete **only** `latest-mac.yml` (apps then find no update; ADR-0125: the site's Mac box goes back to "Mac version coming soon" within ten minutes and `install-mac.sh` at once). Macs that already have 1.8.0 keep it, because the updater never goes back a version. Fix forward: build **1.8.1** with the fix (or the old code), publish it, and every Mac updates. A Mac that must change at once: run the install command again after publishing. |
 | **Windows** | Nothing to roll back: no Windows release in this runbook. The web rollback covers Windows users. |
 | **The installer page** (`install-mac.sh`) | It comes with the web deploy: the web rollback takes it back. |
 
