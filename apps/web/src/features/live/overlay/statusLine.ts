@@ -15,7 +15,7 @@
  * in the rename offer (ADR-0093), which is shown, never logged.
  */
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
-import { PRIVATE_OFF_TEXT } from '../PrivateOffWarning';
+import { MAC_RECORDING_TEXT, PRIVATE_OFF_TEXT } from '../PrivateOffWarning';
 
 /** The button beside a message. */
 export type StatusAction =
@@ -115,7 +115,8 @@ export const HEADPHONES_TEXT = 'Speakers echoing — use headphones';
  * The message the status line shows now, most important first.
  *
  * @param state      What the live page shows (null until it answers).
- * @param privateOff True while a screen recording runs with Private off (usePrivateOffWhileRecording()).
+ * @param privateOff True while a screen recording runs with Private off (usePrivateOffWhileRecording()); on a
+ *                   Mac, while any screen recording runs (ADR-0120 §4).
  * @param privateOffInCall ADR-0085: true while Private is off during the call (where it can be on); quieter
  *                         than the recording warning, after the call's own notices.
  * @param mac        ADR-0120: true on a Mac (the Private line says what Private does there).
@@ -180,6 +181,9 @@ export function statusMessage(
     };
   }
   if (privateOff) {
+    // ADR-0120 §4: on a Mac the windows are in every screen recording whatever Private says: the truth, quieter
+    // (amber, not an alert), and no "Turn on", which would not help.
+    if (mac) return { key: 'private-off', text: MAC_RECORDING_TEXT, tone: 'warning' };
     return {
       key: 'private-off',
       text: PRIVATE_OFF_TEXT,

@@ -22,6 +22,8 @@ vi.mock('@/platform', () => ({
     setShareProtection: async (on: boolean) => ({ supported: true, on }),
     hotkeyModifier: () => 'Ctrl',
   }),
+  // ADR-0120 §4: the recording warning asks whether this is a Mac (useIsMac); here it is not.
+  isMacComputer: () => false,
 }));
 const { CompactView } = await import('@/features/live/CompactView');
 const { OVERLAY_PANELS_WIDTH_KEY } = await import('@/core/storage/overlayPrefs');

@@ -176,7 +176,8 @@ Make a session (any type, invented details). Put on headphones. Open a YouTube i
 11. **Menu bar icon.** **Expected:** a sharp Paramount AI icon at the top right. Click it: a menu with **Open Paramount AI** and **Quit Paramount AI**.
 12. **Recording** (only if your account can record): start a recording with the Rec pill or **⌘ ⌥ R**, talk for 30 seconds, stop it.
     - **Expected:** macOS asks once for the **Documents** folder, with our sentence. Allow it.
-    - The recording saves and plays from Meetings.
+    - **Expected** (ADR-0120 §4), while a **Screen + audio** recording runs: a slim amber line under the transcript bar says *"On a Mac, Paramount AI's windows appear in this recording, even with Private on"*, with **no** Turn on button, and the Rec pill has an amber dot. (With **Audio only**, no line.)
+    - The recording saves and plays from Meetings. Write down whether the bars are visible in the video (expected: yes).
 13. **The transcript bar** (ADR-0118). Keep the video playing.
     - **Bar 1** (the top bar) has **no** Transcript switch.
     - **Bar 2** is always there. On it: the green level icon, the latest words as small chips moving in one line, **Clear**, and an expand icon (⤢).
@@ -201,7 +202,7 @@ Make a session (any type, invented details). Put on headphones. Open a YouTube i
 | 5.10 | Whole-screen share: bars visible on the phone? (write it down) | |
 | 5.11 | ⌘R / ⌘W do nothing to the bars; menu has no Reload; ⌘C/⌘V work | |
 | 5.12 | Menu bar icon sharp, its menu works | |
-| 5.13 | Recording: Documents question, saves and plays | |
+| 5.13 | Recording: Documents question; the Mac recording line (no Turn on); saves and plays; bars in the video? | |
 | 5.14 | Bar 1 has no Transcript switch; bar 2 always shows the word chips, Clear and ⤢ | |
 | 5.15 | ⤢ opens the full transcript under bar 2 (bar 2 stays); it closes again | |
 | 5.16 | A warning shows in a slim line under bar 2; the chips stay | |

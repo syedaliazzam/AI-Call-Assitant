@@ -1,4 +1,4 @@
-# ADR-0120: Mac release fixes: no Chromium page zoom, accurate Private wording, snap zones on every Space
+# ADR-0120: Mac release fixes: no Chromium page zoom, accurate Private wording, snap zones on every Space, honest recording warning
 
 - **Status:** Accepted (25 Nov 2026, the developer's brief after the investigation, decision D-3)
 - **Date:** 2026-11-25
@@ -54,3 +54,26 @@ The investigation of 25 Nov 2026 (`docs/investigations/2026-11-25-mac-windows-pa
   - ⌘+ / ⌘− do nothing on the overlay and the dashboard; ⌃⌥= / − / 0 still zoom.
   - Turning Private off during a call shows the Mac line with Turn on.
   - The snap zones show over a full-screen window.
+
+## Amendment §4 (25 Nov 2026): Paramount AI's own recording on a Mac
+
+**Context.** On a Mac, Paramount AI's own screen recording captures its windows whatever Private says:
+- Its screen capture uses ScreenCaptureKit, which ignores content protection. Screenshots are already handled by making the windows see-through for a moment (`apps/desktop/src/main.ts` `hideOwnWindows`).
+- The warning "Private is off: Paramount AI will appear in your recording · Turn on" therefore suggested a fix that does nothing on a Mac. With Private on, there was no warning at all, though the windows were still recorded.
+
+**Can our own recording leave our windows out?** Checked against the Electron in use (44.9.3, `electron.d.ts`):
+- `desktopCapturer.getSources` has no option to exclude windows, and neither do `setDisplayMediaRequestHandler`'s streams.
+- Electron's documentation says ScreenCaptureKit captures the app's windows despite `setContentProtection(true)`.
+- Leaving them out would need a native ScreenCaptureKit module (`SCContentFilter` excluding our app) feeding the recorder: a new native dependency and a second recording pipeline. That is not clean, and not for this release. Hiding the windows during the recording would hide the overlay from the user, so it is not an option either.
+
+**Decision (web, Mac only; Windows unchanged).**
+- On a Mac the warning shows during **every screen recording**, Private on or off: **"On a Mac, Paramount AI's windows appear in this recording, even with Private on"**.
+- It is amber, not a red alert, and has **no "Turn on"** button. It appears on the warning line under the transcript bar, in the full call window, and as the Rec pill's amber dot ("Visible in recording").
+- An audio-only recording has no warning.
+- The user guide tells Mac users to record **Audio only** if the windows must not be seen.
+- Code: `visibleInRecording(…, mac)`, `usePrivateOffWhileRecording().fixable`, `MAC_RECORDING_TEXT` (`apps/web/src/features/live/PrivateOffWarning.tsx`), and `statusLine.ts`.
+- Private stays `setContentProtection` only; nothing hides the app from other apps or monitoring tools.
+
+**Validation.**
+- Unit tests: `tests/unit/features/live/PrivateOffWarning.test.tsx`, `overlay/statusLine.test.ts`.
+- Real Mac: release test 5.13, which records the screen and checks the line and whether the bars are in the video.

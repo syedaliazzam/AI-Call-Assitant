@@ -178,6 +178,19 @@ describe('statusMessage', () => {
     expect(statusMessage(QUIET, false, false)).toBeNull();
   });
 
+  it('ADR-0120 §4: on a Mac a screen recording says the windows are in it, amber, with no Turn on', () => {
+    expect(statusMessage(QUIET, true, false, true)).toEqual({
+      key: 'private-off',
+      text: "On a Mac, Paramount AI's windows appear in this recording, even with Private on",
+      tone: 'warning',
+    });
+    // Windows keeps the alert with its fix.
+    expect(statusMessage(QUIET, true, false, false)).toMatchObject({
+      tone: 'alert',
+      action: { kind: 'private', label: 'Turn on' },
+    });
+  });
+
   it('ADR-0120: on a Mac the Private line says it hides the overlay in a window or tab share only', () => {
     expect(statusMessage(QUIET, false, true, true)).toEqual({
       key: 'private-off-call',

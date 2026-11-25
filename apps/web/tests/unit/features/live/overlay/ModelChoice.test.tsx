@@ -19,6 +19,8 @@ vi.mock('@/platform', () => ({
     setShareProtection: async (on: boolean) => ({ supported: true, on }),
     hotkeyModifier: () => 'Ctrl',
   }),
+  // ADR-0120 §4: the recording warning asks whether this is a Mac (useIsMac); here it is not.
+  isMacComputer: () => false,
 }));
 const {
   ModelOptions,
