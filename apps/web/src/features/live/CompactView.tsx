@@ -937,8 +937,8 @@ export function CompactView(props: CompactViewProps) {
     />
   );
   // ADR-0118: the call's current message (statusLine.ts) in a slim line of its own under bar 2, only while it
-  // applies; until ADR-0118 it replaced the live words on bar 2 (ADR-0082).
-  const message = statusMessage(state, privateOff.visible, privateOffInCall);
+  // applies; until ADR-0118 it replaced the live words on bar 2 (ADR-0082). ADR-0120: the Mac's own Private words.
+  const message = statusMessage(state, privateOff.visible, privateOffInCall, mac);
   const warningLine = message ? (
     <div className={`${piece} min-w-0`} {...{ [BARS_ATTRIBUTE]: '' }}>
       <WarningLine

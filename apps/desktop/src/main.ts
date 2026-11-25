@@ -81,7 +81,7 @@ import { installMacPermissions, logMacPermissions, type MacPermissionDeps } from
 import { appIconPath } from './icon';
 import { endCallOnClose, runBelowNormal } from './priority';
 import { createProtection, installProtection, type Protection } from './protection';
-import { macMenuTemplate } from './macMenu';
+import { macMenuTemplate, resetPageZoomOnLoad } from './macMenu';
 import { hideByOpacity, installScreenshot } from './screenshot';
 import { createSnapZones } from './snapZones';
 import {
@@ -591,6 +591,8 @@ function start(): void {
   // Lock every web contents the app ever creates, not only the main window's.
   app.on('web-contents-created', (_event, contents) => {
     lockNavigation(contents, config.allowedOrigin);
+    // ADR-0120: on a Mac, no Chromium page zoom (the menu has none any more; a level left from a test build is undone).
+    if (process.platform === 'darwin') resetPageZoomOnLoad(contents);
   });
   app.on('before-quit', (event) => {
     // 1.7.2 (ADR-0106): with Drive work left, an exit (the tray's Quit, Cmd+Q, the last window closing)

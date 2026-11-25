@@ -3,7 +3,7 @@
 - **Status:** Accepted (19 Nov 2026, the developer's brief for stage 4: "full parity with Windows"). Verified in code and unit tests only; the real-Mac test (stage 6) confirms it on a Mac.
 - **Date:** 2026-11-19
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §4, §7.3 (version 4.48.0)
-- **Supersedes / superseded by:** builds on ADR-0109 (the Mac release) and ADR-0110 (the Mac keys); extends ADR-0042 and ADR-0085 (Private), ADR-0043 (screenshots leave Kite out), ADR-0068 (recording), ADR-0106 (exit with uploads)
+- **Supersedes / superseded by:** builds on ADR-0109 (the Mac release) and ADR-0110 (the Mac keys); extends ADR-0042 and ADR-0085 (Private), ADR-0043 (screenshots leave Kite out), ADR-0068 (recording), ADR-0106 (exit with uploads); amended by ADR-0120 (no page zoom in the Mac menu; a Mac wording for "Private is off" on the warning line; the snap zones join every Space)
 
 ## Context
 

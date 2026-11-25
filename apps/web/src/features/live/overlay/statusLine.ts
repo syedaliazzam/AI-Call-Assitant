@@ -97,8 +97,16 @@ export const SILENT_TEXT = {
   you: "Can't hear your microphone",
 } as const;
 
-/** ADR-0085: the line while Private is off during a call (no recording). */
+/** ADR-0085: the line while Private is off during a call (no recording). Windows (and a browser). */
 export const PRIVATE_OFF_CALL_TEXT = 'Private is off: the overlay shows in screen shares';
+
+/**
+ * ADR-0120: the same line on a Mac. There Private hides the overlay when the user shares one window or tab,
+ * not the entire screen (apps that capture with ScreenCaptureKit can still show it in a whole-screen share;
+ * ADR-0111 §7), so the Windows words would promise too much.
+ */
+export const PRIVATE_OFF_CALL_TEXT_MAC =
+  'Private is off. On a Mac, Private hides the overlay when you share a window or tab, not your entire screen.';
 
 /** ADR-0082: the headphones hint, short. */
 export const HEADPHONES_TEXT = 'Speakers echoing — use headphones';
@@ -110,6 +118,7 @@ export const HEADPHONES_TEXT = 'Speakers echoing — use headphones';
  * @param privateOff True while a screen recording runs with Private off (usePrivateOffWhileRecording()).
  * @param privateOffInCall ADR-0085: true while Private is off during the call (where it can be on); quieter
  *                         than the recording warning, after the call's own notices.
+ * @param mac        ADR-0120: true on a Mac (the Private line says what Private does there).
  * @returns The message, or null for none (ADR-0118: then there is no warning line).
  * Called from: CompactView.tsx; tests
  */
@@ -117,6 +126,7 @@ export function statusMessage(
   state: CompactState | null,
   privateOff: boolean,
   privateOffInCall = false,
+  mac = false,
 ): StatusMessage | null {
   if (!state || state.ended) return null;
   if (state.hygiene === 'paused') {
@@ -204,7 +214,7 @@ export function statusMessage(
   if (privateOffInCall) {
     return {
       key: 'private-off-call',
-      text: PRIVATE_OFF_CALL_TEXT,
+      text: mac ? PRIVATE_OFF_CALL_TEXT_MAC : PRIVATE_OFF_CALL_TEXT,
       tone: 'warning',
       action: { kind: 'private', label: 'Turn on' },
     };

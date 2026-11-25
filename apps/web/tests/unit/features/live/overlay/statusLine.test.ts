@@ -5,7 +5,7 @@
  * Private off in a screen recording, the other call notices, the voice question's notice, the answers'
  * notice, the headphones hint), and nothing (the live words) when there is none or the call ended.
  * ADR-0085: Private off during a call without a recording is an amber line with Turn on, after the
- * call's own notices.
+ * call's own notices; ADR-0120: on a Mac its words say Private hides the overlay in a window or tab share only.
  */
 import { describe, expect, it } from 'vitest';
 import type { CompactState } from '@/core/live/liveChannel';
@@ -13,6 +13,7 @@ import {
   HEADPHONES_TEXT,
   LISTENING_TEXT,
   PRIVATE_OFF_CALL_TEXT,
+  PRIVATE_OFF_CALL_TEXT_MAC,
   SILENT_TEXT,
   statusMessage,
   VOICE_MODE_TEXT,
@@ -175,6 +176,22 @@ describe('statusMessage', () => {
     // Not after the call ended; not with Private on.
     expect(statusMessage({ ...QUIET, ended: true }, false, true)).toBeNull();
     expect(statusMessage(QUIET, false, false)).toBeNull();
+  });
+
+  it('ADR-0120: on a Mac the Private line says it hides the overlay in a window or tab share only', () => {
+    expect(statusMessage(QUIET, false, true, true)).toEqual({
+      key: 'private-off-call',
+      text: PRIVATE_OFF_CALL_TEXT_MAC,
+      tone: 'warning',
+      action: { kind: 'private', label: 'Turn on' },
+    });
+    expect(PRIVATE_OFF_CALL_TEXT_MAC).toBe(
+      'Private is off. On a Mac, Private hides the overlay when you share a window or tab, not your entire screen.',
+    );
+    // Windows (and a browser) keep their words.
+    expect(statusMessage(QUIET, false, true, false)?.text).toBe(
+      'Private is off: the overlay shows in screen shares',
+    );
   });
 });
 
