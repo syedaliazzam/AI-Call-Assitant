@@ -8,6 +8,12 @@
 
 **Rules:** do the steps in order. Stop at the first ❌ and use the rollback section. No secret is ever printed or pasted.
 
+> **Status on 26 Nov 2026: the overlay fixes are in production; build the Mac app from `3b05780`.**
+> - `overlay-clickthrough-glass` was merged into `main` @ `3b05780` and deployed to production: https://kite-call-assistant-gbm7l3b1a-paramount-intelligence.vercel.app, aliased to `call.paramountintelligence.co`. **Fix 1** (ADR-0055 amended 26 Nov 2026): with Click-through on, the whole overlay passes every click to the app behind; only Ctrl+Alt+X (⌘ ⌥ X) turns it off; bar 1's hint, the call window's **Turn click-through off**, the auto-off at the call's end and the Settings warning are the safety nets. Web only: Windows 1.7.4 gets it from the web deploy. **Fix 2** (ADR-0126, commit `0f96afe`, Mac shell only): the Mac overlay is plainly see-through (no vibrancy).
+> - **`<release commit>` for (a) must contain `0f96afe`** (`git merge-base --is-ancestor 0f96afe <release commit>`). `mac-internal-release` was fast-forwarded to `main` on 26 Nov 2026, so its head has it.
+> - **Previous production deployment** (the WP3 release, `main` @ `4b980c0`, for a rollback): https://kite-call-assistant-bj7xmwyz8-paramount-intelligence.vercel.app.
+> - **For the next Windows desktop release** (not published tonight): the tray's **Turn click-through off** during a call (`tray.ts`, ADR-0055 amendment). Nothing else in the shell changed for Windows (`overlayGlass('win32')` is unchanged).
+>
 > **Status on 25 Nov 2026: section (b) is done; the web app is in production before the Mac app.**
 > - `mac-internal-release` (code @ `d51786c`: the Mac work, bug-fix batch 1, WP3 = ADR-0122 to ADR-0124, and the Mac-download switch ADR-0125) was merged into `main` @ `4b980c0` and deployed to production: https://kite-call-assistant-bj7xmwyz8-paramount-intelligence.vercel.app, aliased to `call.paramountintelligence.co`.
 > - **The Mac download switches on by itself** (ADR-0125). Until `mac-latest` has its `latest-mac.yml`, every "Get it for Mac" box says **Mac version coming soon** (no command, no .dmg) and `install-mac.sh` says the same and installs nothing. Publishing 1.8.0 with `publish-mac.mjs` in (a) turns the download on within a minute: no deploy, no setting.
@@ -166,7 +172,15 @@
 
    - **Paid, optional:** `desktop.spec.ts` runs the real desktop overlay on production. It makes 2 answers on the fast model, well under $0.01, and it opens windows. Agree before running it.
    - **Not needed for this release:** `chrome.spec.ts`, `auth-cache.spec.ts`, `routes.spec.ts`, `mock.spec.ts`, `latency.spec.ts`, `voice-latency.spec.ts`. They are paid and only test the answer pipeline, which did not change.
-8. **On Windows,** in the desktop app 1.7.4 (it loads the new site), check:
+8. **On Windows after the 26 Nov 2026 deploy,** quit the desktop app 1.7.4 (tray › Quit) and open it normally, then in a call:
+   - click **W**: bar 1 shows **Click-through on — press Ctrl+Alt+X to turn off**; Chat, AA, the model chip and W are gone; no tooltips over the bars;
+   - click on bar 1, on W's spot, on bar 2 and on the answer panel over a window behind (a browser tab's button): each click reaches that window;
+   - with that window in front, **Ctrl+Alt+X** turns it off; the bars take clicks again (Chat opens the chat bar);
+   - ⋮ › Call window, then **Ctrl+Alt+X**: the call window shows the amber line with **Turn click-through off**; it works;
+   - with it on (in the call window, after Ctrl+Alt+X), click **End** there without turning it off: the call ends, and the next call starts with W off;
+   - Settings › Hotkeys: Click-through **Ctrl+Alt+X**, Any app, no clash;
+   - the overlay looks as before (see-through at 40 %; nothing changed for Windows).
+9. **On Windows,** in the desktop app 1.7.4 (it loads the new site), check:
    - bar 2 shows the chips;
    - ⤢ opens the transcript under it;
    - transcript and answer sit side by side at your usual size;
@@ -234,7 +248,7 @@ On the build Mac (and on each team Mac, at any time after (b)):
 
 | What broke | Do this |
 |---|---|
-| **The web app** (any user) | 0. Tonight's previous production deployment is https://kite-call-assistant-1xpy0tbkc-paramount-intelligence.vercel.app (`main` @ `4aba5b5`): from a folder linked to `kite-call-assistant` run `vercel rollback https://kite-call-assistant-1xpy0tbkc-paramount-intelligence.vercel.app --yes` (about 10 s; `vercel inspect` then shows `call.paramountintelligence.co` on it). 1. In general: `vercel ls --prod`, then `vercel rollback <previous production URL>`: everyone is on the old site within a minute. 2. Fix forward on a branch. 3. Before the next deploy, `git revert -m 1 <merge commit>` on `main` if the merge itself is the problem, so it is not deployed again. After a rollback, new deploys need `vercel promote`. |
+| **The web app** (any user) | 0. Since 26 Nov 2026 the previous production deployment is the WP3 release, https://kite-call-assistant-bj7xmwyz8-paramount-intelligence.vercel.app (`main` @ `4b980c0`): from a folder linked to `kite-call-assistant` run `vercel rollback https://kite-call-assistant-bj7xmwyz8-paramount-intelligence.vercel.app --yes` (it brings back bars that keep their clicks in Click-through mode; nothing else changes). Before that (25 Nov) it was https://kite-call-assistant-1xpy0tbkc-paramount-intelligence.vercel.app (`main` @ `4aba5b5`): `vercel rollback https://kite-call-assistant-1xpy0tbkc-paramount-intelligence.vercel.app --yes` (about 10 s; `vercel inspect` then shows `call.paramountintelligence.co` on it). 1. In general: `vercel ls --prod`, then `vercel rollback <previous production URL>`: everyone is on the old site within a minute. 2. Fix forward on a branch. 3. Before the next deploy, `git revert -m 1 <merge commit>` on `main` if the merge itself is the problem, so it is not deployed again. After a rollback, new deploys need `vercel promote`. |
 | **The Mac app 1.8.0** (Mac users only) | Stop it spreading: on the `mac-latest` release, delete **only** `latest-mac.yml` (apps then find no update; ADR-0125: the site's Mac box goes back to "Mac version coming soon" within ten minutes and `install-mac.sh` at once). Macs that already have 1.8.0 keep it, because the updater never goes back a version. Fix forward: build **1.8.1** with the fix (or the old code), publish it, and every Mac updates. A Mac that must change at once: run the install command again after publishing. |
 | **Windows** | Nothing to roll back: no Windows release in this runbook. The web rollback covers Windows users. |
 | **The installer page** (`install-mac.sh`) | It comes with the web deploy: the web rollback takes it back. |
