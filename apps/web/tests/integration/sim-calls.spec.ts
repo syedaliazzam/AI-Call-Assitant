@@ -373,7 +373,7 @@ test('a) interview: only real questions are answered, once each', async () => {
   await expect(page.getByRole('button', { name: 'Stop listening' })).toHaveCount(0);
 });
 
-test('b) coding round: a problem on screen gets the coding shape, about the question just asked', async () => {
+test('b) coding round: a problem on screen gets the coding shape, from the screen alone (ADR-0107)', async () => {
   const { say } = await openCall('desktop');
   nextScreen = 'coding';
   const asked = 'OKAY HERE IS THE PROBLEM CAN YOU SOLVE THIS ONE';
@@ -382,7 +382,12 @@ test('b) coding round: a problem on screen gets the coding shape, about the ques
   await expect(cards()).toHaveCount(1);
   expect(received[0]!.mode).toBe('screenshot');
   expect(received[0]!.image).toMatch(/^data:image\/jpeg;base64,/);
-  expect(received[0]!.question).toBe(asked);
+  // ADR-0107 (19 Nov 2026): Ctrl+Shift+Enter answers the screen alone: no spoken question and no transcript
+  // go with it (a "Them" line such as "Can you see it now?" used to become the question). Until ADR-0121 this
+  // test still expected the line just said as the question, so it failed on main since ADR-0107.
+  expect(received[0]!.screenOnly).toBe(true);
+  expect(received[0]!.question).toBeUndefined();
+  expect(JSON.stringify(received[0])).not.toContain(asked);
 
   const card = cards().first();
   await expect(card.getByRole('heading', { name: 'Answer line' })).toContainText(
@@ -846,14 +851,18 @@ test('ADR-0082: the voice question: Ctrl+Shift+Space listens on the status bar, 
   await listening.getByRole('button', { name: 'Cancel' }).click();
   await expect(listening).toHaveCount(0);
 
-  // Spoken: the question goes by itself after 1.5 s of silence, as a question, never a "You" line.
+  // Spoken: the question goes by itself when the speaker stops, as a question, never a "You" line.
+  // ADR-0101 (18 Nov 2026): a finished utterance is an end-of-speech signal, so the question is sent at once,
+  // held hidden, and shown after the 0.3 s hold; 1.5 s of silence is only the fallback when no signal comes.
+  // Until ADR-0121 this test still expected nothing before 1.5 s, so it failed on main since ADR-0101.
   await overlay.locator('body').click({ position: { x: 2, y: 2 } });
   await overlay.keyboard.press('Control+Shift+Space');
   await expect(listening).toBeVisible();
   await page.evaluate(() => window.kiteSim.dictate('WHAT IS THE NOTICE PERIOD'));
-  await overlay.waitForTimeout(1_200);
-  expect(received.length, 'not before the 1.5 s').toBe(before);
   await expect.poll(() => received.length, { timeout: 2_000 }).toBe(before + 1);
+  // Sent once: shown from the same request, never asked again after the hold or the 1.5 s fallback.
+  await overlay.waitForTimeout(1_700);
+  expect(received.length).toBe(before + 1);
   expect(received.at(-1)!.question).toBe('WHAT IS THE NOTICE PERIOD');
   expect(received.at(-1)!.mode).toBe('chat');
   await expect(listening).toHaveCount(0);
