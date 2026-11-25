@@ -191,6 +191,15 @@ describe('CompactView (ADR-0113)', () => {
     expect(card?.[0]).toMatch(/class="[^"]*font-semibold[^"]*text-ui-heading/);
   });
 
+  it('ADR-0123: says "Your question:" when the question is the user’s own words', () => {
+    const mine = overlay('top-left', undefined, {
+      ...ANSWERED,
+      answer: { ...ANSWERED.answer!, mode: 'chat', yours: true },
+    });
+    expect(mine).toMatch(/data-question-label="yours"[^>]*>Your question:</);
+    expect(overlay('top-left')).toMatch(/data-question-label="theirs"[^>]*>Question:</);
+  });
+
   it('puts the corner grip on the side that moves', () => {
     expect(overlay('top-left')).toContain('data-grip-side="right"');
     expect(overlay('top-center')).toContain('data-grip-side="right"');

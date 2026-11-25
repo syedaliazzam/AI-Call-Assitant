@@ -44,7 +44,10 @@ describe('rowHasConflict', () => {
     expect(labels(false)).toContain('Move overlay (add Shift for bigger steps)');
     expect(labels(false)).not.toContain('Nudge overlay');
     expect(labels(false)).not.toContain('Transcript on or off (while the bars have focus)');
-    expect(labels(false)).toContain('Answer');
+    // ADR-0123: the Answer row says who it answers.
+    expect(labels(false)).toContain(
+      'Answer (on a call: their newest question; on your own: yours)',
+    );
   });
 
   it('reports nothing before a check, or in a browser', () => {

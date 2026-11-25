@@ -13,12 +13,12 @@
 
 /**
  * An action the Kite page carries out.
- * - `answer`: answer the latest question.
+ * - `answer`: answer the latest question. ADR-0123: on a call (the other side spoke in the last two minutes) the
+ *   other person's newest question; on your own, the user's own newest spoken question.
  * - `screenshot`: answer from a screenshot of the screen.
- * - `chat`: ADR-0082: the voice question (Ctrl+Shift+Space). Kite listens to the microphone, shows
- *   "Listening…", and sends the spoken question after a pause; it is never a "You" transcript line and never
- *   counts as a reply. The id stays 'chat' so a desktop app from before 1.6.4 still sends it (it opened the
- *   typed chat box until then).
+ * - `chat`: ADR-0123: answer the user's own newest spoken question from the "You" transcript (Ctrl+Shift+Space),
+ *   on a call too. ADR-0082 to ADR-0123 it was the voice question (listen, then send after a pause). The id stays
+ *   'chat' so a desktop app from before 1.6.4 still sends it (it opened the typed chat box until then).
  * - `clear`: ADR-0082: clear the answers on screen (it only cancelled a streaming answer before).
  * - `clear-transcript`: clear the words on screen (v1.1.0: Ctrl+Shift+Backspace, formerly Chat).
  * - `prev` / `next`: move through earlier answers.
@@ -333,7 +333,8 @@ export function hotkeyRows(mac: boolean): readonly HotkeyRow[] {
   const keys = globalHotkeys(mac);
   return [
     {
-      label: 'Answer',
+      // ADR-0123: who it answers depends on whether the other side spoke in the last two minutes.
+      label: 'Answer (on a call: their newest question; on your own: yours)',
       accelerator: keys.answer,
       scope: 'global',
       actions: ['answer'],
@@ -345,13 +346,14 @@ export function hotkeyRows(mac: boolean): readonly HotkeyRow[] {
       actions: ['screenshot'],
     },
     {
-      label: 'Voice question: speak, sent when you pause (Esc cancels)',
+      // ADR-0123: the user's own newest spoken question, on a call too (it listened for a voice question before).
+      label: 'Answer your own last spoken question (on a call too)',
       accelerator: keys.chat,
       scope: 'global',
       actions: ['chat'],
     },
     {
-      label: 'Screenshot and voice question',
+      label: 'Screenshot and voice question (Esc cancels)',
       accelerator: SCREENSHOT_SEND_HOTKEY,
       scope: 'global',
       actions: ['screenshot-send'],

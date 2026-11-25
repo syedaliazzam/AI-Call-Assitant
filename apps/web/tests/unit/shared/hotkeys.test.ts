@@ -86,8 +86,9 @@ describe('Kite shortcuts', () => {
       expect.arrayContaining(['zoom-in', 'zoom-out', 'zoom-reset', 'voice-cancel']),
     );
     expect(hotkeyAccelerator('voice-cancel')).toBe('Escape');
-    expect(HOTKEY_ROWS.find((row) => row.actions.includes('chat'))?.label).toMatch(
-      /^Voice question/,
+    // ADR-0123: Ctrl+Shift+Space answers the user's own last spoken question (it listened for one before).
+    expect(HOTKEY_ROWS.find((row) => row.actions.includes('chat'))?.label).toBe(
+      'Answer your own last spoken question (on a call too)',
     );
     expect(HOTKEY_ROWS.find((row) => row.actions.includes('clear'))?.label).toBe('Clear answers');
   });

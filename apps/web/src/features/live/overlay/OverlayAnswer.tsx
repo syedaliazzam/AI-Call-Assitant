@@ -9,7 +9,8 @@
  *          key), and the panel is never narrower than that strip (the answer text below it does not set the
  *          panel's smallest width: it wraps). The corner grip changes the panels' own width sideways and the
  *          window's height up and down; on a right position it sits in the bottom left.
- *          ADR-0115: the question starts with a small, muted "Question:" label (Parakeet's convention).
+ *          ADR-0115: the question starts with a small, muted "Question:" label (Parakeet's convention); ADR-0123:
+ *          "Your question:" when it is the user's own words.
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (hotkeys, AnswerType), src/core/answer/format.ts,
  *             src/core/live/liveChannel.ts, src/features/answers (AnswerBody, AnswerTags),
@@ -195,10 +196,11 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
               >
                 <span
                   aria-hidden="true"
-                  data-question-label=""
+                  data-question-label={answer.yours ? 'yours' : 'theirs'}
                   className="mr-1.5 select-none text-[13px] font-medium text-ui-muted"
                 >
-                  Question:
+                  {/* ADR-0123: the user's own words (typed, a voice question, or their own spoken question). */}
+                  {answer.yours ? 'Your question:' : 'Question:'}
                 </span>
                 {cardQuestion(answer.question, answer.cleanQuestion)}
               </p>

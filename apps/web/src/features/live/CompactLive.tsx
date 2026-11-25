@@ -198,8 +198,9 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
     const target = root.current?.ownerDocument.defaultView;
     if (!target) return;
     const stopKeys = getPlatform().listenForFocusedHotkeys(target, (action) => {
-      // ADR-0082: the voice question, and the screenshot and voice question (the live page listens).
-      if (action === 'chat') channel.current?.send({ type: 'voice', screenshot: false });
+      // ADR-0123: Ctrl+Shift+Space answers the user's own last spoken question; ADR-0082: Ctrl+Alt+Enter is the
+      // screenshot and voice question (the live page listens).
+      if (action === 'chat') channel.current?.send({ type: 'own-question' });
       else if (action === 'screenshot-send') {
         channel.current?.send({ type: 'voice', screenshot: true });
       } else if (action === 'zoom-in' || action === 'zoom-out' || action === 'zoom-reset') {
@@ -226,15 +227,10 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
       } else channel.current?.send({ type: action });
     });
     // ADR-0082: Escape with the overlay focused cancels a voice question while it listens (a menu that is
-    // open closes first: CompactView's own Escape). ADR-0095: it also turns Voice mode off.
+    // open closes first: CompactView's own Escape). ADR-0123: Voice mode is gone, so nothing else to turn off.
     const onKey = (event: KeyboardEvent) => {
       // ADR-0107: an Escape that closed a menu is not also a voice cancel.
       if (!isVoiceCancelKey(event) || event.defaultPrevented) return;
-      const voice = stateRef.current?.voiceMode;
-      if (voice === 'listening' || voice === 'paused') {
-        channel.current?.send({ type: 'voice-mode', on: false });
-        return;
-      }
       if (!stateRef.current?.dictating) return;
       channel.current?.send({ type: 'voice-cancel' });
     };

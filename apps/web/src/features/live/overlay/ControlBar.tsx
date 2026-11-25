@@ -5,8 +5,9 @@
  *          Transcript pill that sat between them is gone; bar 2's level and expand buttons and Ctrl+Alt+T open
  *          and close the full transcript); 1.6.3 (ADR-0075): the Auto answer toggle (labelled "AA" since 24 Nov
  *          2026); ADR-0082: the Click-through toggle (as Ctrl+Alt+X; labelled "W"), where clicks can pass; ADR-0094: the model chip (Fast / Smart / Fastest) next to
- *          Auto, which opens the model choice; ADR-0095: the Voice toggle (hands-free talking to the assistant)
- *          next to the model chip; then move and compact, the call timer, ⋮ and Exit
+ *          Auto, which opens the model choice (ADR-0095's Voice toggle after it was removed by ADR-0123: the
+ *          user's own questions are answered on Ctrl+Enter / Ctrl+Shift+Space); then move and compact, the call
+ *          timer, ⋮ and Exit
  *          (red; web 9 Nov 2026: one press ends the call). ADR-0082: no Answer or Screenshot buttons (their
  *          shortcuts still work). ADR-0122: Chat is back, first in the part that gives way, with its shortcut
  *          (Ctrl+Alt+K) as a key-cap; it opens the chat bar under this bar. The bar is the window's drag handle;
@@ -18,7 +19,7 @@
  *          rest gives way one step at a time, measured rather than guessed: first Rec's key-cap, then the
  *          Click-through pill (it becomes a square "W") and the timer's clock, then the
  *          Auto answer pill (it becomes a square "AA"), the model chip's word (ADR-0094)
- *          and the word "Voice" (ADR-0095); after that
+ *          and the word "Chat" (ADR-0122); after that
  *          things go: the move icon (the whole bar drags), the Click-through toggle (⋮ and Ctrl+Alt+X still
  *          turn it on), and the timer last (only a picture-in-picture window is that narrow). Every control names itself and its shortcut in BarTooltip.tsx ("Click-through: Off ·
  *          Ctrl+Alt+X"). ADR-0113: the bar keeps its natural width (it no longer stretches to the window),
@@ -32,7 +33,7 @@
 'use client';
 
 import { ASK_KITE_HOTKEY, DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
-import { AudioLines, Clock } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import {
   useEffect,
   useLayoutEffect,
@@ -123,11 +124,6 @@ export interface ControlBarProps {
   /** ADR-0094: the model chip (its popover sits under it). */
   modelButton?: RefObject<HTMLButtonElement | null>;
   /**
-   * ADR-0095: turns Voice mode on or off from its toggle on this bar. Absent, or a live page that does not say
-   * its Voice mode (an older one, or no microphone in this call): no toggle.
-   */
-  onVoice?: (on: boolean) => void;
-  /**
    * ADR-0122: opens or closes the chat bar under this bar (as Ctrl+Alt+K does during a call). Absent: no Chat
    * button.
    */
@@ -145,10 +141,7 @@ const FIT = {
   noRecKey: 1,
   /** From here: Click-through's "W" pill gives way to a square; no clock icon (ADR-0118: no Transcript word any more). */
   noWords: 2,
-  /**
-   * From here: Auto answer's "AA" pill is a square, the model chip its icon (ADR-0094), Voice its waveform
-   * (ADR-0095) and Chat its icon (ADR-0122).
-   */
+  /** From here: Auto answer's "AA" pill is a square, the model chip its icon (ADR-0094) and Chat its icon (ADR-0122). */
   iconAuto: 3,
   /** From here: no move icon (the whole bar still drags the window). */
   noMove: 4,
@@ -176,80 +169,6 @@ function tipText(name: string, hotkey: string | undefined, mac: boolean): string
 
 /** Ctrl+Shift+Arrows: the six positions (ADR-0056; ADR-0095 moved them from Ctrl+Alt+Arrows). */
 const POSITION_ACCELERATOR = 'CommandOrControl+Shift+Arrows';
-
-/** ADR-0095: Voice mode's tooltip, whatever its state adds after it. */
-export const VOICE_TIP = 'Talk to Paramount AI hands-free';
-
-/**
- * ADR-0095: the Voice toggle's tooltip for a state.
- *
- * @param voice Voice mode's state.
- * @returns The tooltip's words.
- * Called from: VoiceToggle; LiveMenu.tsx; tests
- */
-export function voiceTip(voice: 'off' | 'listening' | 'paused'): string {
-  if (voice === 'listening') return `${VOICE_TIP} · On (Esc turns it off)`;
-  if (voice === 'paused') return `${VOICE_TIP} · Paused while they speak`;
-  return `${VOICE_TIP} · Off`;
-}
-
-/**
- * ADR-0095: Voice mode on bar 1: a waveform and "Voice", with a dot lit while it is on (amber while paused
- * because the other person is speaking). On, each pause of about 1.5 s in what the user says is sent to the
- * assistant as a question; the words never become "You" lines.
- *
- * @param props.voice    Voice mode's state.
- * @param props.disabled True before the live page answers, or once the call ended.
- * @param props.word     False to show the waveform only.
- * @param props.onToggle Turns it on or off.
- * @returns The toggle.
- * Rendered by: ControlBar
- */
-function VoiceToggle({
-  voice,
-  disabled,
-  word,
-  onToggle,
-}: {
-  /** Voice mode's state. */
-  voice: 'off' | 'listening' | 'paused';
-  /** True before the live page answers, or once the call ended. */
-  disabled: boolean;
-  /** False to show the waveform only. */
-  word: boolean;
-  /** Turns it on or off. */
-  onToggle: () => void;
-}) {
-  const on = voice !== 'off';
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label="Voice: talk to Paramount AI hands-free"
-      data-tip={voiceTip(voice)}
-      data-voice-mode={voice}
-      className={`${word ? `${PILL} gap-1.5` : `${ICON_BUTTON} relative`} ${on ? 'text-ui-text ring-1 ring-inset ring-ui-accent-fill' : 'text-ui-muted'}`}
-      onClick={onToggle}
-      disabled={disabled}
-    >
-      <span aria-hidden="true" className={`inline-flex ${on ? 'text-ui-accent' : ''}`}>
-        <AudioLines size={15} strokeWidth={1.75} />
-      </span>
-      {word && 'Voice'}
-      <span
-        aria-hidden="true"
-        className={`size-1.5 shrink-0 rounded-full ${word ? '' : 'absolute right-1 top-1'} ${
-          voice === 'listening'
-            ? 'bg-ui-accent-fill'
-            : voice === 'paused'
-              ? 'bg-ui-warning'
-              : 'bg-ui-muted opacity-60'
-        }`}
-      />
-    </button>
-  );
-}
 
 /**
  * ADR-0122: Chat on bar 1, with its shortcut (Ctrl+Alt+K; ⌘⌥K on a Mac) as a key-cap: opens or closes the chat
@@ -665,8 +584,6 @@ export function ControlBar(props: ControlBarProps) {
   const clickThroughOn = (state?.clickThrough ?? false) && props.onClickThrough !== undefined;
   // ADR-0094: the model chip, when the live page says its model.
   const modelChoice = props.onModel ? modelOf(state) : null;
-  // ADR-0095: the Voice toggle, when the live page says Voice mode's state.
-  const voice = props.onVoice && state?.voiceMode !== undefined ? state.voiceMode : null;
 
   const bar = useRef<HTMLDivElement>(null);
   // What changes the left side's width on a re-render; a change starts the fitting again.
@@ -681,8 +598,6 @@ export function ControlBar(props: ControlBarProps) {
     state?.capturing ?? false,
     // ADR-0094: "Smart" is wider than "Fast".
     modelChoice?.model ?? 'no-model',
-    // ADR-0095: the Voice toggle appearing or going.
-    voice === null ? 'no-voice' : 'voice',
     // ADR-0122: the Chat button appearing or going.
     props.onChat ? 'chat' : 'no-chat',
   ].join('|');
@@ -771,16 +686,6 @@ export function ControlBar(props: ControlBarProps) {
               disabled={ended}
               buttonRef={props.modelButton}
               onToggle={props.onModel}
-            />
-          )}
-          {voice !== null && props.onVoice && (
-            // ADR-0095: next to the model chip; it gives way to its waveform with Auto, and never pushes the
-            // pinned controls out (it is inside the part that gives way).
-            <VoiceToggle
-              voice={voice}
-              disabled={ended}
-              word={step < FIT.iconAuto}
-              onToggle={() => props.onVoice?.(voice === 'off')}
             />
           )}
           {props.onClickThrough && step < FIT.noClickThrough && (

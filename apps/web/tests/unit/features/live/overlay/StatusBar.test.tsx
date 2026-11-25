@@ -127,6 +127,28 @@ describe('StatusBar (ADR-0118: the transcript bar)', () => {
   });
 });
 
+describe('StatusBar (ADR-0123: what Ctrl+Enter answers now)', () => {
+  it('shows a small "Them" hint on a call and "You" on your own, with the sentence for screen readers', () => {
+    const them = bar({ ...QUIET, pressTarget: 'them' });
+    expect(them).toContain('data-press-hint="them"');
+    expect(them).toContain(
+      'aria-label="Ctrl+Enter answers the other person&#x27;s newest question"',
+    );
+    expect(them).toMatch(/>Them</);
+    const you = bar({ ...QUIET, pressTarget: 'you' });
+    expect(you).toContain('data-press-hint="you"');
+    expect(you).toContain('aria-label="Ctrl+Enter answers your own newest question"');
+    expect(you).toMatch(/text-ui-you[^>]*>You</);
+    // Never a tooltip window (a title is drawn outside the protected overlay).
+    expect(them).not.toContain('title=');
+  });
+
+  it('shows no hint for an older live page or once the call has ended', () => {
+    expect(bar(QUIET)).not.toContain('data-press-hint');
+    expect(bar({ ...QUIET, pressTarget: 'you', ended: true })).not.toContain('data-press-hint');
+  });
+});
+
 describe('WarningLine (ADR-0118)', () => {
   it("shows can't hear the other side with its button", () => {
     const html = warning({

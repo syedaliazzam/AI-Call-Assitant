@@ -105,6 +105,11 @@ export interface CompactAnswer {
   reported: boolean;
   /** True when Kite answered by itself (auto-answer). */
   auto: boolean;
+  /**
+   * ADR-0123: the question is the user's own words (typed, a voice question, or their own spoken question): the
+   * card says "Your question:" instead of "Question:". Absent otherwise.
+   */
+  yours?: boolean;
   /** Streaming, finished, failed or cancelled. */
   status: 'streaming' | 'done' | 'error' | 'cancelled';
   /** How it was asked. */
@@ -235,11 +240,18 @@ export interface CompactState {
   dictationNotice?: string | null;
   /**
    * ADR-0095: Voice mode (hands-free talking to the assistant): 'listening', 'paused' (the other person is
-   * speaking, and 2 s after) or 'off'. Absent from an older live page: the overlay then shows no Voice toggle.
+   * speaking, and 2 s after) or 'off'. ADR-0123: no longer published (Voice mode has no control); kept so the
+   * status line's words for it still type-check until its engine is removed.
    */
   voiceMode?: 'off' | 'listening' | 'paused';
-  /** ADR-0095: true while Voice mode's one-time tip ("Mute yourself in the meeting first…") shows. */
+  /** ADR-0095: true while Voice mode's one-time tip shows. ADR-0123: no longer published. */
   voiceTip?: boolean;
+  /**
+   * ADR-0123: who Ctrl+Enter answers right now: the other person ('them', they spoke within the last two
+   * minutes) or the user's own newest spoken question ('you'). Bar 2 shows it as a small hint. Absent from an
+   * older live page: no hint.
+   */
+  pressTarget?: 'them' | 'you';
   /** When the call connected (Unix ms), for the overlay's call timer (v1.0.3). */
   startedAt?: number;
   /** v1.1.0: the latest transcript bubbles, oldest first. */
@@ -322,7 +334,9 @@ export interface SimpleCommand {
     | 'voice-tip-seen'
     // ADR-0122: Ctrl+Alt+K pressed while the overlay had focus: open its chat bar (the live page counts it in
     // askKiteCount, as it does the global key).
-    | 'open-chat';
+    | 'open-chat'
+    // ADR-0123: Ctrl+Shift+Space pressed while the overlay had focus: answer the user's own last spoken question.
+    | 'own-question';
 }
 
 /** ADR-0095: turns Voice mode (hands-free talking to the assistant) on or off. */
@@ -334,8 +348,9 @@ export interface VoiceModeCommand {
 }
 
 /**
- * ADR-0082: a voice question, from the overlay's own key handling (Ctrl+Shift+Space, or Ctrl+Alt+Enter for
- * the screenshot first). Pressed while one listens, it cancels.
+ * ADR-0082: a voice question, from the overlay's own key handling (Ctrl+Alt+Enter, the screenshot first).
+ * Pressed while one listens, it cancels. ADR-0123: Ctrl+Shift+Space sends 'own-question' instead; a 'voice'
+ * command without a screenshot (an older overlay window) is taken as that too.
  */
 export interface VoiceCommand {
   /** Command type. */
@@ -730,6 +745,8 @@ export function isCommand(value: unknown): value is CompactCommand {
     'voice-tip-seen',
     // ADR-0122.
     'open-chat',
+    // ADR-0123.
+    'own-question',
   ].includes(command.type);
 }
 

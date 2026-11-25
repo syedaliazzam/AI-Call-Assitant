@@ -9,7 +9,9 @@
  *          dictation), going between the overlay and this window (⋮, Back to compact, Esc), and the
  *          duplicate-safe "Answer this" for transcript bubbles (registered with the live page). v1.1.0
  *          (ADR-0041): also what the stacked overlay's panels and menu need. Desktop 1.5.0 (ADR-0068): the
- *          meeting recording's state, its commands and Ctrl+Alt+R.
+ *          meeting recording's state, its commands and Ctrl+Alt+R. ADR-0122: Ctrl+Alt+K during an overlay call
+ *          opens the overlay's chat bar. ADR-0123: Ctrl+Enter answers the other person on a call and the user's
+ *          own newest spoken question on their own; Ctrl+Shift+Space always the user's own; no Voice mode.
  * Used by: src/features/live/LivePage.tsx (live view);
  *          tests/integration/harness/answers.tsx (the answer harness test)
  * Depends on: src/features/live (useLiveAnswers, TopBar, ChatBox, AnswerPanel, useCallDictation),
@@ -78,6 +80,7 @@ import { useAutoAnswer } from './useAutoAnswer';
 import type { CallDictation } from './useCallDictation';
 import { openDashboard } from '@/features/sync/dashboardLink';
 import { useLiveAnswers, type AnswerStore } from './useLiveAnswers';
+import { usePressTarget } from './usePressTarget';
 import type { CallRecording } from './useCallRecording';
 import type { CallNotice } from '@/core/live/callNotice';
 
@@ -201,9 +204,6 @@ const HEADPHONES_HINT_AFTER = 3;
  * 250 (was 120): each message re-renders the overlay, which competed with the live speech engine.
  */
 const LEVELS_EVERY_MS = 250;
-
-/** ADR-0095: how long Voice mode's one-time tip stays up by itself, in ms. */
-const VOICE_TIP_MS = 8_000;
 
 /** What the transcript's "Answer this" buttons need from the answers (v1.0.2). */
 export interface AnswerThisBridge {
@@ -329,9 +329,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
   // v1.1.0: the overlay's ⋮ can turn auto-answer on or off for this call.
   const [autoChoice, setAutoChoice] = useState<boolean | null>(null);
   const [headphonesClosed, setHeadphonesClosed] = useState(false);
-  // ADR-0095: Voice mode's one-time tip, shown when it is first turned on on this device.
-  const [voiceTip, setVoiceTip] = useState(false);
+  // ADR-0123: no Voice mode any more (its button, menu switch and tip are gone): the user's own spoken questions
+  // are answered on a key press instead (Ctrl+Enter on your own, Ctrl+Shift+Space always).
   const answers = useLiveAnswers({
+    // ADR-0123: with no other-side source, Ctrl+Enter answers the user's own questions.
+    themConnected: props.audio?.them ?? true,
     chatTarget,
     session,
     documents: props.documents,
@@ -435,6 +437,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const recordingCompact = props.recording?.compact;
   // ADR-0101: where the voice shortcut works (browser only; the platform says).
   const [voiceHint] = useState(() => getPlatform().voiceShortcutHint());
+  // ADR-0123: who Ctrl+Enter answers right now, for the hint on bar 2 (the press reads the same rule).
+  const target = usePressTarget(lines, audioThem);
   const compactState = useMemo<CompactState>(() => {
     const parts = entry ? splitAnswer(entry.text) : null;
     const answeredIds = answeredGroupIds(
@@ -494,6 +498,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
               rating: entry.rating,
               reported: entry.reported ?? false,
               auto: entry.auto ?? false,
+              // ADR-0123: the user's own words ("Your question:" on the card).
+              ...(entry.yours ? { yours: true } : {}),
               status: entry.status,
               mode: entry.mode,
               error: entry.status === 'error' ? (entry.error ?? null) : null,
@@ -528,10 +534,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
       // ADR-0101: in a browser, where the voice shortcut works (shown while a voice question listens).
       ...(voiceHint ? { voiceShortcutHint: voiceHint } : {}),
       dictationNotice: props.dictation?.notice ?? null,
-      // ADR-0095: only where dictation works in this call (the microphone is running).
-      ...(props.dictation?.supported
-        ? { voiceMode: props.dictation?.voice ?? 'off', voiceTip }
-        : {}),
+      // ADR-0123: no voiceMode or voiceTip any more (Voice mode has no control), so the overlay shows neither.
+      pressTarget: target,
       startedAt: props.callStartedAt,
       ...(recordingCompact ? { recording: recordingCompact } : {}),
     };
@@ -558,8 +562,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     props.dictation?.supported,
     props.dictation?.listening,
     props.dictation?.notice,
-    props.dictation?.voice,
-    voiceTip,
+    target,
     questionClearedAt,
     terms,
     entry,
@@ -664,33 +667,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
       voiceShotCard.current = null;
     }
     dictationRef.current?.start(voiceQuestionTarget(chatTargetRef.current));
-  });
-  /**
-   * ADR-0095: turns Voice mode on or off (bar 1's Voice toggle, the ⋮ menu, Escape). Its questions go where a
-   * voice question's go (the setOnText handler below). The first time on this device it shows the tip
-   * "Mute yourself in the meeting first if others can hear you". Off by default in every call: the state
-   * lives in the call's dictation, which starts off.
-   *
-   * @param on True to turn it on.
-   */
-  const setVoiceMode = useRef((on: boolean) => {
-    const dictation = dictationRef.current;
-    if (!dictation?.supported) return;
-    voiceShot.current = null;
-    // ADR-0101: Voice mode turned on also resumes a paused listen.
-    if (on) resumeForVoice.current();
-    if (!on) {
-      dictation.setVoice(false, 'auto');
-      setVoiceTip(false);
-      callTimings.noteTrace('voice-mode', { on: false });
-      return;
-    }
-    dictation.setVoice(true, voiceQuestionTarget(chatTargetRef.current));
-    callTimings.noteTrace('voice-mode', { on: true });
-    if (!hintSeen('voice-mode')) {
-      markHintSeen('voice-mode');
-      setVoiceTip(true);
-    }
   });
   /**
    * ADR-0101: before a voice question (or Voice mode) listens: a paused listen ("Still in a call?" went
@@ -807,10 +783,15 @@ export function LiveAnswers(props: LiveAnswersProps) {
       else if (command.type === 'dictate') {
         if (command.on) dictationRef.current?.start(chatTargetRef.current);
         else dictationRef.current?.stop();
-      } else if (command.type === 'voice') void voiceQuestion.current(command.screenshot);
-      // ADR-0095: Voice mode, and its tip closed.
-      else if (command.type === 'voice-mode') setVoiceMode.current(command.on);
-      else if (command.type === 'voice-tip-seen') setVoiceTip(false);
+      } else if (command.type === 'voice') {
+        // ADR-0123: Ctrl+Alt+Enter (screenshot: true) is still the screenshot and voice question; without a
+        // screenshot (an overlay from before ADR-0123) it is Ctrl+Shift+Space: the user's own last question.
+        if (command.screenshot) void voiceQuestion.current(true);
+        else actions.current.ownQuestion('own-question-key');
+      }
+      // ADR-0123: Ctrl+Shift+Space with the overlay focused: the user's own last spoken question.
+      else if (command.type === 'own-question') actions.current.ownQuestion('own-question-key');
+      // ADR-0123: Voice mode has no control any more; 'voice-mode' and 'voice-tip-seen' are ignored.
       // ADR-0122: Ctrl+Alt+K with the overlay focused opens its chat bar, as the global key does.
       else if (command.type === 'open-chat') setAskKiteCount((count) => count + 1);
       else if (command.type === 'voice-cancel') cancelVoice.current();
@@ -884,10 +865,12 @@ export function LiveAnswers(props: LiveAnswersProps) {
     () =>
       getPlatform().onHotkey(
         (action) => {
+          // ADR-0123: on a call the other person's newest question; on your own, yours.
           if (action === 'answer') actions.current.answer('hotkey');
-          // ADR-0082: Ctrl+Shift+Space is the voice question; Ctrl+Alt+Enter the screenshot and voice
-          // question (until 1.6.3: the chat box, and the chat box's message with a screenshot).
-          else if (action === 'chat') void voiceQuestion.current(false);
+          // ADR-0123: Ctrl+Shift+Space answers the user's own last spoken question, in both modes (ADR-0082 to
+          // ADR-0123 it listened for a new voice question). Ctrl+Alt+Enter is still the screenshot and voice
+          // question.
+          else if (action === 'chat') actions.current.ownQuestion('own-question-key');
           else if (action === 'screenshot-send') void voiceQuestion.current(true);
           else if (action === 'voice-cancel') cancelVoice.current();
           else if (action === 'zoom-in' || action === 'zoom-out' || action === 'zoom-reset') {
@@ -1075,28 +1058,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
       window.removeEventListener('keydown', onKey, true);
     };
   }, [listening]);
-
-  // ADR-0095: while Voice mode is on, Escape in this window turns it off. Escape is not held from other apps
-  // for it: Voice mode can stay on for a long time, and Escape belongs to the meeting app meanwhile.
-  const voiceOn = (props.dictation?.voice ?? 'off') !== 'off';
-  useEffect(() => {
-    if (!voiceOn) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (!isVoiceCancelKey(event)) return;
-      // Before the Escape that goes back to the overlay.
-      event.preventDefault();
-      setVoiceMode.current(false);
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [voiceOn]);
-
-  // ADR-0095: the tip hides by itself after a while (it was marked seen when shown).
-  useEffect(() => {
-    if (!voiceTip) return;
-    const timer = setTimeout(() => setVoiceTip(false), VOICE_TIP_MS);
-    return () => clearTimeout(timer);
-  }, [voiceTip]);
 
   // ADR-0082: Ctrl+Alt+Enter is a call shortcut. A desktop app from 1.2.0 to 1.6.3 holds it only while the
   // page asks (it was the chat bar's key), so the page asks for the whole call; 1.6.4 holds it anyway.

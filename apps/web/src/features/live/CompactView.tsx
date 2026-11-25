@@ -546,8 +546,6 @@ export function CompactView(props: CompactViewProps) {
       text: modelRefusedToast(pendingModel),
     }));
   }
-  // ADR-0095: Voice mode's one-time tip, where the toast shows (never both at once).
-  const voiceTipShown = (state?.voiceTip ?? false) && !toast && !state?.ended;
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), MODEL_TOAST_MS);
@@ -620,26 +618,13 @@ export function CompactView(props: CompactViewProps) {
     const floating = popupElement.current;
     const forPopup = floating ? popupExtentOf(floating, up, height) + 8 : 0;
     const forBars = noPanels && barsEnd.current ? extentOf(barsEnd.current, up, height) + 2 : 0;
-    // ADR-0094: the model toast floats like a menu, so the window grows for it too while it shows (ADR-0095:
-    // and Voice mode's tip, in the same place).
+    // ADR-0094: the model toast floats like a menu, so the window grows for it too while it shows.
     const forToast = toastElement.current ? popupExtentOf(toastElement.current, up, height) + 8 : 0;
     // Never more than the shell accepts (17 Nov 2026: a taller ⋮ menu made it refuse, and the menu was cut).
     setNeededHeight(
       Math.min(OVERLAY_MAX_POPUP_HEIGHT, Math.max(forPopup, forBars, forToast) * zoom),
     );
-  }, [
-    popup,
-    noPanels,
-    zoom,
-    zoomPass,
-    collapsed,
-    icon,
-    scriptBar,
-    up,
-    toast,
-    voiceTipShown,
-    chatOpen,
-  ]);
+  }, [popup, noPanels, zoom, zoomPass, collapsed, icon, scriptBar, up, toast, chatOpen]);
 
   // Desktop 1.5.0 (ADR-0068): the Rec popover sits under its pill.
   useLayoutEffect(() => {
@@ -1054,8 +1039,6 @@ export function CompactView(props: CompactViewProps) {
                     onClickThrough: (on: boolean) => onCommand({ type: 'click-through', on }),
                   }
                 : {})}
-              // ADR-0095: the Voice toggle (hands-free talking to the assistant), where the live page says it.
-              onVoice={(on: boolean) => onCommand({ type: 'voice-mode', on })}
               // ADR-0122: Chat opens or closes the chat bar under bar 1.
               onChat={() => {
                 setPopup(null);
@@ -1178,28 +1161,6 @@ export function CompactView(props: CompactViewProps) {
               className="k-overlay-menu pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 w-max max-w-[calc(100%-12px)] -translate-x-1/2 rounded-control border border-ui-border px-3 py-2 text-[13px] font-medium text-ui-text shadow-modal"
             >
               {toast.text}
-            </p>
-          )}
-          {voiceTipShown && (
-            // ADR-0095: shown once per device, the first time Voice mode is turned on; drawn in the page like the
-            // toast, so it stays inside the protected window. It hides by itself after a few seconds.
-            <p
-              ref={toastElement}
-              role="status"
-              data-toast="voice-tip"
-              // ADR-0107: part of the bars for Click-through, so its "Got it" button takes the click (it went
-              // to the app behind).
-              {...{ [BARS_ATTRIBUTE]: '' }}
-              className="k-overlay-menu absolute left-1/2 top-[calc(100%+6px)] z-40 flex w-max max-w-[calc(100%-12px)] -translate-x-1/2 items-center gap-3 rounded-control border border-ui-border px-3 py-2 text-[13px] font-medium text-ui-text shadow-modal [-webkit-app-region:no-drag]"
-            >
-              <span>Mute yourself in the meeting first if others can hear you.</span>
-              <button
-                type="button"
-                className="shrink-0 rounded-control px-2 py-0.5 text-[13px] font-semibold text-ui-accent hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
-                onClick={() => onCommand({ type: 'voice-tip-seen' })}
-              >
-                Got it
-              </button>
             </p>
           )}
           {(popup === 'audio' || popup === 'mic') && (

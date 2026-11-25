@@ -1303,7 +1303,8 @@ test('the fullest ⋮ menu is one complete card on a laptop screen, and asks for
   const { page } = watched;
   await page.getByRole('button', { name: 'Overlay menu' }).click();
   const menu = page.getByRole('group', { name: 'Overlay settings' });
-  await expect(menu.getByRole('switch', { name: 'Voice' })).toBeVisible();
+  // ADR-0123: no Voice switch any more, even where a state still says Voice mode (?voice=off).
+  await expect(menu.getByRole('switch', { name: 'Voice' })).toHaveCount(0);
   await expect(menu.getByRole('button', { name: /^Recording type/ })).toBeVisible();
   const fit = await menu.evaluate((element) => ({
     height: element.scrollHeight,

@@ -104,7 +104,10 @@ export type AnswerTrigger =
   | 'rerun'
   // ADR-0101: a voice question (Ctrl+Shift+Space, Voice mode), and one with a screenshot (Ctrl+Alt+Enter).
   | 'voice'
-  | 'voice-screenshot';
+  | 'voice-screenshot'
+  // ADR-0123: the user's own spoken question: Ctrl+Enter on your own, and Ctrl+Shift+Space.
+  | 'own-question'
+  | 'own-question-key';
 
 /** One line of the other side (times are Unix ms). */
 export interface LineTiming {

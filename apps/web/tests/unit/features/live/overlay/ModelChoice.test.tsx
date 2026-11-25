@@ -3,8 +3,8 @@
  * LiveMenu.tsx (ADR-0094): the two choices with the current one checked; Smart disabled (aria-disabled,
  * so its tooltip still opens) when an admin has turned it off; the toast's words; bar 1's chip next to
  * Auto answer with the model's name, only when the live page says its model; and the ⋮ menu's Model row.
- * ADR-0095: the third choice, Fastest (Groq), disabled until the live page says Groq may be used; and bar 1's
- * Voice toggle and the ⋮ menu's Voice switch. 17 Nov 2026: the menu's Model entry is one row (choices open in
+ * ADR-0095: the third choice, Fastest (Groq), disabled until the live page says Groq may be used. ADR-0123: no
+ * Voice toggle on bar 1 or Voice switch in the ⋮ menu any more. 17 Nov 2026: the menu's Model entry is one row (choices open in
  * place) and Zoom, Theme, Opacity and Answer text size are in the Display sheet, so the menu fits a laptop.
  * Clicks, the popover, the toast and the fit rules are covered in tests/integration/live.spec.ts and
  * answers.spec.ts. ADR-0102: every account's list has the GPT models; the Gemini rows only with moreModels.
@@ -32,7 +32,7 @@ const {
   modelRefusedToast,
   SMART_OFF_TIP,
 } = await import('@/features/live/overlay/ModelChoice');
-const { ControlBar, voiceTip, VOICE_TIP } = await import('@/features/live/overlay/ControlBar');
+const { ControlBar } = await import('@/features/live/overlay/ControlBar');
 const { LiveMenu } = await import('@/features/live/overlay/LiveMenu');
 const { DisplaySheet } = await import('@/features/live/overlay/DisplaySheet');
 
@@ -58,10 +58,9 @@ const STATE: CompactState = {
  *
  * @param state   The overlay state.
  * @param withChip True to give the bar its model chip handler.
- * @param withVoice True to give the bar its Voice toggle handler (ADR-0095).
  * @returns The markup.
  */
-function bar(state: CompactState, withChip = true, withVoice = false): string {
+function bar(state: CompactState, withChip = true): string {
   return renderToString(
     <ControlBar
       state={state}
@@ -75,7 +74,6 @@ function bar(state: CompactState, withChip = true, withVoice = false): string {
       onDeviceList={() => undefined}
       menuButton={{ current: null }}
       {...(withChip ? { onModel: () => undefined, modelOpen: false } : {})}
-      {...(withVoice ? { onVoice: () => undefined } : {})}
     />,
   );
 }
@@ -264,43 +262,11 @@ describe('bar 1 and the ⋮ menu (ADR-0094)', () => {
   });
 });
 
-describe('Voice mode on bar 1 and in the ⋮ menu (ADR-0095)', () => {
-  it('puts the Voice toggle after the model chip, in the part that gives way', () => {
-    const html = bar({ ...STATE, voiceMode: 'off' }, true, true);
-    const chip = html.indexOf('aria-label="Model: Fast"');
-    const voice = html.indexOf('aria-label="Voice: talk to Paramount AI hands-free"');
-    const giving = html.indexOf('data-fit-step');
-    const pinnedRight = html.indexOf('aria-label="Overlay menu"');
-    expect(voice).toBeGreaterThan(chip);
-    expect(voice).toBeGreaterThan(giving);
-    expect(voice).toBeLessThan(pinnedRight);
-    expect(html).toContain('data-voice-mode="off"');
-    expect(html).toContain('>Voice<');
-    expect(html).toContain(`data-tip="${VOICE_TIP} · Off"`);
-  });
-
-  it('shows its state', () => {
-    expect(bar({ ...STATE, voiceMode: 'listening' }, true, true)).toMatch(
-      /aria-checked="true"[^>]*data-voice-mode="listening"/,
-    );
-    expect(bar({ ...STATE, voiceMode: 'paused' }, true, true)).toContain(
-      'data-voice-mode="paused"',
-    );
-    expect(VOICE_TIP).toBe('Talk to Paramount AI hands-free');
-    expect(voiceTip('listening')).toBe('Talk to Paramount AI hands-free · On (Esc turns it off)');
-    expect(voiceTip('paused')).toBe('Talk to Paramount AI hands-free · Paused while they speak');
-  });
-
-  it('has no toggle for an older live page, or without a handler', () => {
-    expect(bar(STATE, true, true)).not.toContain('data-voice-mode');
-    expect(bar({ ...STATE, voiceMode: 'off' }, true, false)).not.toContain('data-voice-mode');
-  });
-
-  it('has a Voice switch in the ⋮ menu, after Auto answer, only when the live page says Voice mode', () => {
-    const html = menu({ ...STATE, voiceMode: 'listening' });
-    expect(html).toContain('Voice');
-    expect(html.indexOf('>Voice<')).toBeGreaterThan(html.indexOf('Auto answer'));
-    expect(menu(STATE)).not.toContain('>Voice<');
+describe('No Voice control any more (ADR-0123 removes ADR-0095 Voice mode from the overlay)', () => {
+  it('has no Voice toggle on bar 1 and no Voice switch in the ⋮ menu, even if a state still says Voice mode', () => {
+    expect(bar({ ...STATE, voiceMode: 'off' })).not.toContain('data-voice-mode');
+    expect(bar({ ...STATE, voiceMode: 'listening' })).not.toContain('Voice');
+    expect(menu({ ...STATE, voiceMode: 'listening' })).not.toContain('>Voice<');
   });
 });
 
