@@ -27,8 +27,10 @@
  * - `screenshot-send`: ADR-0082: the screenshot and voice question (Ctrl+Alt+Enter): a screenshot first, then
  *   the spoken question, sent together. The id stays (it sent the chat bar's message with a screenshot from
  *   v1.2.0, spec S14).
- * - `click-through`: turn the overlay's Click-through mode on or off (v1.3.2): every click and key outside
- *   the bars goes to the app behind.
+ * - `click-through`: turn the overlay's Click-through mode on or off (v1.3.2): every click and key goes to
+ *   the app behind (the whole overlay since ADR-0055's amendment, 26 Nov 2026).
+ * - `click-through-off`: ADR-0055 (amended 26 Nov 2026): turn Click-through off (never on). Not a shortcut:
+ *   the tray's "Turn click-through off" sends it (desktop 1.8.0 on a Mac, the next Windows release).
  * - `record`: start or stop recording the meeting (desktop 1.5.0, ADR-0068). The page asks for consent
  *   before a start and confirms a stop, as the Rec pill does.
  * - `zoom-in` / `zoom-out` / `zoom-reset`: ADR-0082: the overlay's zoom (the ⋮ menu's Zoom), one step up or
@@ -47,6 +49,7 @@ export type HotkeyAction =
   | 'script-bar'
   | 'screenshot-send'
   | 'click-through'
+  | 'click-through-off'
   | 'record'
   | 'zoom-in'
   | 'zoom-out'
@@ -66,6 +69,7 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
   'script-bar',
   'screenshot-send',
   'click-through',
+  'click-through-off',
   'record',
   'zoom-in',
   'zoom-out',

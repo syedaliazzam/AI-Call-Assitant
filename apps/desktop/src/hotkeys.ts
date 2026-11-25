@@ -260,6 +260,11 @@ export interface HotkeyDeps {
    * window keys alone); DEFAULT_GLOBAL_HOTKEYS when absent (Windows, tests).
    */
   accelerators?: Readonly<Record<CallHotkey, string>>;
+  /**
+   * ADR-0055 (amended 26 Nov 2026): told when the page turns the call's shortcuts on (a call started) or off
+   * (it ended), so the tray offers "Turn click-through off" only during a call. Optional in tests.
+   */
+  onCallChange?: (on: boolean) => void;
 }
 
 /**
@@ -313,9 +318,11 @@ export function installHotkeys(deps: HotkeyDeps): HotkeyController {
       // Which shortcuts are taken (accelerators only; nothing about the call).
       const taken = statuses.filter((status) => !status.registered).map((s) => s.accelerator);
       console.info('desktop: hotkeys on', { taken });
+      deps.onCallChange?.(true);
       return statuses;
     }
     controller.disable();
+    deps.onCallChange?.(false);
     return [];
   });
   return controller;

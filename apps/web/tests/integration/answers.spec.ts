@@ -222,6 +222,62 @@ test('the Answer hotkey streams the answer line before the bullets', async () =>
   expect(request.conversation![0]!.length).toBe(4);
 });
 
+test('ADR-0055 (amended 26 Nov 2026): the call window turns Click-through off, and the call ending does too', async () => {
+  // The overlay's W (or Ctrl+Alt+X) turns it on: the command the overlay sends over the session's channel.
+  const states = await page.evaluateHandle(() => {
+    const seen: { clickThrough?: boolean; ended?: boolean }[] = [];
+    const channel = new BroadcastChannel('kite-live-harness-session');
+    channel.onmessage = (event: MessageEvent) => {
+      // The live page's messages: { kind: 'state', state } carries the overlay's state.
+      const message = event.data as { kind: string; state?: Record<string, boolean> };
+      if (message.kind === 'state' && message.state) seen.push(message.state);
+    };
+    (window as unknown as { ctChannel: BroadcastChannel }).ctChannel = channel;
+    return seen;
+  });
+  /**
+   * Sends Click-through on, as the overlay does.
+   *
+   * @returns When it was sent.
+   */
+  const turnOn = () =>
+    page.evaluate(() =>
+      (window as unknown as { ctChannel: BroadcastChannel }).ctChannel.postMessage({
+        kind: 'command',
+        command: { type: 'click-through', on: true },
+      }),
+    );
+  /**
+   * The Click-through value of the last state the live page sent the overlay.
+   *
+   * @returns True while it says on.
+   */
+  const lastClickThrough = () => states.evaluate((seen) => seen.at(-1)?.clickThrough ?? false);
+  const notice = page.locator('[data-click-through-notice]');
+
+  await turnOn();
+  await expect(notice).toContainText(
+    'Click-through is on: every click on the overlay goes to the app behind it. Press Ctrl+Alt+X, or turn it off here.',
+  );
+  await expect.poll(lastClickThrough).toBe(true);
+  // Safety net (b): the button in this window turns it off; the overlay hears it.
+  await notice.getByRole('button', { name: 'Turn click-through off' }).click();
+  await expect(notice).toHaveCount(0);
+  await expect.poll(lastClickThrough).toBe(false);
+
+  // Safety net (c): the call ending turns it off.
+  await turnOn();
+  await expect(notice).toBeVisible();
+  await page.evaluate(() => window.kiteAnswerHarness.setEnding(true));
+  await expect(notice).toHaveCount(0);
+  await expect.poll(lastClickThrough).toBe(false);
+  await page.evaluate(() => {
+    window.kiteAnswerHarness.setEnding(false);
+    (window as unknown as { ctChannel: BroadcastChannel }).ctChannel.close();
+  });
+  await expect(notice).toHaveCount(0);
+});
+
 test('Copy puts the clean answer on the clipboard', async () => {
   await page.getByRole('button', { name: 'Copy the answer' }).click();
   await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible();

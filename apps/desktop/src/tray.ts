@@ -5,7 +5,8 @@
  *          left it also shows the progress ("Uploading 1 recording to Drive: 42%"); after the user exits
  *          with work left it stays as the app's visible sign, with the progress, "Open Paramount AI" and
  *          "Quit now". The app is never hidden from the tray, the taskbar, the Dock or the process list
- *          (CLAUDE.md).
+ *          (CLAUDE.md). ADR-0055 (amended 26 Nov 2026; desktop 1.8.0 on a Mac, the next Windows release): during a
+ *          call it also offers "Turn click-through off", since the whole overlay passes clicks while it is on.
  * Used by: src/main.ts; tests/unit/tray.test.ts
  * Depends on: electron (types only), src/drive/background.ts (BackgroundView), src/config.ts (APP_NAME)
  * Architecture: docs/decisions/ADR-0106-background-upload-on-exit.md
@@ -16,7 +17,10 @@ import { APP_NAME } from './config';
 import type { BackgroundView } from './drive/background';
 
 /** What a tray menu item does. */
-export type TrayAction = 'open' | 'quit' | 'quit-now';
+export type TrayAction = 'open' | 'quit' | 'quit-now' | 'click-through-off';
+
+/** ADR-0055 (amended 26 Nov 2026): the tray's way to turn the overlay's Click-through off during a call. */
+export const CLICK_THROUGH_OFF_LABEL = 'Turn click-through off';
 
 /** One line of the tray menu, before it becomes an Electron menu item. */
 export interface TrayItem {
@@ -32,11 +36,18 @@ export interface TrayItem {
  * The tray menu for a state.
  *
  * @param view The state (background or not, and the progress line).
+ * @param call ADR-0055 (amended 26 Nov 2026): true while a call is on (its shortcuts are held): the menu then
+ *             starts with "Turn click-through off".
  * @returns The menu's lines, top first.
  * Called from: installTray() update(); tests
  */
-export function trayItems(view: BackgroundView): TrayItem[] {
+export function trayItems(view: BackgroundView, call = false): TrayItem[] {
   const items: TrayItem[] = [];
+  if (call)
+    items.push(
+      { label: CLICK_THROUGH_OFF_LABEL, action: 'click-through-off' },
+      { separator: true },
+    );
   if (view.status) items.push({ label: view.status }, { separator: true });
   items.push({ label: `Open ${APP_NAME}`, action: 'open' });
   items.push(
@@ -133,6 +144,8 @@ export interface TrayDeps {
   onQuit(): void;
   /** "Quit now" (in the background). */
   onQuitNow(): void;
+  /** ADR-0055 (amended 26 Nov 2026): "Turn click-through off" (during a call). */
+  onClickThroughOff(): void;
 }
 
 /** The installed tray. */
@@ -142,6 +155,11 @@ export interface AppTray {
    * @param view The state.
    */
   update(view: BackgroundView): void;
+  /**
+   * ADR-0055 (amended 26 Nov 2026): a call started or ended ("Turn click-through off" shows only during one).
+   * @param on True while a call is on.
+   */
+  setCall(on: boolean): void;
 }
 
 /**
@@ -158,19 +176,23 @@ export function installTray(deps: TrayDeps, view: BackgroundView): AppTray {
     open: deps.onOpen,
     quit: deps.onQuit,
     'quit-now': deps.onQuitNow,
+    'click-through-off': deps.onClickThroughOff,
   };
   // Windows: a click on the icon opens the app (the menu is on a right-click). macOS shows the menu.
   tray.on('click', () => deps.onOpen());
   let shown = '';
+  let last = view;
+  let call = false;
   const update = (next: BackgroundView) => {
+    last = next;
     // The menu is rebuilt only when it changes (reports come often while uploading).
-    const key = JSON.stringify(next);
+    const key = JSON.stringify({ next, call });
     if (key === shown) return;
     shown = key;
     tray.setToolTip(trayTooltip(next));
     tray.setContextMenu(
       deps.buildMenu(
-        trayItems(next).map((item): MenuItemConstructorOptions => {
+        trayItems(next, call).map((item): MenuItemConstructorOptions => {
           if (item.separator) return { type: 'separator' };
           const action = item.action;
           return action
@@ -181,5 +203,11 @@ export function installTray(deps: TrayDeps, view: BackgroundView): AppTray {
     );
   };
   update(view);
-  return { update };
+  return {
+    update,
+    setCall(on) {
+      call = on;
+      update(last);
+    },
+  };
 }

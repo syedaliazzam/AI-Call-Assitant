@@ -7,13 +7,23 @@
  * recorded, and it reports a conflict when another app holds the keys. ADR-0110: a Mac lists the Mac keys;
  * amended 25 Nov 2026: a browser marks the desktop-only shortcuts, a taken shortcut says whether it still works
  * with Paramount AI in front or not at all, and a Mac gets the note that macOS may not report a clash.
+ * ADR-0055 (amended 26 Nov 2026): a taken Click-through key says it cannot turn Click-through off, and gets a
+ * warning of its own naming the key and the ways back (W on bar 1, the call window's button).
  */
 import { DEFAULT_GLOBAL_HOTKEYS, HOTKEY_ROWS, hotkeyLabel, type HotkeyStatus } from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/platform', () => ({ getPlatform: () => ({}) }));
-const { conflictEffect, hotkeyRowsFor, MAC_CLASH_NOTE, rowHasConflict, rowKeys, rowWhere } =
-  await import('@/features/settings/HotkeyList');
+const {
+  clickThroughClashWarning,
+  conflictEffect,
+  hotkeyRowsFor,
+  isClickThroughRow,
+  MAC_CLASH_NOTE,
+  rowHasConflict,
+  rowKeys,
+  rowWhere,
+} = await import('@/features/settings/HotkeyList');
 
 /** A status saying the overlay's upward move is taken. */
 const TAKEN: HotkeyStatus[] = [
@@ -150,7 +160,34 @@ describe('where each shortcut works (ADR-0110, amended 25 Nov 2026)', () => {
     expect(conflictEffect(rowOf('answer'))).toBe('works only while Paramount AI is in front');
     expect(conflictEffect(rowOf('clear'))).toBe('works only while Paramount AI is in front');
     expect(conflictEffect(rowOf('overlay-toggle'))).toBe('does not work during calls');
-    expect(conflictEffect(rowOf('click-through'))).toBe('does not work during calls');
+    // ADR-0055 (amended 26 Nov 2026): Click-through's key is the way to turn the mode off.
+    expect(conflictEffect(rowOf('click-through'))).toBe(
+      'cannot turn Click-through off, so the bars keep their clicks in Click-through mode (W turns it off)',
+    );
+  });
+
+  it('ADR-0055 (amended 26 Nov 2026): warns on its own when another app holds the Click-through key', () => {
+    expect(isClickThroughRow(rowOf('click-through'))).toBe(true);
+    expect(isClickThroughRow(rowOf('answer'))).toBe(false);
+    const taken: HotkeyStatus[] = [
+      {
+        action: 'click-through',
+        accelerator: DEFAULT_GLOBAL_HOTKEYS['click-through'],
+        registered: false,
+      },
+    ];
+    expect(rowHasConflict(rowOf('click-through'), taken)).toBe(true);
+    const windows = clickThroughClashWarning(
+      hotkeyLabel(rowKeys(rowOf('click-through'), taken), false),
+    );
+    expect(windows).toContain(
+      'Another app uses Ctrl+Alt+X, the shortcut that turns Click-through off',
+    );
+    expect(windows).toContain('W on bar 1');
+    expect(windows).toContain('Turn click-through off');
+    expect(
+      clickThroughClashWarning(hotkeyLabel(rowKeys(rowOf('click-through'), taken, true), true)),
+    ).toContain('⌘ ⌥ X');
   });
 
   it('on a Mac, says macOS may not report a clash, naming the usual ⌃ ⌥ users', () => {

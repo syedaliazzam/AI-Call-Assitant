@@ -30,9 +30,11 @@
  * v1.3.2: the panels are as tall as what they show (up to the height the window allows), and the page
  * tells the shell that height (OverlayLayout.contentHeight), so the window is exactly its visible box;
  * the space beside a narrower panel stays a gap. A click on a panel's button gives the keyboard back to
- * the app that had it (onReleaseFocus). Click-through mode (⋮ or Ctrl+Alt+X, held by the live page):
- * everything but the bars (data-bars) passes clicks to the app behind, a click on the bars gives the
- * keyboard back too, and bar 1 says "Click-through on".
+ * the app that had it (onReleaseFocus). Click-through mode (W, ⋮ or Ctrl+Alt+X, held by the live page):
+ * ADR-0055 (amended 26 Nov 2026): the whole overlay passes every click to the app behind (the bars, the chat
+ * bar, the script bar, the panels and W's spot), nothing in it reacts to the pointer, and bar 1 shows a hint
+ * that takes no clicks ("Click-through on — press Ctrl+Alt+X to turn off"). While another app holds that
+ * shortcut, the bars keep their clicks as before (v1.3.2), so W can turn it off.
  *
  * ADR-0056 (desktop 1.3.0): the overlay sits at one of six positions. On the bottom row everything is
  * mirrored: bar 1 at the bottom edge, the chat bar and bar 2 above it, the panels above them, and the
@@ -871,13 +873,24 @@ export function CompactView(props: CompactViewProps) {
   // ADR-0055: clicks pass through the gaps, except while a menu or list is open (a click beside it
   // closes it), in the icon and in the script bar.
   const clickThrough = props.onClickThrough;
-  // v1.3.2: Click-through mode, held by the live page (⋮ or Ctrl+Alt+X); only where clicks can pass.
-  const passAll = clickThrough !== undefined && glass && (state?.clickThrough ?? false);
+  // v1.3.2: Click-through mode, held by the live page (W, ⋮ or Ctrl+Alt+X); only where clicks can pass, and
+  // never once the call has ended.
+  const passAll =
+    clickThrough !== undefined && glass && (state?.clickThrough ?? false) && !state?.ended;
+  // ADR-0055 (amended 26 Nov 2026): another app holds the shortcut, so the bars keep their clicks (W turns it
+  // off); otherwise the whole overlay passes.
+  const keepBars = passAll && (state?.clickThroughKeyTaken ?? false);
   useClickThrough(
-    clickThrough !== undefined && glass && popup === null && !icon && !scriptBar,
+    // ADR-0055 (amended 26 Nov 2026): in Click-through mode the slim script bar passes clicks too.
+    clickThrough !== undefined && glass && popup === null && !icon && (!scriptBar || passAll),
     (through) => clickThrough?.(through),
     passAll,
+    keepBars,
   );
+  // ADR-0055 (amended 26 Nov 2026): while the whole overlay passes clicks, nothing in it reacts to the pointer
+  // (no hover colours or tooltips on buttons that cannot be pressed). Not while a menu is open: one opened by
+  // a shortcut (Rec's consent) still takes its clicks.
+  const inertPointer = passAll && !keepBars && popup === null;
 
   // v1.3.2: a click on a panel's button (copy, ← →, a switch), or in Click-through mode on any of the
   // bars' buttons, gives the keyboard back to the app that had it: the overlay keeps no focus it was not
@@ -1028,7 +1041,9 @@ export function CompactView(props: CompactViewProps) {
       // ADR-0105: k-popup-open turns the drag areas off while a menu is open (theme.css), so a press on the
       // bars reaches the page and closes it.
       // ADR-0113: the bars' column lines up by the position's column (columnAlignClass), not always centred.
-      className={`${themeClass} k-overlay-root k-zoom-screen @container/overlay relative flex flex-col ${columnAlignClass(column)} ${up ? 'k-overlay-up' : ''} ${popup !== null ? 'k-popup-open' : ''} overflow-hidden text-[16px] text-ui-text`}
+      // ADR-0055 (amended 26 Nov 2026): k-pass-all while the whole overlay passes clicks (theme.css).
+      data-click-through={passAll ? (keepBars ? 'bars' : 'all') : 'off'}
+      className={`${themeClass} k-overlay-root k-zoom-screen @container/overlay relative flex flex-col ${columnAlignClass(column)} ${up ? 'k-overlay-up' : ''} ${popup !== null ? 'k-popup-open' : ''} ${inertPointer ? 'k-pass-all' : ''} overflow-hidden text-[16px] text-ui-text`}
       style={rootStyle}
     >
       {onResize && !collapsed && <ResizeGrips onResize={onResize} />}
@@ -1043,7 +1058,8 @@ export function CompactView(props: CompactViewProps) {
       >
         {/* Bar 1's lists float from its own edges, so they stay under their buttons in a wide window. */}
         <div ref={barsBlock} {...{ [GAP_ATTRIBUTE]: '' }} className="relative shrink-0">
-          {/* v1.3.2: bar 1 is one of the bars: it takes clicks even in Click-through mode. */}
+          {/* v1.3.2: bar 1 is one of the bars. ADR-0055 (amended 26 Nov 2026): in Click-through mode it passes
+              clicks like the rest, unless another app holds the shortcut (keepBars). */}
           <div className={piece} {...{ [BARS_ATTRIBUTE]: '' }}>
             <ControlBar
               state={state}
@@ -1087,6 +1103,8 @@ export function CompactView(props: CompactViewProps) {
                     onClickThrough: (on: boolean) => onCommand({ type: 'click-through', on }),
                   }
                 : {})}
+              // ADR-0055 (amended 26 Nov 2026): the whole overlay passes clicks: bar 1 shows the way back.
+              passAll={passAll && !keepBars}
               // ADR-0122: Chat opens or closes the chat bar under bar 1.
               onChat={() => {
                 setPopup(null);
@@ -1223,7 +1241,7 @@ export function CompactView(props: CompactViewProps) {
         </div>
 
         {/* ADR-0122: the chat bar, right under bar 1 (above it on the bottom row: the column is mirrored). One
-            of the bars, so it takes clicks in Click-through mode; exactly bar 1's width. */}
+            of the bars (it passes clicks in Click-through mode like them, ADR-0055 amended); exactly bar 1's width. */}
         {chatOpen && !collapsed && !state?.ended && (
           <div className={`${piece} shrink-0 ${UNDER_BAR}`} {...{ [BARS_ATTRIBUTE]: '' }}>
             <ChatBar

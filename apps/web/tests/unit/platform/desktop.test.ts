@@ -206,8 +206,16 @@ describe('desktop onHotkey with the Day 4 shell', () => {
     const stop = platform.onHotkey(handler, onTaken);
     expect(setHotkeysEnabled).toHaveBeenCalledWith(true);
     // ADR-0110 (amended 25 Nov 2026): taken ones the page handles (they still work in front) first, then the
-    // ones with no page fallback (the overlay's moves), which do not work at all.
-    await vi.waitFor(() => expect(onTaken).toHaveBeenCalledWith(['Ctrl+→'], null, ['Ctrl+Alt+←']));
+    // ones with no page fallback (the overlay's moves), which do not work at all. ADR-0055 (amended 26 Nov
+    // 2026): then every taken one by its action.
+    await vi.waitFor(() =>
+      expect(onTaken).toHaveBeenCalledWith(
+        ['Ctrl+→'],
+        null,
+        ['Ctrl+Alt+←'],
+        ['overlay-left', 'next'],
+      ),
+    );
     forward!('answer');
     // The same key press also reaching the page counts once.
     (window as unknown as EventTarget).dispatchEvent(

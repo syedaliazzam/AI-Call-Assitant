@@ -2,8 +2,9 @@
  * Tests for apps/web/src/features/live/overlay/useClickThrough.ts (isGap): only a layout box marked
  * data-gap counts as a transparent gap of the overlay; a bar, a panel, a button or anything else under
  * the pointer takes the click (ADR-0055). The hook itself is checked with the real shell in
- * apps/desktop/tests/manual/click-through.spec.ts. v1.3.2 (passesThrough): in Click-through mode everything
- * but the bars (data-bars) passes clicks through, the panels too.
+ * apps/desktop/tests/manual/click-through.spec.ts and in tests/integration/live.spec.ts. v1.3.2 (passesThrough):
+ * in Click-through mode the whole overlay passes clicks through, the bars too (ADR-0055 amended 26 Nov 2026);
+ * only while another app holds the shortcut (keepBars) do the bars (data-bars) keep their clicks.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -80,7 +81,15 @@ describe('passesThrough (v1.3.2)', () => {
     expect(passesThrough(new FakeElement([], panel) as unknown as EventTarget, false)).toBe(false);
   });
 
-  it('passes everything but the bars when Click-through is on', () => {
+  it('passes only gaps when Click-through is off: the bars keep their clicks (unchanged)', () => {
+    (globalThis as { Element?: unknown }).Element = FakeElement;
+    const bar = new FakeElement([BARS_ATTRIBUTE]);
+    expect(passesThrough(new FakeElement([], bar) as unknown as EventTarget, false)).toBe(false);
+    expect(passesThrough(bar as unknown as EventTarget, false)).toBe(false);
+    expect(passesThrough(null, false)).toBe(false);
+  });
+
+  it('ADR-0055 (amended 26 Nov 2026): passes the whole overlay when Click-through is on, the bars too', () => {
     (globalThis as { Element?: unknown }).Element = FakeElement;
     const bar = new FakeElement([BARS_ATTRIBUTE]);
     const panel = new FakeElement(['data-panel']);
@@ -88,8 +97,23 @@ describe('passesThrough (v1.3.2)', () => {
     expect(passesThrough(new FakeElement([GAP_ATTRIBUTE]) as unknown as EventTarget, true)).toBe(
       true,
     );
-    expect(passesThrough(new FakeElement([], bar) as unknown as EventTarget, true)).toBe(false);
-    expect(passesThrough(bar as unknown as EventTarget, true)).toBe(false);
+    // Bar 1, the chat bar, bar 2 and W's own spot: all inside data-bars.
+    expect(passesThrough(new FakeElement([], bar) as unknown as EventTarget, true)).toBe(true);
+    expect(passesThrough(bar as unknown as EventTarget, true)).toBe(true);
     expect(passesThrough(null, true)).toBe(true);
+  });
+
+  it('keeps the bars clickable in Click-through mode while another app holds the shortcut', () => {
+    (globalThis as { Element?: unknown }).Element = FakeElement;
+    const bar = new FakeElement([BARS_ATTRIBUTE]);
+    const panel = new FakeElement(['data-panel']);
+    expect(passesThrough(new FakeElement([], panel) as unknown as EventTarget, true, true)).toBe(
+      true,
+    );
+    expect(passesThrough(new FakeElement([], bar) as unknown as EventTarget, true, true)).toBe(
+      false,
+    );
+    expect(passesThrough(bar as unknown as EventTarget, true, true)).toBe(false);
+    expect(passesThrough(null, true, true)).toBe(true);
   });
 });

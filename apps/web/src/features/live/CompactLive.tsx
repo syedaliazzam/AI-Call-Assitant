@@ -217,6 +217,9 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
           type: 'click-through',
           on: !(stateRef.current?.clickThrough ?? false),
         });
+      } else if (action === 'click-through-off') {
+        // ADR-0055 (amended 26 Nov 2026): the tray's "Turn click-through off" only ever turns it off.
+        channel.current?.send({ type: 'click-through', on: false });
       } else if (action === 'ask-kite') {
         // ADR-0122: the overlay's chat bar opens (the live page counts it, as for the global key). ADR-0082 to
         // ADR-0122 Ask AI opened in its own window here.

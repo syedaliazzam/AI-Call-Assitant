@@ -3,7 +3,7 @@
 - **Status:** Accepted (developer, 3 Nov 2026, v1.0.2)
 - **Date:** 2026-11-03
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5 (compact view), §7.3 (windows.ts, hotkeys.ts, preload.ts)
-- **Supersedes / superseded by:** adjusts ADR-0029 (overlay window, default place and size), ADR-0031 (glass overlay) and ADR-0033 (panel opacity). The slider, its 40–100 % range, the 70 % default and the text shadow from ADR-0033 are unchanged.
+- **Supersedes / superseded by:** adjusts ADR-0029 (overlay window, default place and size), ADR-0031 (glass overlay) and ADR-0033 (panel opacity). The slider, its 40–100 % range, the 70 % default and the text shadow from ADR-0033 are unchanged. Amended by ADR-0126 (26 Nov 2026): no vibrancy on macOS either; plain transparency on every system.
 
 ## Context
 

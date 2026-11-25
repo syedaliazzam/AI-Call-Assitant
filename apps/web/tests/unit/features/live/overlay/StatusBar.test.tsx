@@ -183,18 +183,22 @@ describe('WarningLine (ADR-0118)', () => {
  * @param state          The overlay state.
  * @param onClickThrough The Click-through toggle's handler, or undefined where clicks cannot pass.
  * @param onChat         ADR-0122: the Chat button's handler, or undefined for no Chat button.
+ * @param passAll        ADR-0055 (amended 26 Nov 2026): the whole overlay passes clicks (bar 1's hint).
+ * @param mac            True for a Mac's key names.
  * @returns The markup.
  */
 function bar1(
   state: CompactState,
   onClickThrough?: (on: boolean) => void,
   onChat?: () => void,
+  passAll = false,
+  mac = false,
 ): string {
   return renderToString(
     <ControlBar
       state={state}
       onCommand={() => undefined}
-      mac={false}
+      mac={mac}
       collapsed={false}
       onCollapse={() => undefined}
       menuOpen={false}
@@ -204,6 +208,7 @@ function bar1(
       menuButton={{ current: null }}
       {...(onClickThrough ? { onClickThrough } : {})}
       {...(onChat ? { onChat } : {})}
+      passAll={passAll}
     />,
   );
 }
@@ -251,6 +256,49 @@ describe('ControlBar (bar 1)', () => {
     const on = bar1({ ...QUIET, clickThrough: true }, () => undefined);
     expect(on).toMatch(/aria-checked="true"[^>]*aria-label="Click-through"/);
     expect(on).toContain('Click-through: On');
+  });
+
+  it('ADR-0055 (amended 26 Nov 2026): while the whole overlay passes clicks, shows only the hint in place of Chat, AA, the model and W', () => {
+    const on = { ...QUIET, clickThrough: true };
+    const html = bar1(
+      on,
+      () => undefined,
+      () => undefined,
+      true,
+    );
+    expect(html).toContain('data-click-through-hint');
+    expect(html).toContain('Click-through on — press Ctrl+Alt+X to turn off');
+    // Text, not a control: nothing on the overlay can be pressed in this mode.
+    expect(html).not.toMatch(/<button[^>]*data-click-through-hint/);
+    expect(html).not.toContain('aria-label="Click-through"');
+    expect(html).not.toContain('aria-label="Chat"');
+    expect(html).not.toContain('aria-label="Auto answer"');
+    // The pinned controls stay (they show the call's state; the shortcut turns the mode off).
+    expect(html).toContain('aria-label="Exit: end call"');
+    expect(html).toContain('aria-label="Overlay menu"');
+    // A Mac names its own key.
+    expect(bar1(on, () => undefined, undefined, true, true)).toContain(
+      'Click-through on — press ⌘ ⌥ X to turn off',
+    );
+  });
+
+  it('ADR-0055 (amended 26 Nov 2026): Click-through off, or on with its key taken: no hint, W as before', () => {
+    const off = bar1(
+      QUIET,
+      () => undefined,
+      () => undefined,
+      false,
+    );
+    expect(off).not.toContain('data-click-through-hint');
+    expect(off).toContain('aria-label="Click-through"');
+    expect(off).toContain('aria-label="Chat"');
+    // The key held by another app: CompactView passes passAll=false, so W stays to turn it off.
+    const taken = bar1(
+      { ...QUIET, clickThrough: true, clickThroughKeyTaken: true },
+      () => undefined,
+    );
+    expect(taken).not.toContain('data-click-through-hint');
+    expect(taken).toMatch(/aria-checked="true"[^>]*aria-label="Click-through"/);
   });
 
   it('has no Click-through switch where clicks cannot pass (a browser window)', () => {

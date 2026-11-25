@@ -694,6 +694,8 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
               taken.filter((status) => worksInPage(status.action)).map(label),
               answer ? acceleratorLabel(answer.accelerator, bridge.os) : null,
               taken.filter((status) => !worksInPage(status.action)).map(label),
+              // ADR-0055 (amended 26 Nov 2026): by action, so the page knows when Click-through's key is taken.
+              taken.map((status) => status.action),
             );
           }
         })

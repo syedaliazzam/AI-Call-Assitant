@@ -157,6 +157,29 @@ describe('installHotkeys', () => {
     await setHotkeys(eventFrom(`${ORIGIN}/`), 'yes');
     expect([...callbacks.keys()]).toEqual([ASK_KITE_HOTKEY]);
   });
+
+  it('ADR-0055 (amended 26 Nov 2026): tells the shell when a call starts and ends (the tray item)', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const { globalShortcut } = fakeGlobalShortcut();
+    const handlers = new Map<string, (event: unknown, on: unknown) => unknown>();
+    const ipcMain = { handle: vi.fn((channel: string, fn) => handlers.set(channel, fn)) };
+    const onCallChange = vi.fn();
+    installHotkeys({
+      globalShortcut,
+      ipcMain,
+      sendToPage: vi.fn(),
+      allowedOrigin: ORIGIN,
+      onCallChange,
+    });
+    const setHotkeys = handlers.get(SET_HOTKEYS_CHANNEL)!;
+    await setHotkeys(eventFrom(`${ORIGIN}/live/s1`), true);
+    expect(onCallChange).toHaveBeenLastCalledWith(true);
+    await setHotkeys(eventFrom(`${ORIGIN}/live/s1`), false);
+    expect(onCallChange).toHaveBeenLastCalledWith(false);
+    // Another page cannot start or end it.
+    expect(() => setHotkeys(eventFrom('https://example.com/'), true)).toThrow(/Kite page/);
+    expect(onCallChange).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('overlay shortcuts and the conflict check (ADR-0029)', () => {

@@ -593,6 +593,19 @@ input:-webkit-autofill:focus {
   -webkit-app-region: no-drag !important;
 }
 
+/* ADR-0055 (amended 26 Nov 2026): in Click-through mode the whole overlay passes every click to the app behind
+   it (useClickThrough.ts). Nothing in it reacts to the pointer meanwhile (no hover colours or tooltips on
+   buttons that cannot be pressed), and nothing is a drag area, so no part of the window takes a press as its
+   own. CompactView sets the class only while no menu is open. */
+.k-pass-all,
+.k-pass-all * {
+  -webkit-app-region: no-drag !important;
+}
+
+.k-pass-all * {
+  pointer-events: none !important;
+}
+
 /* Modals and the desktop cards: fade in from 98 % size. */
 @keyframes k-modal-in {
   from {
