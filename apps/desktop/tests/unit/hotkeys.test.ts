@@ -8,12 +8,14 @@
  * and check() finds conflicts without keeping anything. 1.6.4 (ADR-0082): the screenshot and voice
  * question, Clear answers, Clear transcript, previous / next answer and the zoom keys are held during a
  * call and released at End; setChatSend() only reports Ctrl+Alt+Enter; Escape is held only while a voice
- * question listens during a call (setVoiceCancel and its IPC channel).
+ * question listens during a call (setVoiceCancel and its IPC channel). 1.8.0 (ADR-0110): with the Mac keys,
+ * installHotkeys() holds ⌃⌥ / ⌃⌘ keys and never the Mac's text-editing and window keys; Windows is unchanged.
  */
 import {
   ASK_KITE_HOTKEY,
   DEFAULT_GLOBAL_HOTKEYS,
   FOCUSED_HOTKEYS,
+  globalHotkeys,
   SCREENSHOT_SEND_HOTKEY,
   VOICE_CANCEL_HOTKEY,
 } from '@kite/shared';
@@ -482,5 +484,65 @@ describe('the Ask Kite shortcut (ADR-0030)', () => {
     expect(other.check().find((status) => status.action === 'ask-kite')?.registered).toBe(true);
     expect(free.callbacks.has(ASK_KITE_HOTKEY)).toBe(true);
     expect(callbacks.has(ASK_KITE_HOTKEY)).toBe(false);
+  });
+});
+
+describe('the Mac keys (ADR-0110)', () => {
+  /** The Mac's text-editing and window keys a call must never take. */
+  const MAC_EDITING_KEYS = [
+    'CommandOrControl+Left',
+    'CommandOrControl+Right',
+    'CommandOrControl+Backspace',
+    'CommandOrControl+Shift+Backspace',
+    'CommandOrControl+=',
+    'CommandOrControl+-',
+    'CommandOrControl+0',
+    'CommandOrControl+Shift+Left',
+    'CommandOrControl+Shift+Right',
+    'CommandOrControl+Shift+Up',
+    'CommandOrControl+Shift+Down',
+    'CommandOrControl+Alt+H',
+  ];
+
+  it('holds ⌃⌥ and ⌃⌘ keys instead, and still forwards each press as its action', () => {
+    const { globalShortcut, callbacks, press } = fakeGlobalShortcut();
+    const sendToPage = vi.fn();
+    const overlayAction = vi.fn();
+    const controller = installHotkeys({
+      globalShortcut,
+      ipcMain: { handle: vi.fn() } as never,
+      sendToPage,
+      overlayAction,
+      allowedOrigin: ORIGIN,
+      accelerators: globalHotkeys(true),
+    });
+    controller.enable();
+    for (const key of MAC_EDITING_KEYS) expect(callbacks.has(key)).toBe(false);
+    press('Control+Alt+Left');
+    press('Control+Alt+Backspace');
+    press('Control+Alt+=');
+    press('CommandOrControl+Enter');
+    expect(sendToPage.mock.calls.map((call) => call[1])).toEqual([
+      'prev',
+      'clear',
+      'zoom-in',
+      'answer',
+    ]);
+    press('Control+Alt+H');
+    press('Control+Command+Up');
+    expect(overlayAction.mock.calls.map((call) => call[0])).toEqual([
+      'overlay-toggle',
+      'overlay-row-top',
+    ]);
+    expect(controller.check().find((status) => status.action === 'prev')?.accelerator).toBe(
+      'Control+Alt+Left',
+    );
+  });
+
+  it('leaves Windows exactly as before', () => {
+    expect(globalHotkeys(false)).toBe(DEFAULT_GLOBAL_HOTKEYS);
+    const { globalShortcut, callbacks } = fakeGlobalShortcut();
+    createHotkeys(globalShortcut, vi.fn()).enable();
+    for (const key of MAC_EDITING_KEYS) expect(callbacks.has(key)).toBe(true);
   });
 });

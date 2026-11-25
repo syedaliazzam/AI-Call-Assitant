@@ -21,6 +21,10 @@
  * - macOS 12 and earlier cannot capture system audio at all: the shell then grants the screen
  *   without audio, and the web adapter reports "not supported" so the UI can offer the browser
  *   path (share a tab with audio).
+ * - 1.8.0 (ADR-0111): macOS 13.0 to 14.1 are treated the same. The session docs still say loopback "is
+ *   currently only supported on Windows"; the desktopCapturer docs describe only the CoreAudio Tap path
+ *   (macOS 14.2+), and the older ScreenCaptureKit path's switch was removed upstream (Electron 45). A
+ *   clear "macOS 14.2 or later is needed; use Chrome" beats a permission message that cannot help.
  * The system picker option (useSystemPicker) is NOT used: Kite never shows a picker on desktop.
  *
  * The video part of the grant is required by getDisplayMedia; the page stops the video track
@@ -63,14 +67,15 @@ export type DisplayMediaDecision =
  *
  * @param platform  process.platform.
  * @param osVersion process.getSystemVersion(), for example '14.2.1' or '10.0.26200'.
- * @returns True on Windows and on macOS 13 or newer.
+ * @returns True on Windows and on macOS 14.2 or newer (ADR-0111: Electron's CoreAudio Tap path).
  * Called from: decideDisplayMedia(); tests
  */
 export function canCaptureSystemAudio(platform: NodeJS.Platform, osVersion: string): boolean {
   if (platform === 'win32') return true;
   if (platform === 'darwin') {
-    const major = Number.parseInt(osVersion.split('.')[0] ?? '', 10);
-    return Number.isFinite(major) && major >= 13;
+    const [major, minor] = osVersion.split('.').map((part) => Number.parseInt(part, 10));
+    if (major === undefined || !Number.isFinite(major)) return false;
+    return major > 14 || (major === 14 && (minor ?? 0) >= 2);
   }
   // Linux is not a Kite desktop target (architecture §4).
   return false;

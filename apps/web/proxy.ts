@@ -4,8 +4,8 @@
  *          there is no session cookie, pages redirect to /login and API routes answer 401. The
  *          Google Drive connect and callback addresses (ADR-0072) are visited like pages (a link, which
  *          the desktop app opens in the system browser, and Google's redirect back), so they redirect.
- *          The public /privacy and /terms pages and the Windows download (PUBLIC_PAGE_PATHS) open
- *          signed out.
+ *          The public /privacy and /terms pages, the Windows download and (ADR-0125) whether the Mac app
+ *          is published (PUBLIC_PAGE_PATHS) open signed out.
  *          It only checks that the cookie EXISTS; the real checks (valid session, password
  *          changed, admin role) run on the server in requireUser() / requireAdmin().
  * Used by: Next.js (runs before matching routes)
@@ -28,10 +28,16 @@ export const PAGE_LIKE_API_PATHS: readonly string[] = [
 /**
  * Public pages anyone may open signed out: the privacy policy and terms of use, which Google's OAuth
  * consent screen links to (ADR-0072), and /download/windows (a redirect to the newest installer, linked
- * from the sign-in page, so a signed-out visitor gets the file rather than the sign-in page). They show
+ * from the sign-in page, so a signed-out visitor gets the file rather than the sign-in page). ADR-0125:
+ * /api/mac-release (whether the Mac app is published, a yes or no the sign-in page's Mac link asks). They show
  * no account data.
  */
-export const PUBLIC_PAGE_PATHS: readonly string[] = ['/privacy', '/terms', '/download/windows'];
+export const PUBLIC_PAGE_PATHS: readonly string[] = [
+  '/privacy',
+  '/terms',
+  '/download/windows',
+  '/api/mac-release',
+];
 
 /**
  * Redirects or rejects requests that have no session cookie.

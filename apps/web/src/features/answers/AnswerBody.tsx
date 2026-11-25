@@ -55,6 +55,11 @@ export interface AnswerBodyProps {
   answerLabel?: boolean;
   /** Hides the placeholder before the first word (a failed answer has its own message). */
   hideEmptyHeadline?: boolean;
+  /**
+   * ADR-0121: the reply reached its output-token limit, so its end is missing: an "Answer cut off" line
+   * follows the text (a code block left open still shows as a code block).
+   */
+  cutOff?: boolean;
   /** Puts text on the clipboard (tests pass a fake). */
   copy?: (text: string) => Promise<void>;
 }
@@ -233,6 +238,34 @@ function PrivateAnswer({
   );
 }
 
+/** ADR-0121: the words of the cut-off line. */
+export const ANSWER_CUT_OFF_TEXT =
+  'Answer cut off: it reached its length limit, so the end is missing.';
+
+/**
+ * ADR-0121: the line under an answer whose reply reached its output-token limit.
+ *
+ * @param props.size Where it is shown (sets the text size).
+ * @returns The line.
+ * Rendered by: AnswerBody
+ */
+function CutOffLine({
+  size,
+}: {
+  /** Where it is shown. */
+  size: keyof typeof SIZES;
+}) {
+  return (
+    <p
+      role="note"
+      aria-label="Answer cut off"
+      className={`mt-2 text-ui-warning ${SIZES[size].small}`}
+    >
+      {ANSWER_CUT_OFF_TEXT}
+    </p>
+  );
+}
+
 /**
  * An answer's text.
  *
@@ -246,7 +279,10 @@ export function AnswerBody(props: AnswerBodyProps) {
   const sizes = SIZES[size];
   if (props.target === 'kite') {
     return text.trim() ? (
-      <PrivateAnswer text={text} size={size} copyText={copy} />
+      <>
+        <PrivateAnswer text={text} size={size} copyText={copy} />
+        {props.cutOff && <CutOffLine size={size} />}
+      </>
     ) : (
       <p className={`text-ui-muted ${sizes.body}`}>…</p>
     );
@@ -318,6 +354,7 @@ export function AnswerBody(props: AnswerBodyProps) {
           {claims.join(', ')}: not found in your documents or the call.
         </p>
       )}
+      {props.cutOff && <CutOffLine size={size} />}
     </>
   );
 }

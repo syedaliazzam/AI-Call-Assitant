@@ -12,12 +12,14 @@
  * captureScreenshot() returns the shell PNG and maps its failures; the compact view and share
  * protection go through the Day 5 bridge, and a shell from before Day 5 reports them unsupported.
  * v1.0.2 (ADR-0035): overlay placement, resizing and modes go through a 1.0.2 shell; an older
- * shell reports no placement and its modes fall back to collapsing.
+ * shell reports no placement and its modes fall back to collapsing. 1.8.0 (ADR-0111): the macOS permission
+ * host exists only in a 1.8.0 shell on a Mac; ADR-0110: the Mac keys are labelled with ⌃, ⌥ and ⌘.
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
   acceleratorLabel,
   createDesktopPlatform,
+  desktopMacPermissions,
   DESKTOP_DISPLAY_OPTIONS,
 } from '@/platform/desktop';
 import { CaptureError } from '@/platform/errors';
@@ -139,12 +141,12 @@ describe('desktop getOtherSideStream', () => {
     expect(audio.stop).not.toHaveBeenCalled();
   });
 
-  it('reports no audio track (macOS 12) as not-supported, pointing to the browser path', async () => {
+  it('reports no audio track (macOS before 14.2, ADR-0111) as not-supported, pointing to the browser path', async () => {
     stubDisplayMedia(async () => fakeStream([fakeTrack('video')]));
     const error = await mac.getOtherSideStream().catch((e: unknown) => e);
     expect(error).toBeInstanceOf(CaptureError);
     expect(error).toMatchObject({ code: 'not-supported' });
-    expect((error as Error).message).toMatch(/macOS 13 or later.*Chrome/);
+    expect((error as Error).message).toMatch(/macOS 14\.2 or later.*Chrome/);
   });
 
   it('reports an audio track that arrived ended (macOS permission) as permission-denied', async () => {
@@ -181,6 +183,12 @@ describe('desktop onHotkey with the Day 4 shell', () => {
               accelerator: 'CommandOrControl+Alt+Left',
               registered: false,
             },
+            // ADR-0110 (amended 25 Nov 2026): one the page handles too, which then still works in front.
+            {
+              action: 'next' as const,
+              accelerator: 'CommandOrControl+Right',
+              registered: false,
+            },
           ]
         : [],
     );
@@ -197,7 +205,9 @@ describe('desktop onHotkey with the Day 4 shell', () => {
     const onTaken = vi.fn();
     const stop = platform.onHotkey(handler, onTaken);
     expect(setHotkeysEnabled).toHaveBeenCalledWith(true);
-    await vi.waitFor(() => expect(onTaken).toHaveBeenCalledWith(['Ctrl+Alt+←'], null));
+    // ADR-0110 (amended 25 Nov 2026): taken ones the page handles (they still work in front) first, then the
+    // ones with no page fallback (the overlay's moves), which do not work at all.
+    await vi.waitFor(() => expect(onTaken).toHaveBeenCalledWith(['Ctrl+→'], null, ['Ctrl+Alt+←']));
     forward!('answer');
     // The same key press also reaching the page counts once.
     (window as unknown as EventTarget).dispatchEvent(
@@ -221,6 +231,10 @@ describe('desktop onHotkey with the Day 4 shell', () => {
     expect(acceleratorLabel('CommandOrControl+Enter', 'windows')).toBe('Ctrl+Enter');
     expect(acceleratorLabel('CommandOrControl+Shift+Enter', 'mac')).toBe('⌘⇧Enter');
     expect(acceleratorLabel('CommandOrControl+Right', 'mac')).toBe('⌘→');
+    // ADR-0110: the Mac keys name ⌃, ⌥ and ⌘ themselves.
+    expect(acceleratorLabel('Control+Alt+Left', 'mac')).toBe('⌃⌥←');
+    expect(acceleratorLabel('Control+Command+Right', 'mac')).toBe('⌃⌘→');
+    expect(acceleratorLabel('CommandOrControl+Alt+K', 'windows')).toBe('Ctrl+Alt+K');
   });
 });
 
@@ -419,5 +433,35 @@ describe('createDesktopPlatform: home panel and stacked overlay (v1.1.0, ADR-004
     expect(bridge.onSnapZone).toHaveBeenCalledWith(handler);
     // The rejected call above must not surface as an unhandled rejection.
     await new Promise((resolve) => setTimeout(resolve));
+  });
+});
+
+describe('desktopMacPermissions (ADR-0111)', () => {
+  /** The four permission methods a 1.8.0 shell has. */
+  const methods = {
+    macPermissions: vi.fn(async () => ({
+      microphone: 'granted' as const,
+      screen: 'denied' as const,
+    })),
+    requestMacPermission: vi.fn(async () => null),
+    openMacPrivacySettings: vi.fn(async () => undefined),
+    relaunchApp: vi.fn(async () => undefined),
+  };
+
+  it('is there in a 1.8.0 shell on a Mac, and passes each call through', async () => {
+    const host = desktopMacPermissions({ version: '1.8.0', os: 'mac', ...methods })!;
+    await expect(host.read()).resolves.toEqual({ microphone: 'granted', screen: 'denied' });
+    await host.request('screen');
+    expect(methods.requestMacPermission).toHaveBeenCalledWith('screen');
+    await host.openSettings('microphone');
+    expect(methods.openMacPrivacySettings).toHaveBeenCalledWith('microphone');
+    await host.relaunch();
+    expect(methods.relaunchApp).toHaveBeenCalled();
+  });
+
+  it('is null on Windows and in an older shell', () => {
+    expect(desktopMacPermissions({ version: '1.8.0', os: 'windows', ...methods })).toBeNull();
+    expect(desktopMacPermissions({ version: '1.7.3', os: 'mac' })).toBeNull();
+    expect(createDesktopPlatform({ version: '1.7.3', os: 'mac' }).macPermissions).toBeNull();
   });
 });

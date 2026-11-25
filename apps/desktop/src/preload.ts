@@ -12,7 +12,8 @@
  *          and meeting recording (1.5.0, ADR-0068: recordingOpen / Write / Close / List / Play / SaveAs /
  *          ShowInFolder / Delete, listDisplays, setRecordingDisplay, deviceIdentity, renameDevice),
  *          and Google Drive (1.6.0, ADR-0072: driveUpload, onDriveUploadProgress, showNotice; 1.6.2,
- *          ADR-0074: driveFileSize; 1.7.2, ADR-0106: reportDriveQueue) }
+ *          ADR-0074: driveFileSize; 1.7.2, ADR-0106: reportDriveQueue), and the macOS permissions (1.8.0,
+ *          ADR-0111: macPermissions, requestMacPermission, openMacPrivacySettings, relaunchApp) }
  *          (frozen). Nothing
  *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
  * Used by: src/security.ts secureWebPreferences() (loaded as the window's preload, dist/preload.js)
@@ -35,6 +36,7 @@ import {
   type OverlayResizeStep,
   type DesktopNotice,
   type DriveQueueReport,
+  type MacPermissionKind,
   type DriveUploadProgress,
   type DriveUploadRequest,
   type RecordingOpenRequest,
@@ -53,6 +55,10 @@ import {
   CLOSE_COMPACT_CHANNEL,
   GET_PROTECTION_CHANNEL,
   HOTKEY_CHANNEL,
+  MAC_PERMISSIONS_CHANNEL,
+  MAC_PERMISSION_REQUEST_CHANNEL,
+  MAC_PRIVACY_SETTINGS_CHANNEL,
+  RELAUNCH_CHANNEL,
   MINIMIZE_MAIN_CHANNEL,
   OPEN_COMPACT_CHANNEL,
   LINK_CODE_CHANNEL,
@@ -376,6 +382,13 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
       sent: Number(report?.sent),
       total: Number(report?.total),
     }),
+  // 1.8.0 (ADR-0111): the macOS permissions. Only the permission's name crosses; main checks it again.
+  macPermissions: () => ipcRenderer.invoke(MAC_PERMISSIONS_CHANNEL),
+  requestMacPermission: (kind: MacPermissionKind) =>
+    ipcRenderer.invoke(MAC_PERMISSION_REQUEST_CHANNEL, String(kind)),
+  openMacPrivacySettings: (kind: MacPermissionKind) =>
+    ipcRenderer.invoke(MAC_PRIVACY_SETTINGS_CHANNEL, String(kind)),
+  relaunchApp: () => ipcRenderer.invoke(RELAUNCH_CHANNEL),
 });
 
 contextBridge.exposeInMainWorld('kiteDesktop', kiteDesktop);

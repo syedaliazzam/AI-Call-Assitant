@@ -198,8 +198,9 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
     const target = root.current?.ownerDocument.defaultView;
     if (!target) return;
     const stopKeys = getPlatform().listenForFocusedHotkeys(target, (action) => {
-      // ADR-0082: the voice question, and the screenshot and voice question (the live page listens).
-      if (action === 'chat') channel.current?.send({ type: 'voice', screenshot: false });
+      // ADR-0123: Ctrl+Shift+Space answers the user's own last spoken question; ADR-0082: Ctrl+Alt+Enter is the
+      // screenshot and voice question (the live page listens).
+      if (action === 'chat') channel.current?.send({ type: 'own-question' });
       else if (action === 'screenshot-send') {
         channel.current?.send({ type: 'voice', screenshot: true });
       } else if (action === 'zoom-in' || action === 'zoom-out' || action === 'zoom-reset') {
@@ -217,23 +218,19 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
           on: !(stateRef.current?.clickThrough ?? false),
         });
       } else if (action === 'ask-kite') {
-        // ADR-0082: the overlay has no message box: Ask AI opens in its own window; the call goes on.
-        openDashboard('/ask-kite');
+        // ADR-0122: the overlay's chat bar opens (the live page counts it, as for the global key). ADR-0082 to
+        // ADR-0122 Ask AI opened in its own window here.
+        channel.current?.send({ type: 'open-chat' });
       } else if (action === 'record') {
         // Desktop 1.5.0 (ADR-0068): Ctrl+Alt+R with the overlay focused: the bars ask Start or Stop.
         channel.current?.send({ type: 'record-prompt' });
       } else channel.current?.send({ type: action });
     });
     // ADR-0082: Escape with the overlay focused cancels a voice question while it listens (a menu that is
-    // open closes first: CompactView's own Escape). ADR-0095: it also turns Voice mode off.
+    // open closes first: CompactView's own Escape). ADR-0123: Voice mode is gone, so nothing else to turn off.
     const onKey = (event: KeyboardEvent) => {
       // ADR-0107: an Escape that closed a menu is not also a voice cancel.
       if (!isVoiceCancelKey(event) || event.defaultPrevented) return;
-      const voice = stateRef.current?.voiceMode;
-      if (voice === 'listening' || voice === 'paused') {
-        channel.current?.send({ type: 'voice-mode', on: false });
-        return;
-      }
       if (!stateRef.current?.dictating) return;
       channel.current?.send({ type: 'voice-cancel' });
     };

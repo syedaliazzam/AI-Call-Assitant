@@ -19,11 +19,12 @@ import {
   ZOOM_RANGE,
   type ThemeChoice,
 } from '@/core/storage/appearancePrefs';
-import { PRIVATE_LABEL, privateHint, usePrivate } from '@/features/privacy/usePrivate';
+import { PRIVATE_LABEL, privateHint, privateNote, usePrivate } from '@/features/privacy/usePrivate';
 import { openDashboard } from '@/features/sync/dashboardLink';
 import { getPlatform } from '@/platform';
 import { LayoutDashboard, LifeBuoy, LogOut, User, Waves } from 'lucide-react';
 import { MenuAction, MenuBlock, MenuStepper, MenuSwitch, MenuTheme } from '@/ui/PanelMenu';
+import { useIsMac } from '@/ui/useIsMac';
 
 /** The rows' icons. */
 const ICON = { size: 18, strokeWidth: 1.75, 'aria-hidden': true } as const;
@@ -53,6 +54,7 @@ export function HomeMenu({ email, theme, zoom, onClose, launcher = false }: Home
   const router = useRouter();
   const [leaving, setLeaving] = useState(false);
   const { state: protection, change: changeProtection } = usePrivate();
+  const mac = useIsMac();
 
   /** Signs out on this device. The shell keeps this window on the sign-in page. */
   const leave = async () => {
@@ -97,7 +99,9 @@ export function HomeMenu({ email, theme, zoom, onClose, launcher = false }: Home
         />
         <MenuSwitch
           label={PRIVATE_LABEL}
-          info={privateHint(protection)}
+          info={privateHint(protection, mac)}
+          // ADR-0111: on a Mac, while Private is on, the advice to share one window or tab.
+          note={privateNote(protection, mac)}
           checked={protection?.on ?? false}
           disabled={!protection?.supported}
           onChange={changeProtection}

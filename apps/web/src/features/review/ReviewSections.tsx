@@ -11,6 +11,7 @@
  */
 'use client';
 
+import { NOTES_CUT_OFF_TEXT } from '@/core/notes/cutOff';
 import { formatCallTime } from '@/core/review/load';
 import type { CallNotesView } from '@/core/review/calls';
 import type { SessionType, StoredLesson } from '@/core/storage/types';
@@ -122,6 +123,12 @@ export function NotesSection(props: NotesSectionProps) {
             Notes of the call that started {DATE_TIME.format(notes.callStartedAt)}; written{' '}
             {DATE_TIME.format(notes.createdAt)}.
           </p>
+          {/* ADR-0121: the reply reached its length limit; what is shown is complete up to there. */}
+          {notes.notes.cutOff && (
+            <p role="note" aria-label="Notes stop early" className="text-[13px] text-ui-warning">
+              {NOTES_CUT_OFF_TEXT}
+            </p>
+          )}
           <div>
             <h3 className="font-semibold text-ui-heading">Summary</h3>
             <ul aria-label="Summary" className="mt-1 list-disc space-y-1 pl-5">

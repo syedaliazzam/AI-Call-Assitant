@@ -165,6 +165,7 @@ function AnswerCard({
           finished
           size="review"
           claims={answer.claims ?? []}
+          cutOff={answer.cutOff === true}
           {...(answer.meta?.target ? { target: answer.meta.target } : {})}
         />
       </div>

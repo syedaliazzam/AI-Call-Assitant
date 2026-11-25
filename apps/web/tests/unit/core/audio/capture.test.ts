@@ -6,10 +6,11 @@
  * 'you' and releases the other side; meter levels are measured per channel; a track that ends
  * detaches its channel and emits 'channel-ended'; stop() detaches both, stops every track, the
  * timer and the meter context, once; a meter context that starts suspended (Chrome, background
- * tab) is resumed, so the meters do not stay grey after Reconnect.
+ * tab) is resumed, so the meters do not stay grey after Reconnect. ADR-0111: on a Mac a refused
+ * microphone names macOS's own setting.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { CallCaptureError, startCallCapture } from '@/core/audio/capture';
+import { CallCaptureError, micError, startCallCapture } from '@/core/audio/capture';
 import { CaptureError, type OtherSideSource } from '@/platform';
 
 /**
@@ -150,6 +151,23 @@ describe('startCallCapture', () => {
     expect((error as Error).message).toMatch(/microphone/);
     expect(s.them.track.stop).toHaveBeenCalled();
     expect(s.engine.attach).not.toHaveBeenCalled();
+  });
+
+  it('ADR-0111: a refused microphone names macOS’s setting on a Mac (app and browser)', () => {
+    const refused = Object.assign(new Error('denied'), { name: 'NotAllowedError' });
+    const macApp = { kind: 'desktop' as const, hotkeyModifier: () => '⌘' as const };
+    const macBrowser = { kind: 'browser' as const, hotkeyModifier: () => '⌘' as const };
+    const windows = { kind: 'desktop' as const, hotkeyModifier: () => 'Ctrl+' as const };
+    expect(micError(refused, macApp).message).toMatch(
+      /Turn on Paramount AI under System Settings → Privacy & Security → Microphone/,
+    );
+    expect(micError(refused, macBrowser).message).toMatch(
+      /turn on your browser under System Settings/,
+    );
+    expect(micError(refused, windows).message).toBe(
+      'Paramount AI can’t use your microphone. Allow microphone access for Paramount AI, then click Connect again.',
+    );
+    expect(micError(refused).code).toBe('permission-denied');
   });
 
   it('measures a level per channel', async () => {

@@ -151,6 +151,11 @@ describe('isCommand and isState', () => {
     expect(isCommand({ type: 'dismiss-name' })).toBe(true);
   });
 
+  it('ADR-0122: accepts the overlay asking to open its chat bar (Ctrl+Alt+K with the overlay focused)', () => {
+    expect(isCommand({ type: 'open-chat' })).toBe(true);
+    expect(isCommand({ type: 'open-chats' })).toBe(false);
+  });
+
   it('accept only the known shapes', () => {
     for (const type of ['answer', 'screenshot', 'clear', 'prev', 'next', 'end', 'hello'])
       expect(isCommand({ type })).toBe(true);

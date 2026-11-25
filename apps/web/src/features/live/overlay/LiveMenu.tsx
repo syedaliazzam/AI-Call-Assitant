@@ -7,8 +7,8 @@
  *          Smart disabled with "Turned off by your admin" when an admin has turned it off). An entry shows only where it can work: a browser's
  *          picture-in-picture window has no opacity, a shell before 1.1.0 no separate pages window.
  *          v1.3.0 (ADR-0056): in desktop 1.3.0 a Position row, a 2 × 3 grid of the overlay's six
- *          positions with the current one highlighted, replaces Reset position. ADR-0095: a Voice switch (hands-free
- *          talking to the assistant, as bar 1's toggle) after Auto answer; the Model row also offers Fastest (Groq),
+ *          positions with the current one highlighted, replaces Reset position. ADR-0095: a Voice switch after Auto
+ *          answer (removed by ADR-0123); the Model row also offers Fastest (Groq),
  *          and is one row showing the current model that opens its three choices in place. Desktop 1.5.0
  *          (ADR-0068): Recording type (Screen + audio / Audio only), where the app can record.
  *          ADR-0105 (desktop 1.7.1): choosing an item (a switch, a recording type, a position, a link) closes
@@ -33,7 +33,7 @@ import { LifeBuoy, MonitorCog, SlidersHorizontal, Sparkles, User, Video } from '
 import { forwardRef, useState } from 'react';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import type { AnswerModel } from '@/core/storage/types';
-import { PRIVATE_LABEL, privateHint } from '@/features/privacy/usePrivate';
+import { PRIVATE_LABEL, privateHint, privateNote } from '@/features/privacy/usePrivate';
 import { ChevronDownIcon, GridIcon, MonitorIcon, PenIcon } from '@/ui/icons';
 import { MenuAction, MenuBlock, MenuList, MenuSwitch } from '@/ui/PanelMenu';
 import { modelEntry } from '@/core/session/modelChoices';
@@ -214,7 +214,9 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
         )}
         <MenuSwitch
           label={PRIVATE_LABEL}
-          info={privateHint(protection)}
+          info={privateHint(protection, props.mac ?? false)}
+          // ADR-0111: on a Mac, while Private is on, the advice to share one window or tab.
+          note={privateNote(protection, props.mac ?? false)}
           checked={protection?.on ?? false}
           disabled={!protection?.supported || !props.onProtection}
           onChange={chosen((on: boolean) => props.onProtection?.(on))}
@@ -284,16 +286,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
           info="Paramount AI answers a finished question by itself, at most once every 15 seconds. This call only."
           onChange={chosen((on: boolean) => onCommand({ type: 'auto-answer', on }))}
         />
-        {state?.voiceMode !== undefined && (
-          // ADR-0095: the same as bar 1's Voice toggle (off by default in every call; Esc turns it off).
-          <MenuSwitch
-            label="Voice"
-            checked={state.voiceMode !== 'off'}
-            disabled={state.ended}
-            info="Talk to Paramount AI hands-free: each pause sends what you said as a question. Your words aren't sent to the interviewer transcript. It pauses while the other person speaks. Esc turns it off."
-            onChange={chosen((on: boolean) => onCommand({ type: 'voice-mode', on }))}
-          />
-        )}
+        {/* ADR-0123: no Voice switch any more (Voice mode is gone; own questions answer on a key press). */}
         {props.onClickThrough && (
           <MenuSwitch
             label="Click-through"

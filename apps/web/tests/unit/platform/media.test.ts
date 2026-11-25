@@ -39,6 +39,23 @@ describe('toCaptureError', () => {
     );
   });
 
+  it('ADR-0111: on a Mac, says to quit and reopen the app, or to share a Chrome tab in the browser', () => {
+    expect(toCaptureError(domError('AbortError'), 'desktop', 'mac').message).toMatch(
+      /then quit and reopen Paramount AI/,
+    );
+    const chrome = toCaptureError(
+      domError('NotAllowedError', 'Permission denied by system'),
+      'browser',
+      'mac',
+    );
+    expect(chrome.code).toBe('permission-denied');
+    expect(chrome.message).toContain('Chrome tab instead (no permission needed)');
+    // A closed picker stays a cancel on a Mac too.
+    expect(
+      toCaptureError(domError('NotAllowedError', 'Permission denied'), 'browser', 'mac').code,
+    ).toBe('user-cancelled');
+  });
+
   it('treats anything else as not-supported, and keeps a CaptureError as it is', () => {
     expect(toCaptureError(domError('NotSupportedError'), 'browser').code).toBe('not-supported');
     expect(toCaptureError('weird', 'browser').code).toBe('not-supported');

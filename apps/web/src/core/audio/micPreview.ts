@@ -93,7 +93,7 @@ export async function startMicPreview(options: MicPreviewOptions): Promise<MicPr
       ? platform.getMicStream(options.deviceId)
       : platform.getMicStream());
   } catch (error) {
-    throw micError(error);
+    throw micError(error, platform);
   }
 
   // An analyser in a context of its own, never connected to the speakers: the meter only reads it.

@@ -5,6 +5,8 @@
  * listenForHotkeys() calls the handler, prevents the browser's default and stops listening.
  * The two Alt shortcuts: Ask Kite (ADR-0030) and the script bar (v1.0.2, ADR-0035); the overlay's
  * Transcript key, Ctrl+Alt+T (v1.3.0, ADR-0056), only outside text boxes and never for AltGr letters.
+ * ADR-0110: on a Mac, Clear, Clear transcript, previous / next and zoom are ⌃⌥ keys (by the key's place),
+ * and ⌘⌫, ⌘←/→ and ⌘= / - / 0 are left to the Mac.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { hotkeyFor, isTranscriptKey, listenForHotkeys, type KeyPress } from '@/platform/keymap';
@@ -41,9 +43,43 @@ describe('hotkeyFor', () => {
 
   it('maps the macOS defaults (⌘) and ignores Ctrl there', () => {
     expect(hotkeyFor(press('Enter', { metaKey: true }), true)).toBe('answer');
-    expect(hotkeyFor(press('ArrowRight', { metaKey: true }), true)).toBe('next');
+    expect(hotkeyFor(press('Enter', { metaKey: true, shiftKey: true }), true)).toBe('screenshot');
+    expect(hotkeyFor(press(' ', { metaKey: true, shiftKey: true }), true)).toBe('chat');
     expect(hotkeyFor(press('Enter', { ctrlKey: true }), true)).toBeNull();
     expect(hotkeyFor(press('Enter', { metaKey: true }), false)).toBeNull();
+  });
+
+  it('ADR-0110: on a Mac, ⌘⌫, ⌘←/→, ⌘= / - / 0 keep their Mac meaning; ⌃⌥ keys do Clear, prev/next, zoom', () => {
+    const cmd = { metaKey: true };
+    for (const key of ['Backspace', 'ArrowLeft', 'ArrowRight', '=', '-', '0']) {
+      expect(hotkeyFor(press(key, cmd), true)).toBeNull();
+      expect(hotkeyFor(press(key, { ...cmd, shiftKey: true }), true)).toBeNull();
+    }
+    // Option changes the character on a Mac (⌥= types "≠"), so the place on the keyboard counts.
+    const ctrlOpt = { ctrlKey: true, altKey: true };
+    const at = (key: string, code: string, extra: Partial<KeyPress> = {}) =>
+      hotkeyFor(press(key, { ...ctrlOpt, code, ...extra }), true);
+    expect(at('Backspace', 'Backspace')).toBe('clear');
+    expect(at('Backspace', 'Backspace', { shiftKey: true })).toBe('clear-transcript');
+    expect(at('ArrowLeft', 'ArrowLeft')).toBe('prev');
+    expect(at('ArrowRight', 'ArrowRight')).toBe('next');
+    expect(at('≠', 'Equal')).toBe('zoom-in');
+    expect(at('±', 'Equal', { shiftKey: true })).toBe('zoom-in');
+    expect(at('–', 'Minus')).toBe('zoom-out');
+    expect(at('º', 'Digit0')).toBe('zoom-reset');
+    // Not with ⌘ too, not while typing (Option+arrows edit text), and not on Windows.
+    expect(at('ArrowLeft', 'ArrowLeft', { metaKey: true })).toBeNull();
+    const input = { tagName: 'TEXTAREA' } as unknown as EventTarget;
+    expect(at('Backspace', 'Backspace', { target: input })).toBeNull();
+    expect(hotkeyFor(press('ArrowLeft', { ...ctrlOpt, code: 'ArrowLeft' }), false)).toBeNull();
+    // Windows keeps Ctrl+← and Ctrl+Backspace.
+    expect(hotkeyFor(press('ArrowLeft', { ctrlKey: true }), false)).toBe('prev');
+  });
+
+  it('ADR-0110: ⌘⌥K and ⌘⌥S work by the key’s place when Option changes the letter', () => {
+    const cmdOpt = { metaKey: true, altKey: true };
+    expect(hotkeyFor(press('˚', { ...cmdOpt, code: 'KeyK' }), true)).toBe('ask-kite');
+    expect(hotkeyFor(press('ß', { ...cmdOpt, code: 'KeyS' }), true)).toBe('script-bar');
   });
 
   it('maps Ask Kite, the one shortcut with Alt, but never while typing (ADR-0030)', () => {

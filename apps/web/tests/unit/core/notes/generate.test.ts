@@ -7,7 +7,8 @@
  * throws) on a failure, with the reason when Claude was unavailable (usage limit or overload),
  * leaving the saved transcript and answers as they were; its logs hold ids, sizes, times and
  * token counts only. ADR-0067: the session goes with the CV only and the documents summary, which
- * is written (once) before the notes are posted.
+ * is written (once) before the notes are posted. ADR-0121: a failure the same request would meet
+ * again (cut_off, refused, bad_request) is 'failed' with final true; cut-off notes are saved with cutOff.
  * All text is invented.
  */
 import 'fake-indexeddb/auto';
@@ -269,6 +270,61 @@ describe('generateNotes', () => {
       unavailable: null,
     });
     expect(await getNotes('s1')).toBeNull();
+  });
+
+  it('ADR-0121: marks cut_off, refused and bad_request as final (the same request would fail again)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    for (const [code, status] of [
+      ['cut_off', 502],
+      ['refused', 502],
+      ['bad_request', 400],
+    ] as const) {
+      const fetchImpl = vi.fn(async () => Response.json({ code }, { status }));
+      expect(await generateNotes(INPUT, { fetchImpl })).toEqual({
+        status: 'failed',
+        unavailable: null,
+        final: true,
+      });
+    }
+    // A failure that may clear by itself is not final.
+    for (const [code, status] of [
+      ['upstream_error', 502],
+      ['timeout', 504],
+      ['internal', 500],
+    ] as const) {
+      const fetchImpl = vi.fn(async () => Response.json({ code }, { status }));
+      expect(await generateNotes(INPUT, { fetchImpl })).toEqual({
+        status: 'failed',
+        unavailable: null,
+      });
+    }
+  });
+
+  it('ADR-0121: saves cut-off notes with their cutOff flag', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const notes = {
+      summary: ['S1'],
+      questions: [],
+      nextSteps: [],
+      unclear: [],
+      lessons: [],
+      cutOff: true,
+    };
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        notes,
+        usage: {
+          input_tokens: 1,
+          output_tokens: 8_000,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
+        ms: 50_000,
+      }),
+    );
+    const outcome = await generateNotes(INPUT, { fetchImpl });
+    expect(outcome.status).toBe('saved');
+    expect((await getNotes('s1'))?.notes.cutOff).toBe(true);
   });
 
   it('says when Claude was unavailable, and leaves the saved transcript and answers as they were', async () => {

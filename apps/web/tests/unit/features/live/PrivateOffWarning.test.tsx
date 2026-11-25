@@ -4,7 +4,8 @@
  * when Private's state is unknown); it says "Private is off: Paramount AI will appear in your recording"
  * with the one-click "Turn Private back on", in the overlay's bar (with its bars attribute) and in the call
  * window; 1.6.3 (ADR-0075): the Rec pill shows only an amber dot for it (the words stay in its accessible
- * name), so the warning is on screen once.
+ * name), so the warning is on screen once. ADR-0120 §4: on a Mac it shows during every screen recording (Private
+ * cannot keep the windows out of Paramount AI's own recording there), says so, and offers no button.
  */
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -14,8 +15,10 @@ vi.mock('@/platform', () => ({
     getShareProtection: async () => ({ supported: true, on: false }),
     setShareProtection: async (on: boolean) => ({ supported: true, on }),
   }),
+  isMacComputer: () => false,
 }));
 const {
+  MAC_RECORDING_TEXT,
   PRIVATE_BACK_ON_TEXT,
   PRIVATE_OFF_TEXT,
   PrivateOffWarning,
@@ -34,6 +37,14 @@ describe('visibleInRecording', () => {
     expect(visibleInRecording({ state: 'on', kind: 'screen' }, null)).toBe(false);
     expect(visibleInRecording(undefined, false)).toBe(false);
   });
+
+  it('ADR-0120: on a Mac, true for any running screen recording, Private on or off; never for sound only', () => {
+    expect(visibleInRecording({ state: 'on', kind: 'screen' }, true, true)).toBe(true);
+    expect(visibleInRecording({ state: 'on', kind: 'screen' }, false, true)).toBe(true);
+    expect(visibleInRecording({ state: 'on', kind: 'screen' }, null, true)).toBe(true);
+    expect(visibleInRecording({ state: 'on', kind: 'audio' }, false, true)).toBe(false);
+    expect(visibleInRecording({ state: 'starting', kind: 'screen' }, false, true)).toBe(false);
+  });
 });
 
 describe('PrivateOffWarning', () => {
@@ -49,6 +60,22 @@ describe('PrivateOffWarning', () => {
     expect(window).toContain(PRIVATE_BACK_ON_TEXT);
     expect(PRIVATE_OFF_TEXT).toBe('Private is off: Paramount AI will appear in your recording');
     expect(PRIVATE_BACK_ON_TEXT).toBe('Turn Private back on');
+  });
+
+  it('ADR-0120: on a Mac says the windows are in the recording even with Private on, with no button', () => {
+    const overlay = renderToString(
+      <PrivateOffWarning look="overlay" onTurnOn={() => undefined} fixable={false} />,
+    );
+    expect(overlay).toContain('On a Mac, Paramount AI&#x27;s windows appear in this recording');
+    expect(overlay).not.toContain(PRIVATE_BACK_ON_TEXT);
+    expect(overlay).not.toContain(PRIVATE_OFF_TEXT);
+    const window = renderToString(
+      <PrivateOffWarning look="window" onTurnOn={() => undefined} fixable={false} />,
+    );
+    expect(window).not.toContain(PRIVATE_BACK_ON_TEXT);
+    expect(MAC_RECORDING_TEXT).toBe(
+      "On a Mac, Paramount AI's windows appear in this recording, even with Private on",
+    );
   });
 
   it('1.6.3: marks the Rec pill with an amber dot, not words, while recording with Private off', () => {

@@ -3,7 +3,7 @@
 - **Status:** Accepted (23 Nov 2026, after review of the branch preview)
 - **Date:** 2026-11-23
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5 (Overlay, compact view) (version 4.50.0)
-- **Supersedes / superseded by:** reverses ADR-0085's "one open panel fills the width" for the answer panel; keeps the rest of ADR-0085 (the split, side by side from 600 CSS px, the default size, the window's width never changed by the panels). Its default width for the answer open alone is changed by ADR-0115 (0.62 of the bars' width instead of 1).
+- **Supersedes / superseded by:** reverses ADR-0085's "one open panel fills the width" for the answer panel; keeps the rest of ADR-0085 (the split, side by side from 600 CSS px, the default size, the window's width never changed by the panels). Its default width for the answer open alone is changed by ADR-0115 (0.62 of the bars' width instead of 1). **Amended by ADR-0119:** side by side or stacked follows the window's width again (600 CSS px of the window, not of the block), and with both panels open in a window that wide the block is at least the window's width or 720 px, whichever is less, so it may be wider than the bars (it stacked in every 640 px window: 13" Mac, small Windows laptops).
 
 ## Context
 

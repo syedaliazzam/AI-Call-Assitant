@@ -1,11 +1,14 @@
 /**
  * File: apps/web/src/features/live/CompactView.tsx
  * Purpose: The overlay (the compact live view; spec S13–S16, ADR-0029, ADR-0041): separate pieces rather
- *          than one window-sized panel. Bar 1 (status, the Transcript, Rec, Auto answer and Click-through
- *          toggles, move, compact, timer, ⋮ and Exit; ADR-0082: no Answer, Screenshot or Chat buttons and
- *          no chat bar, the shortcuts do those), then bar 2, the one status bar (ADR-0082: the warnings and
- *          the live words share it; StatusBar.tsx), or the transcript panel in bar 2's place, whose header
- *          is the same status bar. The answer panel opens by itself when an
+ *          than one window-sized panel. Bar 1 (status, Rec, Chat, Auto answer and Click-through toggles, move,
+ *          compact, timer, ⋮ and Exit; ADR-0082: no Answer or Screenshot buttons, the shortcuts do those;
+ *          ADR-0122: Chat is back and opens the chat bar right under bar 1, overlay/ChatBar.tsx), then bar 2,
+ *          the transcript bar (ADR-0118, like ParakeetAI: always there during
+ *          a call, always the live words as phrase chips, with the level, Clear and expand buttons;
+ *          StatusBar.tsx), then the call's current warning in a slim line of its own (WarningLine.tsx; it
+ *          shared bar 2's line from ADR-0082 to ADR-0118), then the panels: the full transcript opens under
+ *          bar 2 (it no longer replaces it). The answer panel opens by itself when an
  *          answer starts; with both panels open they sit side by side when the window is wide enough, and
  *          stack when it is not. Compact shrinks everything to an icon. The panels are see-through with
  *          the opacity setting, and are remembered. The script bar (v1.0.2) replaces all of it with one
@@ -44,7 +47,8 @@
  *
  * ADR-0085: the transcript (left) and the answer (right) sit side by side from 600 CSS px wide, with a
  * divider between them (overlay/PanelSplit.tsx; remembered per device); below that they stack. A panel open
- * alone fills the width. The Transcript switch on bar 1 is there for every account and never gives way.
+ * alone fills the width. (ADR-0118 removed bar 1's Transcript switch: bar 2's level and expand buttons and
+ * Ctrl+Alt+T open and close the full transcript.)
  * The page is as tall as its window at every UI zoom (.k-zoom-screen), so zooming never adds a scrollbar.
  *
  * ADR-0094: bar 1's model chip and the ⋮ menu's Model row switch the answer model (Fast / Smart) for the
@@ -69,6 +73,13 @@
  * ADR-0115: until the user drags the grip, the answer open alone is 62 % of the bars' width (a reading
  * column; it was the bars' whole width), and the transcript and the answer side by side keep the bars' width
  * (overlay/panelWidth.ts panelsShare()). A dragged width is remembered and used for both, as before.
+ *
+ * ADR-0124 (like ParakeetAI): with the transcript and the answer side by side they are always the same height:
+ * the answer sizes itself and the transcript copies its height (--k-pair-height) and scrolls inside itself
+ * ("Scroll to bottom" when scrolled up); the window follows the answer alone. The answer open alone is centred
+ * under the bars on every position; opening the transcript puts it on the answer's left without changing the
+ * height (the held height ignores the transcript side by side). ADR-0119's widths and the bottom-row mirroring
+ * are unchanged.
  *
  * An older desktop shell (1.1.0) has a fixed height for "no panels open" and cannot make an icon. So the
  * page tells every shell how tall its bars are (OverlayLayout.popupHeight, which any shell from 1.1.0
@@ -110,6 +121,7 @@ import {
   type HeldHeight,
 } from './overlay/answerHeight';
 import { AnswerPreferencesSheet } from './overlay/AnswerPreferencesSheet';
+import { ChatBar } from './overlay/ChatBar';
 import { DisplaySheet } from './overlay/DisplaySheet';
 import { ControlBar, type DeviceList } from './overlay/ControlBar';
 import { DevicePicker } from './overlay/DevicePicker';
@@ -130,6 +142,7 @@ import {
   columnAlignClass,
   gripSide,
   overlayColumn,
+  panelsColumn,
   panelsShare,
   panelsWidthStyle,
   widthShareAfterDrag,
@@ -142,6 +155,7 @@ import { statusMessage } from './overlay/statusLine';
 import { TranscriptPanel } from './overlay/TranscriptPanel';
 import { BARS_ATTRIBUTE, GAP_ATTRIBUTE, useClickThrough } from './overlay/useClickThrough';
 import { usePopupDismiss } from './overlay/usePopupDismiss';
+import { WarningLine } from './overlay/WarningLine';
 
 /** The overlay's window-level settings (desktop app; a browser window cannot do these). */
 export interface OverlayWindowSettings {
@@ -392,7 +406,9 @@ function stackedExtentOf(panels: readonly HTMLElement[], up: boolean, height: nu
 /**
  * How the panels' area lays out its panels (1.6.3, ADR-0075). Top row: they hang from the bars, side by
  * side from 600 CSS px (ADR-0085; 900 before) or stacked below that (the transcript first). Bottom row: mirrored, so they sit on
- * the bars: side by side along the bottom, or stacked upward with the transcript nearest the bars.
+ * the bars: side by side along the bottom, or stacked upward with the transcript nearest the bars. ADR-0119: 600 px
+ * of the window (the root, container "overlay"), not of the panels' block, which since ADR-0113 was never wider
+ * than bar 1 and so stacked in every 640 px window.
  *
  * @param both True when both panels are open.
  * @param up   True on the bottom row (ADR-0056).
@@ -402,8 +418,8 @@ function stackedExtentOf(panels: readonly HTMLElement[], up: boolean, height: nu
 export function panelsLayout(both: boolean, up: boolean): string {
   if (!both) return up ? 'items-end' : 'items-start';
   return up
-    ? 'flex-col-reverse @min-[600px]:flex-row @min-[600px]:items-end'
-    : 'flex-col @min-[600px]:flex-row @min-[600px]:items-start';
+    ? 'flex-col-reverse @min-[600px]/overlay:flex-row @min-[600px]/overlay:items-end'
+    : 'flex-col @min-[600px]/overlay:flex-row @min-[600px]/overlay:items-start';
 }
 
 /** v1.3.2: the window's height follows the content in steps of this many pixels (fewer resizes). */
@@ -435,7 +451,6 @@ export function CompactView(props: CompactViewProps) {
   const [icon, setIcon] = useState(false);
   // Clear hides the words on screen at once; the live page keeps them out from then on.
   const [clearedChips, setClearedChips] = useState<readonly string[]>([]);
-  const [questionCleared, setQuestionCleared] = useState<string | null>(null);
   const [scriptInput, setScriptInput] = useState(false);
   const [neededHeight, setNeededHeight] = useState(0);
   // ADR-0085: the transcript's share of the width side by side (the divider; remembered per device).
@@ -473,6 +488,8 @@ export function CompactView(props: CompactViewProps) {
   const up = props.position ? overlayRow(props.position) === 'bottom' : false;
   // ADR-0113: and its column lines the pieces up on the left, in the middle or on the right.
   const column = overlayColumn(props.position);
+  // ADR-0124: the panels' block: the answer alone centred under the bars; the pair by the position's column.
+  const blockColumn = panelsColumn(column, panels.transcript && panels.answer);
 
   /**
    * Collapses the overlay to bar 1, or opens it again.
@@ -493,6 +510,20 @@ export function CompactView(props: CompactViewProps) {
     setSeenPrompts(recordPrompts);
     if (recordPrompts > seenPrompts) {
       setPopup('record');
+      setIcon(false);
+      setCollapsed(false);
+    }
+  }
+  // ADR-0122: the chat bar under bar 1. Bar 1's Chat button opens and closes it; Ctrl+Alt+K during a call (the
+  // live page counts the presses in askKiteCount) opens it. It never takes the keyboard by itself. While
+  // rendering, as React advises for state that follows a changed value.
+  const [chatOpen, setChatOpen] = useState(false);
+  const chatPresses = state?.askKiteCount ?? 0;
+  const [seenChatPresses, setSeenChatPresses] = useState(chatPresses);
+  if (chatPresses !== seenChatPresses) {
+    setSeenChatPresses(chatPresses);
+    if (chatPresses > seenChatPresses) {
+      setChatOpen(true);
       setIcon(false);
       setCollapsed(false);
     }
@@ -525,8 +556,6 @@ export function CompactView(props: CompactViewProps) {
       text: modelRefusedToast(pendingModel),
     }));
   }
-  // ADR-0095: Voice mode's one-time tip, where the toast shows (never both at once).
-  const voiceTipShown = (state?.voiceTip ?? false) && !toast && !state?.ended;
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), MODEL_TOAST_MS);
@@ -599,14 +628,13 @@ export function CompactView(props: CompactViewProps) {
     const floating = popupElement.current;
     const forPopup = floating ? popupExtentOf(floating, up, height) + 8 : 0;
     const forBars = noPanels && barsEnd.current ? extentOf(barsEnd.current, up, height) + 2 : 0;
-    // ADR-0094: the model toast floats like a menu, so the window grows for it too while it shows (ADR-0095:
-    // and Voice mode's tip, in the same place).
+    // ADR-0094: the model toast floats like a menu, so the window grows for it too while it shows.
     const forToast = toastElement.current ? popupExtentOf(toastElement.current, up, height) + 8 : 0;
     // Never more than the shell accepts (17 Nov 2026: a taller ⋮ menu made it refuse, and the menu was cut).
     setNeededHeight(
       Math.min(OVERLAY_MAX_POPUP_HEIGHT, Math.max(forPopup, forBars, forToast) * zoom),
     );
-  }, [popup, noPanels, zoom, zoomPass, collapsed, icon, scriptBar, up, toast, voiceTipShown]);
+  }, [popup, noPanels, zoom, zoomPass, collapsed, icon, scriptBar, up, toast, chatOpen]);
 
   // Desktop 1.5.0 (ADR-0068): the Rec popover sits under its pill.
   useLayoutEffect(() => {
@@ -649,9 +677,16 @@ export function CompactView(props: CompactViewProps) {
     }
     const height = page.offsetHeight;
     const panelElements = [...area.querySelectorAll<HTMLElement>('[data-panel]')];
-    const panelExtents = stackedPanels(area, panelElements)
+    const stacked = stackedPanels(area, panelElements);
+    // ADR-0124: side by side the transcript is as tall as the answer and scrolls inside itself, so only the
+    // answer (at least its default height) sets the window's height; the transcript's hidden lines never do.
+    const sizing =
+      !stacked && panelElements.length > 1
+        ? panelElements.filter((panel) => !panel.hasAttribute('data-transcript-panel'))
+        : panelElements;
+    const panelExtents = stacked
       ? [stackedExtentOf(panelElements, up, height)]
-      : panelElements.map((panel) => naturalExtentOf(panel, up, height));
+      : sizing.map((panel) => naturalExtentOf(panel, up, height));
     const pieces = [...page.querySelectorAll<HTMLElement>(`[${BARS_ATTRIBUTE}]`)].map((piece) =>
       extentOf(piece, up, height),
     );
@@ -663,12 +698,16 @@ export function CompactView(props: CompactViewProps) {
       answerHeld.current,
       answerHoldKey({
         answerId: panels.answer ? state?.answer?.id : null,
-        transcript: panels.transcript,
+        // ADR-0124: opening or closing the transcript beside the answer keeps the height (it changes it only
+        // when stacked under 600 px).
+        transcript: panels.transcript && stacked,
         up,
         zoom,
         fontScale,
-        // ADR-0113: the panels' own width (a drag of the corner grip fits the height again too).
-        width: area.clientWidth,
+        // ADR-0124: the window's width and the dragged share (a resize or a drag of the corner grip fits the
+        // height again), not the block's width, which opening the transcript widens (ADR-0119).
+        width: page.clientWidth,
+        share: panelsWidth,
       }),
       stepped,
     );
@@ -688,7 +727,32 @@ export function CompactView(props: CompactViewProps) {
     icon,
     scriptBar,
     panelsWidth,
+    chatOpen,
   ]);
+
+  // ADR-0124 (like ParakeetAI): with the transcript and the answer side by side, the transcript is exactly as tall
+  // as the answer panel. The answer panel sizes itself (its content, at least its default height, up to the
+  // window); its height is copied to --k-pair-height on the panels' area whenever it changes (an observer, so a
+  // streaming answer and a re-wrap at a new width are followed), and the transcript panel uses it side by side
+  // (a container query; stacked under 600 px it is ignored). Written to the style directly: no re-render.
+  const pairOpen = panels.transcript && panels.answer;
+  useLayoutEffect(() => {
+    const area = panelsArea.current;
+    const panel = answerPanel.current;
+    if (!area) return;
+    if (!pairOpen || !panel) {
+      area.style.removeProperty('--k-pair-height');
+      return;
+    }
+    const apply = () => area.style.setProperty('--k-pair-height', `${panel.offsetHeight}px`);
+    apply();
+    // jsdom (unit tests) has no ResizeObserver. ADR-0107: the observer of the panel's own window.
+    const Observer = ownResizeObserver(panel);
+    if (!Observer) return;
+    const observer = new Observer(apply);
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [pairOpen, collapsed, icon, scriptBar]);
 
   // ADR-0113: the share of the bars' width the answer panel's button strip needs, measured after every
   // render that can change it (the panel opening, Stop while streaming, "1 of N", a new window width or zoom:
@@ -728,7 +792,8 @@ export function CompactView(props: CompactViewProps) {
     const share = widthShareAfterDrag({
       startWidth: from.width,
       dx: clientX - from.x,
-      column,
+      // ADR-0124: the answer alone is centred (both edges move); beside the transcript, by the position.
+      column: blockColumn,
       min: from.min,
       max: from.max,
     });
@@ -834,7 +899,10 @@ export function CompactView(props: CompactViewProps) {
       if (!target?.closest(RELEASING)) return;
       const inPanel = target.closest('[data-panel]') !== null;
       const inBars = target.closest(`[${BARS_ATTRIBUTE}]`) !== null;
-      if (!inPanel && !(inBars && releaseAfterBars.current)) return;
+      // ADR-0122: Chat on bar 1 and the chat bar's Send and × always give the keyboard back to the meeting:
+      // only a click into the chat bar's box keeps it.
+      const releases = target.closest('[data-releases-focus]') !== null;
+      if (!inPanel && !releases && !(inBars && releaseAfterBars.current)) return;
       if (target.closest('[data-keeps-focus]')) return;
       // After React has applied the click: a box it opened has the focus by then.
       setTimeout(() => {
@@ -870,7 +938,6 @@ export function CompactView(props: CompactViewProps) {
   /** Clears the words on screen, in the strip and the panel. */
   const clearTranscript = () => {
     setClearedChips((state?.chips ?? []).map((chip) => chip.id));
-    setQuestionCleared(state?.liveQuestion ?? null);
     onCommand({ type: 'clear-transcript' });
   };
 
@@ -888,8 +955,6 @@ export function CompactView(props: CompactViewProps) {
   }
 
   const chips = (state?.chips ?? []).filter((chip) => !clearedChips.includes(chip.id));
-  const question =
-    state?.liveQuestion && state.liveQuestion !== questionCleared ? state.liveQuestion : null;
   const piece = pieceClass(glass);
   // A solid picture-in-picture window stays dark: nothing shows through it.
   const themeClass = glass && props.resolvedTheme === 'light' ? 'k-light' : 'k-dark';
@@ -919,40 +984,43 @@ export function CompactView(props: CompactViewProps) {
   }
 
   const both = panels.transcript && panels.answer;
-  // ADR-0105: the answer panel's default height, while an answer shows (none for the empty panel).
-  const answerMin = state?.answer ? answerPanelMinHeight(fontScale) : null;
+  // ADR-0105: the answer panel's default height, while an answer shows (none for the empty panel). ADR-0124:
+  // and with the transcript open beside it, so the pair (the transcript is as tall as the answer) is never
+  // shorter than a typical answer, even before the first one.
+  const answerMin = state?.answer || both ? answerPanelMinHeight(fontScale) : null;
 
-  // ADR-0082: the one status bar (bar 2): the live words, or the current warning with its button.
+  // ADR-0118: bar 2, the transcript bar: always the live words, with the level, Clear and expand buttons.
   const statusBar = (
     <StatusBar
       state={state}
       chips={chips}
-      question={question}
-      words
-      transcriptOpen={false}
-      onTranscript={(open) => {
-        if (collapsed) collapse(false);
-        onPanels({ ...panels, transcript: open });
-      }}
-      onCommand={onCommand}
+      transcriptOpen={panels.transcript}
+      onTranscript={(open) => onPanels({ ...panels, transcript: open })}
       onClear={clearTranscript}
-      onCollapse={() => collapse(true)}
-      collapseLabel="Hide the status bar"
-      onList={(list) => setPopup(list)}
-      privateOff={privateOff.visible}
-      onPrivateOn={privateOff.turnOn}
-      privateOffInCall={privateOffInCall}
       mac={mac}
       levels={levels}
     />
   );
+  // ADR-0118: the call's current message (statusLine.ts) in a slim line of its own under bar 2, only while it
+  // applies; until ADR-0118 it replaced the live words on bar 2 (ADR-0082). ADR-0120: the Mac's own Private words.
+  const message = statusMessage(state, privateOff.visible, privateOffInCall, mac);
+  const warningLine = message ? (
+    <div className={`${piece} min-w-0`} {...{ [BARS_ATTRIBUTE]: '' }}>
+      <WarningLine
+        message={message}
+        onCommand={onCommand}
+        onList={(list) => setPopup(list)}
+        onPrivateOn={privateOff.turnOn}
+      />
+    </div>
+  ) : null;
   // ADR-0082: collapsed to bar 1, a warning that needs the user (a side that cannot be heard, the Answer key
-  // held by another app, a recording with Private off) still shows the status bar.
-  const alertWhileCollapsed =
-    collapsed && statusMessage(state, privateOff.visible)?.tone === 'alert';
+  // held by another app, a recording with Private off) still shows; ADR-0118: as the slim line alone.
+  const alertWhileCollapsed = collapsed && message?.tone === 'alert';
 
   return (
-    // @container: buttons drop their key-caps when it is narrow, and the panels stack.
+    // @container: buttons drop their key-caps when it is narrow, and (ADR-0119: by its name "overlay") the
+    // panels stack under 600 CSS px.
     <div
       ref={root}
       {...{ [GAP_ATTRIBUTE]: '' }}
@@ -960,7 +1028,7 @@ export function CompactView(props: CompactViewProps) {
       // ADR-0105: k-popup-open turns the drag areas off while a menu is open (theme.css), so a press on the
       // bars reaches the page and closes it.
       // ADR-0113: the bars' column lines up by the position's column (columnAlignClass), not always centred.
-      className={`${themeClass} k-overlay-root k-zoom-screen @container relative flex flex-col ${columnAlignClass(column)} ${up ? 'k-overlay-up' : ''} ${popup !== null ? 'k-popup-open' : ''} overflow-hidden text-[16px] text-ui-text`}
+      className={`${themeClass} k-overlay-root k-zoom-screen @container/overlay relative flex flex-col ${columnAlignClass(column)} ${up ? 'k-overlay-up' : ''} ${popup !== null ? 'k-popup-open' : ''} overflow-hidden text-[16px] text-ui-text`}
       style={rootStyle}
     >
       {onResize && !collapsed && <ResizeGrips onResize={onResize} />}
@@ -1019,11 +1087,12 @@ export function CompactView(props: CompactViewProps) {
                     onClickThrough: (on: boolean) => onCommand({ type: 'click-through', on }),
                   }
                 : {})}
-              // ADR-0095: the Voice toggle (hands-free talking to the assistant), where the live page says it.
-              onVoice={(on: boolean) => onCommand({ type: 'voice-mode', on })}
-              // ADR-0085: the Transcript switch for every account (it was only with account sync).
-              transcriptOpen={panels.transcript}
-              onTranscript={(open: boolean) => onPanels({ ...panels, transcript: open })}
+              // ADR-0122: Chat opens or closes the chat bar under bar 1.
+              onChat={() => {
+                setPopup(null);
+                setChatOpen((open) => !open);
+              }}
+              chatOpen={chatOpen}
             />
           </div>
           {popup === 'menu' && (
@@ -1142,28 +1211,6 @@ export function CompactView(props: CompactViewProps) {
               {toast.text}
             </p>
           )}
-          {voiceTipShown && (
-            // ADR-0095: shown once per device, the first time Voice mode is turned on; drawn in the page like the
-            // toast, so it stays inside the protected window. It hides by itself after a few seconds.
-            <p
-              ref={toastElement}
-              role="status"
-              data-toast="voice-tip"
-              // ADR-0107: part of the bars for Click-through, so its "Got it" button takes the click (it went
-              // to the app behind).
-              {...{ [BARS_ATTRIBUTE]: '' }}
-              className="k-overlay-menu absolute left-1/2 top-[calc(100%+6px)] z-40 flex w-max max-w-[calc(100%-12px)] -translate-x-1/2 items-center gap-3 rounded-control border border-ui-border px-3 py-2 text-[13px] font-medium text-ui-text shadow-modal [-webkit-app-region:no-drag]"
-            >
-              <span>Mute yourself in the meeting first if others can hear you.</span>
-              <button
-                type="button"
-                className="shrink-0 rounded-control px-2 py-0.5 text-[13px] font-semibold text-ui-accent hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
-                onClick={() => onCommand({ type: 'voice-tip-seen' })}
-              >
-                Got it
-              </button>
-            </p>
-          )}
           {(popup === 'audio' || popup === 'mic') && (
             <DevicePicker
               ref={popupElement}
@@ -1175,46 +1222,69 @@ export function CompactView(props: CompactViewProps) {
           )}
         </div>
 
-        {/* ADR-0082: no warning bars of their own any more (the call notices, the Answer key held elsewhere, a
-          screen recording with Private off): the status bar's line shows the current one with its button. */}
-        {alertWhileCollapsed && !state?.ended && (
+        {/* ADR-0122: the chat bar, right under bar 1 (above it on the bottom row: the column is mirrored). One
+            of the bars, so it takes clicks in Click-through mode; exactly bar 1's width. */}
+        {chatOpen && !collapsed && !state?.ended && (
           <div className={`${piece} shrink-0 ${UNDER_BAR}`} {...{ [BARS_ATTRIBUTE]: '' }}>
-            {statusBar}
+            <ChatBar
+              onCommand={onCommand}
+              onClose={() => setChatOpen(false)}
+              onReleaseFocus={releaseFocus}
+              disabled={!state}
+            />
           </div>
+        )}
+
+        {/* ADR-0082: no warning bars of their own (the call notices, the Answer key held elsewhere, a screen
+          recording with Private off); ADR-0118: the current one is the slim line, which still shows collapsed
+          when it needs the user. */}
+        {alertWhileCollapsed && !state?.ended && (
+          <div className={`flex shrink-0 flex-col ${UNDER_BAR}`}>{warningLine}</div>
         )}
 
         {collapsed ? null : state?.ended ? (
           <p className={`${piece} shrink-0 p-3 text-ui-muted ${UNDER_BAR}`}>The call has ended.</p>
         ) : (
           <>
-            {!panels.transcript && (
-              // 1.6.3 (ADR-0075): bar 2 alone; Auto answer is on bar 1.
-              <div
-                ref={barsEnd}
-                {...{ [GAP_ATTRIBUTE]: '' }}
-                className={`flex shrink-0 gap-1.5 ${up ? 'items-end' : 'items-start'} ${UNDER_BAR}`}
-              >
-                <div className={`${piece} min-w-0 flex-1`} {...{ [BARS_ATTRIBUTE]: '' }}>
-                  {statusBar}
-                </div>
+            {/* ADR-0118: bar 2 is always there during a call (the full transcript opens under it), with the
+                warning line under it; on the bottom row mirrored (the line above bar 2, ADR-0056). */}
+            <div
+              ref={barsEnd}
+              {...{ [GAP_ATTRIBUTE]: '' }}
+              className={`flex shrink-0 ${up ? 'flex-col-reverse' : 'flex-col'} gap-1.5 ${UNDER_BAR}`}
+            >
+              <div className={`${piece} min-w-0`} {...{ [BARS_ATTRIBUTE]: '' }}>
+                {statusBar}
               </div>
-            )}
+              {warningLine}
+            </div>
             {(panels.transcript || panels.answer) && (
               // v1.3.2: side by side the panels are as tall as their content (items-start), so the space
-              // under a shorter one is a gap; the window is fitted to the taller one (contentHeight).
+              // under a shorter one is a gap; the window is fitted to the taller one (contentHeight). ADR-0124:
+              // side by side the transcript is as tall as the answer (--k-pair-height), and only the answer
+              // sets the window's height.
               // 1.6.3 (ADR-0075): on the bottom row they sit on the bars (items-end), and stacked panels
               // are mirrored (flex-col-reverse: the transcript nearest the bars, the answer above it).
               // ADR-0113: the panels are one block with its own width (with the answer open: its share of the
               // bars' width, never under the button strip; the transcript alone fills it), lined up by the
               // position's column. The block is a container, so side by side or stacked follows its own width.
+              // ADR-0124: the answer open alone is centred under the bars on every position (like ParakeetAI);
+              // with the transcript too, the pair still lines up by the position's column (ADR-0119).
               <div
                 {...{ [GAP_ATTRIBUTE]: '' }}
-                className={`flex min-h-0 flex-1 flex-col ${columnAlignClass(column)} ${UNDER_BAR}`}
+                className={`flex min-h-0 flex-1 flex-col ${columnAlignClass(blockColumn)} ${UNDER_BAR}`}
               >
                 <div
                   {...{ [GAP_ATTRIBUTE]: '' }}
                   data-panels-block=""
-                  className="@container flex min-h-0 max-w-full flex-1 flex-col"
+                  // ADR-0119: with both panels open in a window of 600 CSS px or more, at least as wide as the
+                  // window or 720 px, whichever is less (100cqw: the root, the nearest container), with no 100 %
+                  // cap. So they sit side by side even where bar 1 is narrower (the 640 default: 13" Mac,
+                  // 1366/1536 Windows laptops), and keep the width they had beside the bars before ADR-0118 made
+                  // bar 1 narrower (715 px measured at the 768 and 960 defaults). A wider bar 1 still sets it. It
+                  // overflows bar 1's column on the side the position's column allows (centred: both sides), never
+                  // the window.
+                  className={`@container flex min-h-0 max-w-full flex-1 flex-col ${both ? '@min-[600px]/overlay:min-w-[min(720px,100cqw)] @min-[600px]/overlay:max-w-none' : ''}`}
                   style={{
                     // ADR-0115: the user's width, else 62 % for the answer alone and the bars' width beside
                     // the transcript (panelsShare()); never under the button strip.
@@ -1233,22 +1303,18 @@ export function CompactView(props: CompactViewProps) {
                     {panels.transcript && (
                       <div
                         data-panel=""
+                        data-transcript-panel=""
                         // ADR-0085: side by side its width is the split (at least 240); alone it fills the width. A
                         // container of its own, so its header's key-caps follow the panel's width, not the window's.
-                        className={`${piece} @container flex max-h-full min-h-0 flex-1 flex-col overflow-hidden ${both ? '@min-[600px]:min-w-[240px] @min-[600px]:grow-0 @min-[600px]:basis-(--k-split)' : ''}`}
+                        // ADR-0124 (like ParakeetAI): side by side it is exactly as tall as the answer panel
+                        // (--k-pair-height, kept equal to the answer's height below) and scrolls inside itself, with
+                        // "Scroll to bottom" when scrolled up; its own length never makes the window taller.
+                        className={`${piece} @container flex max-h-full min-h-0 flex-1 flex-col overflow-hidden ${both ? '@min-[600px]/overlay:min-w-[240px] @min-[600px]/overlay:grow-0 @min-[600px]/overlay:basis-(--k-split) @min-[600px]/overlay:h-[var(--k-pair-height,auto)]' : ''}`}
                       >
                         <TranscriptPanel
                           state={state}
                           onCommand={onCommand}
-                          onClear={clearTranscript}
-                          onCollapse={() => onPanels({ ...panels, transcript: false })}
-                          mac={mac}
-                          levels={levels}
                           fontScale={fontScale}
-                          onList={(list) => setPopup(list)}
-                          privateOff={privateOff.visible}
-                          onPrivateOn={privateOff.turnOn}
-                          privateOffInCall={privateOffInCall}
                         />
                       </div>
                     )}
@@ -1280,7 +1346,7 @@ export function CompactView(props: CompactViewProps) {
                         }
                         // ADR-0085: side by side it takes the rest, at least 340. ADR-0113: otherwise never narrower
                         // than its button strip (min-w-max: the text below the strip is size-contained).
-                        className={`${piece} flex max-h-full min-h-0 min-w-max flex-1 flex-col overflow-hidden ${both ? '[--k-stack-reserve:7.5rem] @min-[600px]:min-w-[340px] @min-[600px]:[--k-stack-reserve:0px]' : ''}`}
+                        className={`${piece} flex max-h-full min-h-0 min-w-max flex-1 flex-col overflow-hidden ${both ? '[--k-stack-reserve:7.5rem] @min-[600px]/overlay:min-w-[340px] @min-[600px]/overlay:[--k-stack-reserve:0px]' : ''}`}
                       >
                         <OverlayAnswer
                           state={state}
@@ -1291,7 +1357,8 @@ export function CompactView(props: CompactViewProps) {
                           onResize={onResize}
                           copy={copy}
                           onWidthDrag={widthDrag}
-                          gripSide={gripSide(column)}
+                          // ADR-0124: the answer alone is centred, so its grip moves both edges.
+                          gripSide={gripSide(blockColumn)}
                         />
                       </div>
                     )}

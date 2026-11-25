@@ -47,6 +47,7 @@ import {
   compactUrl,
   compactWindowOptions,
   createCompactWindows,
+  floatOverFullScreen,
   installCompactWindows,
   COMPACT_COLLAPSED_HEIGHT,
   fittedHeight,
@@ -137,6 +138,8 @@ class FakeWindow {
   show = vi.fn();
   loadURL = vi.fn(async () => undefined);
   setAlwaysOnTop = vi.fn();
+  /** 1.8.0 (ADR-0111): joining every space on a Mac (the overlay over full-screen meetings). */
+  setVisibleOnAllWorkspaces = vi.fn();
   setContentProtection = vi.fn();
   setOpacity = vi.fn();
   setMinimumSize = vi.fn();
@@ -282,6 +285,19 @@ describe('compactUrl and restoreBounds', () => {
       nodeIntegration: false,
       preload: '/p.js',
     });
+  });
+});
+
+describe('floatOverFullScreen (ADR-0111)', () => {
+  it('on a Mac joins every space, full-screen ones too; elsewhere does nothing', () => {
+    const window = { setVisibleOnAllWorkspaces: vi.fn() };
+    floatOverFullScreen(window, 'darwin');
+    expect(window.setVisibleOnAllWorkspaces).toHaveBeenCalledWith(true, {
+      visibleOnFullScreen: true,
+    });
+    window.setVisibleOnAllWorkspaces.mockClear();
+    floatOverFullScreen(window, 'win32');
+    expect(window.setVisibleOnAllWorkspaces).not.toHaveBeenCalled();
   });
 });
 

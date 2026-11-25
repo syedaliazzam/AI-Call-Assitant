@@ -18,7 +18,9 @@
  * Used by: src/features/home/Launcher.tsx
  * Depends on: lucide-react, src/core/live/callStart.ts, src/core/stt/prefetch.ts,
  *             src/features/sync/dashboardLink.ts, src/platform,
- *             src/ui (ProgressBar, Select, Tooltip, Chip)
+ *             src/ui (ProgressBar, Select), src/features/shell/MacInstall.tsx (ADR-0109),
+ *             src/features/permissions/MacPermissions.tsx (ADR-0111: on a Mac, Connect checks the two
+ *             macOS permissions first and shows the card when one is missing)
  *          ADR-0098: a start refused because the session is live on another device of the account shows
  *          that with Take over, which asks first, then connects again taking the call over.
  *          (src/core/live/liveLock.ts, src/features/live/TakeOver.tsx)
@@ -26,6 +28,7 @@
  */
 'use client';
 
+import type { MacPermissionState } from '@kite/shared';
 import { ArrowLeft, Play, ShieldCheck, TriangleAlert, Upload } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { requestCallStart, watchCallStart } from '@/core/live/callStart';
@@ -34,12 +37,16 @@ import { TakeOverDialog } from '@/features/live/TakeOver';
 import { leaveRecordConsent } from '@/core/recording/handoff';
 import { NO_STEREO_WARNING } from '@/features/live/overlay/RecordControls';
 import { speechModelPrefetch, type PrefetchState } from '@/core/stt/prefetch';
+import {
+  MacPermissionsCard,
+  macPermissionsReady,
+  missingMacPermissions,
+} from '@/features/permissions/MacPermissions';
+import { MacInstallLink } from '@/features/shell/MacInstall';
 import { openDashboard } from '@/features/sync/dashboardLink';
 import { getPlatform } from '@/platform';
-import { SOON_TOOLTIP } from '@/ui/Chip';
 import { ProgressBar } from '@/ui/ProgressBar';
 import { Select } from '@/ui/Select';
-import { Tooltip } from '@/ui/Tooltip';
 
 /** Props for LauncherConnect. */
 export interface LauncherConnectProps {
@@ -132,6 +139,8 @@ export function LauncherConnect({
   const canRecord = useSyncExternalStore(subscribeNever, hasRecording, () => false);
   const [consent, setConsent] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // 1.8.0 (ADR-0111): on a Mac, the permissions Connect found missing (the card shows instead of a start).
+  const [permissions, setPermissions] = useState<MacPermissionState | null>(null);
   // ADR-0098: the start was refused because another device runs the session; Take over asks first.
   const [elsewhere, setElsewhere] = useState(false);
   const [askingTakeOver, setAskingTakeOver] = useState(false);
@@ -194,6 +203,14 @@ export function LauncherConnect({
     setPhase('preparing');
     setProblem(null);
     setElsewhere(false);
+    // ADR-0111: on a Mac, both permissions first; the card says which is missing and how to turn it on.
+    const missing = await missingMacPermissions();
+    if (!mounted.current) return;
+    setPermissions(missing);
+    if (missing) {
+      setPhase('idle');
+      return;
+    }
     const ready = await prefetch.start();
     if (!mounted.current) return;
     if (ready) {
@@ -299,6 +316,14 @@ export function LauncherConnect({
           </Tip>
         </ul>
 
+        {permissions && (
+          <MacPermissionsCard
+            state={permissions}
+            reason="connect"
+            // Both on: the card goes; Connect starts the call.
+            onChange={(next) => setPermissions(macPermissionsReady(next) ? null : next)}
+          />
+        )}
         {problem && (
           <p
             role="alert"
@@ -362,15 +387,8 @@ export function LauncherConnect({
       </div>
 
       <div className="flex flex-col items-center gap-3 pb-2 text-[15px] text-ui-muted">
-        <Tooltip content={SOON_TOOLTIP}>
-          <span tabIndex={0} className="inline-flex items-center">
-            Need it for&nbsp;
-            <span className="text-ui-heading underline decoration-1 underline-offset-[6px]">
-              macOS
-            </span>
-            ?
-          </span>
-        </Tooltip>
+        {/* ADR-0109: the Mac app's install steps, to pass on to Mac colleagues (hidden in the Mac app). */}
+        <MacInstallLink />
         <button
           type="button"
           onClick={() => openDashboard('/')}

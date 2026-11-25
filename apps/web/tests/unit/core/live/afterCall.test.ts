@@ -5,7 +5,7 @@
  * - notes: from the lines the call page handed over (also with "Save transcript" off), else the saved
  *   ones; "skipped" when nothing was heard or answered; from the answers only when the lines were kept in
  *   memory and the window closed; tried again a minute later, "failed" after three tries or at once when
- *   Claude is unavailable;
+ *   Claude is unavailable, or (ADR-0121) when the same request would fail the same way again;
  * - Drive: queued once the notes are settled (its own job, from this call), or 'off' when the account does
  *   not save to Drive; never before the notes;
  * - one call failing never stops the others.
@@ -246,6 +246,24 @@ describe('runAfterCall', () => {
     });
     await runAfterCall(w.deps);
     expect(w.records.get('c8')).toMatchObject({ notesState: 'failed', notesError: 'usageLimit' });
+  });
+
+  it('ADR-0121: gives up at once on a failure the same request would meet again (no paid retries)', async () => {
+    const w = world([call('c8b')], {
+      outcome: () => ({ status: 'failed', unavailable: null, final: true }) as NotesOutcome,
+    });
+    await runAfterCall(w.deps);
+    expect(w.seen.notes).toHaveLength(1);
+    expect(w.records.get('c8b')).toMatchObject({
+      notesState: 'failed',
+      notesError: 'failed',
+      notesAttempts: 1,
+    });
+    // A minute later nothing is sent again, and the call goes on to Drive.
+    w.records.set('c8b', { ...w.records.get('c8b')!, updatedAt: NOW - NOTES_RETRY_MS });
+    await runAfterCall(w.deps);
+    expect(w.seen.notes).toHaveLength(1);
+    expect(w.seen.queued).toHaveLength(1);
   });
 
   it('marks Drive "off" when the account does not save to Drive, and keeps going past a failure', async () => {

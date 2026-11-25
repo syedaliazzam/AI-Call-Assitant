@@ -85,6 +85,34 @@ export function trayIconFile(options: {
     : path.join(options.baseDir, '..', 'build', name);
 }
 
+/** The macOS menu bar's icon size, in points (Apple's guidance: about 18 pt; 36 px on a Retina screen). */
+export const MENU_BAR_ICON_POINTS = 18;
+
+/**
+ * 1.8.0 (ADR-0111): the menu bar's picture on a Mac, sharp on Retina screens: the logo at 18 px for a normal
+ * screen and 36 px for a Retina one, in one image (a single 18 px picture was drawn blurry at 2×). The logo
+ * keeps its colours (a monochrome "template" picture needs the designer's artwork; listed in ADR-0111).
+ *
+ * @param source The logo (build/icon.png, 256 px).
+ * @param empty  Makes an empty image to add the two sizes to (nativeImage.createEmpty in the app).
+ * @returns The picture for the menu bar.
+ * Called from: start() in main.ts (macOS); tests
+ */
+export function menuBarImage<T extends Pick<NativeImage, 'addRepresentation'>>(
+  source: Pick<NativeImage, 'resize'>,
+  empty: () => T,
+): T {
+  const image = empty();
+  for (const scaleFactor of [1, 2]) {
+    const side = MENU_BAR_ICON_POINTS * scaleFactor;
+    image.addRepresentation({
+      scaleFactor,
+      buffer: source.resize({ width: side, height: side, quality: 'best' }).toPNG(),
+    });
+  }
+  return image;
+}
+
 /** What installTray() needs (Electron's Tray, Menu and nativeImage in the app; fakes in tests). */
 export interface TrayDeps {
   /**

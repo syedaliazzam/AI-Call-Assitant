@@ -2,6 +2,7 @@
  * Tests for apps/web/src/core/drive/callFiles.ts, queue.ts and reasons.ts (ADR-0072):
  * - a call's slice keeps only its own lines and answers; the notes PDF has the summary, questions, next
  *   steps and unclear parts but not the proposed lessons; with "Save transcript" off only notes are made;
+ *   ADR-0121: notes cut off at the length limit end with the "stop early" line;
  * - ADR-0080: both builders make only the transcript PDF and the notes PDF (no transcript TXT);
  * - a call is queued only when the account saves to Drive (and, offline, when it did last time);
  * - a live call is seen through the call lock;
@@ -20,6 +21,7 @@ import {
 import { callIsLive, driveSavesNow, savesToDrive } from '@/core/drive/queue';
 import { driveReasonNeedsSettings, driveReasonText } from '@/core/drive/reasons';
 import { CALL_LOCK_NAME } from '@/core/live/callLock';
+import { NOTES_CUT_OFF_TEXT } from '@/core/notes/cutOff';
 import { saveNotes } from '@/core/storage/notes';
 import { saveUtterance } from '@/core/storage/utterances';
 import type { Session, StoredAnswer, StoredUtterance } from '@/core/storage/types';
@@ -57,6 +59,13 @@ describe('call files', () => {
     expect(text).toContain('- Send the offer (Sam)');
     expect(text).toContain('- 2:00–2:10: crosstalk');
     expect(text.join('\n')).not.toContain('A PRIVATE LESSON');
+    // ADR-0121: complete notes say nothing about stopping early.
+    expect(text).not.toContain(NOTES_CUT_OFF_TEXT);
+  });
+
+  it('ADR-0121: notes cut off at the length limit end with the "stop early" line', () => {
+    const text = notesParagraphs('Acme', { ...NOTES, cutOff: true }).map((line) => line.text);
+    expect(text.at(-1)).toBe(NOTES_CUT_OFF_TEXT);
   });
 
   it('makes only the notes when "Save transcript" is off, and nothing for another call', async () => {

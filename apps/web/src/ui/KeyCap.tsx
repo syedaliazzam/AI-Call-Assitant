@@ -73,7 +73,8 @@ const isMac = () => getPlatform().hotkeyModifier() === '⌘';
  */
 export function KeyCap({ hotkey, accelerator, onPrimary = false, className = '' }: KeyCapProps) {
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
-  const keys = accelerator ?? (hotkey ? hotkeyAccelerator(hotkey) : '');
+  // ADR-0110: a Mac's own keys for Clear, previous / next, zoom and the overlay's jumps.
+  const keys = accelerator ?? (hotkey ? hotkeyAccelerator(hotkey, mac) : '');
   return (
     <kbd
       className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-[6px] ${onPrimary ? 'bg-ui-on-primary/15' : 'bg-ui-keycap'} px-1.5 text-chip whitespace-nowrap ${className}`}

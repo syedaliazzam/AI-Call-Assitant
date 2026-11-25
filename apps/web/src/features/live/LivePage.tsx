@@ -2044,7 +2044,14 @@ export function LivePage({
             ),
         )}
         {callNotice && <SilentChannelNotice notice={callNotice} alert={silentShown} />}
-        {privateOff.visible && <PrivateOffWarning look="window" onTurnOn={privateOff.turnOn} />}
+        {privateOff.visible && (
+          // ADR-0120 §4: on a Mac, the truth about its own recording and no button.
+          <PrivateOffWarning
+            look="window"
+            onTurnOn={privateOff.turnOn}
+            fixable={privateOff.fixable}
+          />
+        )}
         {saveFailed && (
           <p
             role="alert"

@@ -22,7 +22,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing);
  *               docs/design/kite-ui-theme.md §6
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CLAUDE_UNAVAILABLE_MESSAGES, type OverlayPreset } from '@kite/shared';
 import { createRoot } from 'react-dom/client';
 import { callNoticeFor } from '@/core/live/callNotice';
@@ -411,7 +411,13 @@ function CompactHarness({
   // ADR-0094: a model command is applied as the live page applies it (Smart only while allowed), so the
   // chip, the menu and the toast follow.
   const [model, setModel] = useState(state.model);
-  const shown = { ...state, ...(model ? { model } : {}) };
+  // ADR-0122: window.kiteOpenChat() stands for Ctrl+Alt+K during a call (the live page counts the presses).
+  const [askKiteCount, setAskKiteCount] = useState(0);
+  useEffect(() => {
+    (window as unknown as { kiteOpenChat: () => void }).kiteOpenChat = () =>
+      setAskKiteCount((count) => count + 1);
+  }, []);
+  const shown = { ...state, ...(model ? { model } : {}), askKiteCount };
   return (
     <CompactView
       state={clickThrough ? { ...shown, clickThrough: true } : shown}
@@ -455,6 +461,8 @@ function CompactHarness({
       glass={params.has('glass')}
       // ?theme=light: the overlay's light theme.
       resolvedTheme={params.get('theme') === 'light' ? 'light' : 'dark'}
+      // ?os=mac: as on a Mac (the shortcuts' names and the Mac wording; ADR-0118 / ADR-0120 pictures).
+      mac={params.get('os') === 'mac'}
       {...(alpha !== null
         ? {
             windowSettings: {
@@ -598,6 +606,10 @@ function withOverlayParams(base: CompactState): CompactState {
     params.get('voice') === 'listening' ||
     params.get('voice') === 'paused'
       ? { voiceMode: params.get('voice') as 'off' | 'listening' | 'paused' }
+      : {}),
+    // ADR-0123: ?press=them|you shows bar 2's hint of what Ctrl+Enter answers now.
+    ...(params.get('press') === 'them' || params.get('press') === 'you'
+      ? { pressTarget: params.get('press') as 'them' | 'you' }
       : {}),
     ...(rec === 'on' || rec === 'off'
       ? {

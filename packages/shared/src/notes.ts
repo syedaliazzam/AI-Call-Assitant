@@ -97,6 +97,13 @@ export interface CallNotes {
   unclear: NotesUnclear[];
   /** At most MAX_PROPOSED_LESSONS proposed lessons. */
   lessons: ProposedLesson[];
+  /**
+   * ADR-0121: true when the notes reply reached its length limit. The notes then hold every item that was
+   * complete before the cut and stop there (the sections come in this order: summary, questions, next
+   * steps, unclear parts, lessons), and the review says so. Absent on complete notes and on notes saved
+   * before ADR-0121.
+   */
+  cutOff?: true;
 }
 
 /** What POST /api/notes returns. */

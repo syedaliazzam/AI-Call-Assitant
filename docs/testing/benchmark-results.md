@@ -1015,3 +1015,28 @@ Same laptop (Pakistan); local Node script (no browser, no production); ADR-0103'
 | ADR-0112 | 781 / 837 ms | 755 / 932 ms | 781, 772, 763, 736 | 40/40 |
 
 Not slower: the round medians overlap (median of the four: production 770 ms, ADR-0112 768 ms), and p95 is equal or lower.
+
+### Bugfix batch 1: notes and screenshot cut-offs, voice screenshot requests (ADR-0121, 25 Nov 2026)
+
+Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200), Node 24.21.0; local scripts with the real server code and the real API (no browser, no production) unless a row says otherwise. Invented data only.
+
+| Measurement | Method | Result |
+|---|---|---|
+| Notes evaluation, before / after | `pnpm --filter web eval:notes` (3 scenarios × 3 runs, notes and grades by `claude-sonnet-5-5`), on `6205ad3` and on the ADR-0121 notes commit | **9.78 / 10 before, 9.78 / 10 after.** Per scenario: n1 9.7 → 10.0, n2 10.0 → 10.0, n3 9.7 → 9.3 (one run graded Faithful 3 instead of 4; the notes prompt bytes are unchanged). $0.074 and $0.070 |
+| Notes speed and length | `pnpm --filter web verify:notes` (invented 60-minute call, 455 lines) | 615 output tokens in 5,321 ms (17,539 input); PASS |
+| Notes cut off on purpose | One notes request on scenario n1 with `max_tokens` 300 and `keepCutOff` | `stop_reason` `max_tokens`, 300 output tokens, 3,421 ms; kept summary 4, questions 2, next steps 2 (unclear 0, lessons 0). Marginal speed from the two rows: about 165 output tokens/s, so 8,000 tokens ≈ 50 s, inside the 110 s limit |
+| Long coding screenshot, by cap | A screen-only screenshot of an invented Java problem (a rate-limited job scheduler; 1,280 × 720 JPEG) through `buildPrompt()` + `streamReply()` with `claude-haiku-5-5`, Java session, 2 runs per cap | **1,500:** `max_tokens` 2/2, 1,500 tokens, code block left open 2/2; first text 945, 778 ms. **6,000:** `end_turn` 2/2, 2,437 and 2,210 tokens, first text 743, 902 ms. **4,000 (shipped):** `end_turn` 2/2, 2,212 and 1,995 tokens, 8,218 and 7,411 ms in all, first text 1,027, 836 ms |
+| Ordinary answer beside them | One spoken-style answer, same session, `max_tokens` 1,500 (unchanged) | 146 and 175 tokens, `end_turn`; first text 636 and 584 ms |
+| Screenshot + voice, cancelled first attempt | `pnpm --filter web test:sim-calls` (Playwright 1.64.1 Chromium, mocked `/api/answer`): Ctrl+Alt+Enter, "WHAT DOES THIS", then "ERROR MEAN" 150 ms later (inside the 0.3 s hold) | Requests carrying the image: **2 before** (the cancelled "WHAT DOES THIS" and the whole question), **1 after** (the whole question) |
+
+### WP3 overlay (ADR-0122 to ADR-0124) and the screenshot eval groups before the 25 Nov 2026 release
+
+Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200), Node 24.21.0, Playwright 1.64.1 headless Chromium for the overlay (the integration harness, invented data, Windows user agent, device scale 1.25). Code: `mac-internal-release` @ `57e551d` (before) and `90f0e6a` (after).
+
+| Measurement | Method | Result |
+|---|---|---|
+| Transcript / answer height side by side | `live.spec.ts` "WP3 pictures" (`docs/testing/wp3-overlay-screenshots/*/measurements.json`), top and bottom rows | **640 px:** 296 / 409 before, **409 / 409** after. **1280 px:** 296 / 380 before, **380 / 380** after |
+| The answer alone, centred under the bars | Same; centre of the answer panel minus centre of the bars' column | 1 px off on every position after (before: lined up by the position's column) |
+| Bar 1 width | Same | 640 px: 635 before, 638 after (Chat's key-cap given way); 1280 px: 635 before, 771 after (Chat with its key-cap) |
+| `eval:answers --only=screen-only` | Real API, answers by `claude-haiku-5-5`, grades by `claude-sonnet-5-5`, 7 scenarios × 2 runs (28 requests), on `90f0e6a` | **9.14 / 10** (gate ≥ 8); hidden line 14/14, never empty 14/14, all private 14/14, code ran 4/4; $0.0602 |
+| `eval:answers --only=screenshot-types` | Same, 28 requests | **9.36 / 10** (gate ≥ 8); hidden line 14/14, never empty 14/14, code ran 4/4; $0.0429 |

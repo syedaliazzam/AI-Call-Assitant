@@ -233,10 +233,12 @@ test('3. a call: Start → Connect, the overlay, an answer, Private, positions, 
   expect(overlayState).toMatchObject({ onTop: true, shielded: false });
   report('desktop call: overlay on top, call window minimised', true);
 
-  // The Transcript switch opens the panel; the fake microphone's lines reach it. ADR-0075: on a narrow
-  // bar the switch gives way, and the status bar's "Latest words" button opens the panel instead.
+  // Bar 2's expand button opens the full transcript (ADR-0118); the fake microphone's lines reach it. Until
+  // ADR-0118 bar 1's Transcript switch did (or, on a narrow bar, the "Latest words" button): kept as
+  // alternatives so the check also passes against a production that does not have ADR-0118 yet.
   await overlay
-    .getByRole('switch', { name: 'Transcript' })
+    .getByRole('button', { name: 'Open the full transcript' })
+    .or(overlay.getByRole('switch', { name: 'Transcript' }))
     .or(overlay.getByRole('button', { name: 'Latest words: open the transcript' }))
     .first()
     .click({ timeout: 60_000 });

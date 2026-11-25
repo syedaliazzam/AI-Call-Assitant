@@ -1,0 +1,350 @@
+[
+  {
+    "file": "windows-640-top-center-answer",
+    "window": 640,
+    "bar1": {
+      "x": 1,
+      "y": 1,
+      "width": 638,
+      "height": 44
+    },
+    "barsColumn": {
+      "x": 0,
+      "y": 0,
+      "width": 640,
+      "height": 620
+    },
+    "chatBar": null,
+    "transcript": null,
+    "answer": {
+      "x": 122,
+      "y": 104,
+      "width": 397,
+      "height": 389
+    }
+  },
+  {
+    "file": "windows-640-top-center-both",
+    "window": 640,
+    "bar1": {
+      "x": 1,
+      "y": 1,
+      "width": 638,
+      "height": 44
+    },
+    "barsColumn": {
+      "x": 0,
+      "y": 0,
+      "width": 640,
+      "height": 620
+    },
+    "chatBar": null,
+    "transcript": {
+      "x": 0,
+      "y": 104,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "y": 104,
+      "width": 378,
+      "height": 409
+    }
+  },
+  {
+    "file": "windows-640-top-center-both-chat",
+    "window": 640,
+    "bar1": {
+      "x": 1,
+      "y": 1,
+      "width": 638,
+      "height": 44
+    },
+    "barsColumn": {
+      "x": 0,
+      "y": 0,
+      "width": 640,
+      "height": 620
+    },
+    "chatBar": {
+      "x": 1,
+      "y": 53,
+      "width": 638,
+      "height": 44
+    },
+    "transcript": {
+      "x": 0,
+      "y": 156,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "y": 156,
+      "width": 378,
+      "height": 409
+    }
+  },
+  {
+    "file": "windows-640-bottom-center-answer",
+    "window": 640,
+    "bar1": {
+      "x": 1,
+      "y": 575,
+      "width": 638,
+      "height": 44
+    },
+    "barsColumn": {
+      "x": 0,
+      "y": 0,
+      "width": 640,
+      "height": 620
+    },
+    "chatBar": null,
+    "transcript": null,
+    "answer": {
+      "x": 122,
+      "y": 127,
+      "width": 397,
+      "height": 389
+    }
+  },
+  {
+    "file": "windows-640-bottom-center-both",
+    "window": 640,
+    "bar1": {
+      "x": 1,
+      "y": 575,
+      "width": 638,
+      "height": 44
+    },
+    "barsColumn": {
+      "x": 0,
+      "y": 0,
+      "width": 640,
+      "height": 620
+    },
+    "chatBar": null,
+    "transcript": {
+      "x": 0,
+      "y": 107,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "y": 107,
+      "width": 378,
+      "height": 409
+    }
+  },
+  {
+    "file": "windows-640-bottom-center-both-chat",
+    "window": 640,
+    "bar1": {
+      "x": 1,
+      "y": 575,
+      "width": 638,
+      "height": 44
+    },
+    "barsColumn": {
+      "x": 0,
+      "y": 0,
+      "width": 640,
+      "height": 620
+    },
+    "chatBar": {
+      "x": 1,
+      "y": 523,
+      "width": 638,
+      "height": 44
+    },
+    "transcript": {
+      "x": 0,
+      "y": 55,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "y": 55,
+      "width": 378,
+      "height": 409
+    }
+  },
+  {
+    "file": "windows-1280-top-center-answer",
+    "window": 1280,
+    "bar1": {
+      "x": 254,
+      "y": 1,
+      "width": 771,
+      "height": 44
+    },
+    "barsColumn": {
+      "x": 253,
+      "y": 0,
+      "width": 773,
+      "height": 620
+    },
+    "chatBar": null,
+    "transcript": null,
+    "answer": {
+      "x": 400,
+      "y": 104,
+      "width": 480,
+      "height": 380
+    }
+  },
+  {
+    "file": "windows-1280-top-center-both",
+    "window": 1280,
+    "bar1": {
+      "x": 254,
+      "y": 1,
+      "width": 771,
+      "height": 44
+    },
+    "barsColumn": {
+      "x": 253,
+      "y": 0,
+      "width": 773,
+      "height": 620
+    },
+    "chatBar": null,
+    "transcript": {
+      "x": 253,
+      "y": 104,
+      "width": 309,
+      "height": 380
+    },
+    "answer": {
+      "x": 569,
+      "y": 104,
+      "width": 458,
+      "height": 380
+    }
+  },
+  {
+    "file": "windows-1280-top-center-both-chat",
+    "window": 1280,
+    "bar1": {
+      "x": 254,
+      "y": 1,
+      "width": 771,
+      "height": 44
+    },
+    "barsColumn": {
+      "x": 253,
+      "y": 0,
+      "width": 773,
+      "height": 620
+    },
+    "chatBar": {
+      "x": 254,
+      "y": 53,
+      "width": 771,
+      "height": 44
+    },
+    "transcript": {
+      "x": 253,
+      "y": 156,
+      "width": 309,
+      "height": 380
+    },
+    "answer": {
+      "x": 569,
+      "y": 156,
+      "width": 458,
+      "height": 380
+    }
+  },
+  {
+    "file": "windows-1280-bottom-center-answer",
+    "window": 1280,
+    "bar1": {
+      "x": 254,
+      "y": 575,
+      "width": 771,
+      "height": 44
+    },
+    "barsColumn": {
+      "x": 253,
+      "y": 0,
+      "width": 773,
+      "height": 620
+    },
+    "chatBar": null,
+    "transcript": null,
+    "answer": {
+      "x": 400,
+      "y": 136,
+      "width": 480,
+      "height": 380
+    }
+  },
+  {
+    "file": "windows-1280-bottom-center-both",
+    "window": 1280,
+    "bar1": {
+      "x": 254,
+      "y": 575,
+      "width": 771,
+      "height": 44
+    },
+    "barsColumn": {
+      "x": 253,
+      "y": 0,
+      "width": 773,
+      "height": 620
+    },
+    "chatBar": null,
+    "transcript": {
+      "x": 253,
+      "y": 136,
+      "width": 309,
+      "height": 380
+    },
+    "answer": {
+      "x": 569,
+      "y": 136,
+      "width": 458,
+      "height": 380
+    }
+  },
+  {
+    "file": "windows-1280-bottom-center-both-chat",
+    "window": 1280,
+    "bar1": {
+      "x": 254,
+      "y": 575,
+      "width": 771,
+      "height": 44
+    },
+    "barsColumn": {
+      "x": 253,
+      "y": 0,
+      "width": 773,
+      "height": 620
+    },
+    "chatBar": {
+      "x": 254,
+      "y": 523,
+      "width": 771,
+      "height": 44
+    },
+    "transcript": {
+      "x": 253,
+      "y": 84,
+      "width": 309,
+      "height": 380
+    },
+    "answer": {
+      "x": 569,
+      "y": 84,
+      "width": 458,
+      "height": 380
+    }
+  }
+]

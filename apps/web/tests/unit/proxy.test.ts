@@ -3,10 +3,11 @@
  * addresses (ADR-0072) redirect to /login, other API routes answer 401 JSON, and the public /privacy and
  * /terms pages and the Windows download (/download/windows) continue; with a cookie every request
  * continues. No real session is used: the cookie's value is invented.
+ * ADR-0109: the matcher leaves out /install-mac.sh, so the Mac installer downloads signed out.
  */
 import { NextRequest } from 'next/server';
 import { describe, expect, it } from 'vitest';
-import { proxy } from '../../proxy';
+import { config, proxy } from '../../proxy';
 
 /**
  * A request, signed in or out.
@@ -49,10 +50,27 @@ describe('proxy', () => {
     expect(proxy(request('/download')).status).toBe(307);
   });
 
+  it('ADR-0125: lets signed-out visitors ask whether the Mac app is published (the sign-in page asks)', () => {
+    const out = proxy(request('/api/mac-release'));
+    expect(out.status).toBe(200);
+    expect(out.headers.get('x-middleware-next')).toBe('1');
+    // Only that address: other API routes still answer 401.
+    expect(proxy(request('/api/mac-release/other')).status).toBe(401);
+  });
+
   it('answers 401 for other signed-out API routes, and lets signed-in requests through', async () => {
     const out = proxy(request('/api/google/status'));
     expect(out.status).toBe(401);
     expect(await out.json()).toEqual({ code: 'unauthorized', message: 'Sign in required' });
     expect(proxy(request('/api/google/connect', true)).headers.get('x-middleware-next')).toBe('1');
+  });
+
+  it('ADR-0109: never runs for the Mac installer, which Terminal downloads signed out', () => {
+    // Next.js runs proxy() only for paths its matcher selects (the pattern is matched against the
+    // path without its leading slash). /install-mac.sh must not be one of them, or curl would get the
+    // sign-in page instead of the script.
+    const pattern = new RegExp(`^${config.matcher[0]?.replace(/^\//, '') ?? ''}$`);
+    expect(pattern.test('install-mac.sh')).toBe(false);
+    expect(pattern.test('settings')).toBe(true);
   });
 });

@@ -18,6 +18,8 @@ import type {
   DriveUploadRequest,
   DriveUploadResult,
   LocalRecording,
+  MacPermissionKind,
+  MacPermissionState,
   RecordingCloseResult,
   RecordingDisplay,
   RecordingOpenRequest,
@@ -452,6 +454,13 @@ export interface Platform {
   readonly recording: RecordingHost | null;
 
   /**
+   * Desktop 1.8.0 (ADR-0111): the macOS Microphone and Screen & System Audio Recording permissions, for the
+   * permission screen; null in the browser (the browser asks by itself), on Windows, and in a desktop app
+   * before 1.8.0.
+   */
+  readonly macPermissions: MacPermissionsHost | null;
+
+  /**
    * Desktop 1.6.0 (ADR-0072): uploading this computer's recordings to Google Drive straight from disk,
    * and native notifications; null in the browser and in a desktop app before 1.6.0.
    */
@@ -483,13 +492,15 @@ export interface Platform {
    *
    * @param handler   Called with the action each time a hotkey is pressed.
    * @param onTaken   Desktop only: called with the shortcuts another app already uses (for
-   *                  example ['Ctrl+Enter']); those work only while Kite has focus. ADR-0076 (G4):
-   *                  the second argument is the Answer shortcut's label when it is one of them.
+   *                  example ['Ctrl+Enter']) that still work while Kite has focus (the page handles them).
+   *                  ADR-0076 (G4): the second argument is the Answer shortcut's label when it is one of
+   *                  them. ADR-0110 (amended 25 Nov 2026): the third lists the taken ones the page does not
+   *                  handle (show or hide, moves, Click-through, Rec), which then do not work at all.
    * @returns A function that removes the listener (and, on desktop, releases the shortcuts).
    */
   onHotkey(
     handler: (action: HotkeyAction) => void,
-    onTaken?: (shortcuts: string[], answerTaken?: string | null) => void,
+    onTaken?: (shortcuts: string[], answerTaken?: string | null, unavailable?: string[]) => void,
   ): () => void;
 
   /**
@@ -560,6 +571,34 @@ export interface AccurateEngine {
    * @returns The text, or why not (the page then keeps the live line).
    */
   transcribe(samples: Float32Array): Promise<AccurateResult>;
+}
+
+/**
+ * The macOS permissions Paramount AI needs (desktop 1.8.0, ADR-0111), over the shell's bridge. macOS shows
+ * its own questions only after the person presses a button on the permission screen.
+ */
+export interface MacPermissionsHost {
+  /**
+   * Both permissions as macOS reports them now.
+   *
+   * @returns The states (null if the shell could not tell).
+   */
+  read(): Promise<MacPermissionState | null>;
+  /**
+   * Asks macOS for one permission (its own question the first time).
+   *
+   * @param kind The permission.
+   * @returns The states afterwards.
+   */
+  request(kind: MacPermissionKind): Promise<MacPermissionState | null>;
+  /**
+   * Opens System Settings → Privacy & Security at that permission's page.
+   *
+   * @param kind The permission.
+   */
+  openSettings(kind: MacPermissionKind): Promise<void>;
+  /** Quits and reopens Paramount AI (macOS applies a new Screen Recording permission only then). */
+  relaunch(): Promise<void>;
 }
 
 /**

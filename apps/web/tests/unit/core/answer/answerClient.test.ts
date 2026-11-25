@@ -125,6 +125,14 @@ describe('streamAnswer', () => {
     );
   });
 
+  it('ADR-0121: passes on cutOff only when the server sent the literal true', async () => {
+    const done = (extra: string) =>
+      new TextEncoder().encode(`event: done\ndata: {"usage":{},"ms":{}${extra}}\n\n`);
+    expect((await run(fakeFetch([done(',"cutOff":true')]))).done).toMatchObject({ cutOff: true });
+    expect((await run(fakeFetch([done(',"cutOff":"yes"')]))).done).not.toHaveProperty('cutOff');
+    expect((await run(fakeFetch([done('')]))).done).not.toHaveProperty('cutOff');
+  });
+
   it('parses correctly when every chunk is 7 bytes (splitting lines and the é character)', async () => {
     const result = await run(fakeFetch(splitBytes(new TextEncoder().encode(REPLY), 7)));
     expect(result.deltas).toEqual(['Héllo', ' world']);

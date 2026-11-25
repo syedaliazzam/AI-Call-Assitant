@@ -259,8 +259,16 @@ async function writeCallNotes(deps: AfterCallDeps, call: StoredCall): Promise<St
   }
   const attempts = (call.notesAttempts ?? 0) + 1;
   // Claude unavailable (a usage limit, overload) is not worth trying again soon; Regenerate can.
-  const final = attempts >= MAX_NOTES_ATTEMPTS || outcome.unavailable !== null;
-  console.warn('after-call: notes failed', { callId: call.id, attempts, final });
+  // ADR-0121: nor is a failure the same request would meet again (a reply cut off before anything usable,
+  // a refusal, an invalid request): each try is a paid Sonnet request that cannot succeed.
+  const final =
+    attempts >= MAX_NOTES_ATTEMPTS || outcome.unavailable !== null || outcome.final === true;
+  console.warn('after-call: notes failed', {
+    callId: call.id,
+    attempts,
+    final,
+    ...(outcome.final ? { sameAgain: true } : {}),
+  });
   if (final) handOffs.delete(call.id);
   return settle({
     notesAttempts: attempts,

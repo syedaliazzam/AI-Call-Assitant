@@ -169,7 +169,9 @@ export const START_FAILURE_TEXT: Readonly<Record<RecordingStartFailure, string>>
   'low-disk':
     'Not enough free space to record (about 2 GB is needed). Free some space, then try again.',
   busy: 'This recording is already running.',
-  failed: 'Paramount AI could not create the recording files. Try again.',
+  // 1.8.0 (ADR-0111): on a Mac a refused Documents folder permission is the likely cause; macOS asks once.
+  failed:
+    'Paramount AI could not create the recording files in Documents › Paramount AI › Recordings. Check the folder can be written to (on a Mac: System Settings → Privacy & Security → Files and Folders → Paramount AI → Documents), then try again.',
   'no-format': 'This computer cannot record video here.',
   'no-screen': 'Paramount AI could not capture the screen to record it. Try again.',
   'no-hardware-video':

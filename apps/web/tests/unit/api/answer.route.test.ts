@@ -554,6 +554,35 @@ interface SentBlock {
 /** A tiny "JPEG" data URL: base64 "/9j/" decodes to FF D8 FF (the JPEG start bytes). */
 const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAADSECRETPIXELS';
 
+describe('POST /api/answer, cut-off replies (ADR-0121)', () => {
+  it('ends with done.cutOff when the reply reached its limit, and without it otherwise', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(
+      fakeMessageStream({
+        pieces: ['[[coding|call|general]]\n', 'Use a heap.\n```java\nclass A {'],
+        stopReason: 'max_tokens',
+      }),
+    );
+    const cut = await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    expect(cut).toMatch(/event: done\ndata: \{[^\n]*"cutOff":true/);
+    streamMock.mockReturnValue(
+      fakeMessageStream({ pieces: ['[[coding|call|general]]\n', 'Use a heap.'] }),
+    );
+    const whole = await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    expect(whole).toContain('event: done');
+    expect(whole).not.toContain('cutOff');
+  });
+
+  it('keeps answer and chat at 1,500 tokens: their requests are unchanged', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(fakeMessageStream());
+    await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    streamMock.mockReturnValue(fakeMessageStream());
+    await (await POST(post(JSON.stringify({ ...ANSWER_REQUEST, mode: 'chat' })))).text();
+    expect(streamMock.mock.calls.map(([params]) => params.max_tokens)).toEqual([1_500, 1_500]);
+  });
+});
+
 describe('POST /api/answer, mode screenshot (Day 5)', () => {
   it('needs the image, and takes it only in screenshot mode', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
@@ -596,7 +625,8 @@ describe('POST /api/answer, mode screenshot (Day 5)', () => {
     const text = await (await POST(post(JSON.stringify(body)))).text();
     expect(text).toContain('event: done');
     const [params] = streamMock.mock.calls[0]!;
-    expect(params.max_tokens).toBe(1_500);
+    // ADR-0121: a screenshot answer has its own, larger limit (a whole coding answer fits).
+    expect(params.max_tokens).toBe(4_000);
     const content = params.messages[0].content as SentBlock[];
     expect(content.map((block) => block.type)).toEqual(['text', 'image', 'text']);
     expect(content[0]!.cache_control).toEqual({ type: 'ephemeral' });

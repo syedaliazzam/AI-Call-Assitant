@@ -747,6 +747,26 @@ export function overlayGlass(platform: NodeJS.Platform): BrowserWindowConstructo
 }
 
 /**
+ * 1.8.0 (ADR-0111): on a Mac, lets the overlay float over a meeting in full screen. macOS gives a full-screen
+ * app its own desktop space, which an always-on-top window does not join by itself, so the bars stayed
+ * behind on the normal desktop. visibleOnFullScreen makes the window join every space, full-screen ones too.
+ * Electron briefly switches the app to an accessory app and back to do it (its docs: the window and the
+ * Dock icon disappear "for a short time"); the Dock icon comes back at once, so the app is never hidden
+ * (CLAUDE.md). Windows and Linux: nothing to do (topmost windows already show over full-screen apps).
+ *
+ * @param window   The overlay window.
+ * @param platform The operating system.
+ * Called from: createCompactWindows() (when the overlay window is made); tests
+ */
+export function floatOverFullScreen(
+  window: Pick<BrowserWindow, 'setVisibleOnAllWorkspaces'>,
+  platform: NodeJS.Platform,
+): void {
+  if (platform !== 'darwin') return;
+  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+}
+
+/**
  * The compact window's options.
  *
  * @param bounds      Where to open it.
@@ -797,6 +817,8 @@ export interface CompactDeps {
   store: ShellStore;
   /** Screen-share protection. */
   protection: Protection;
+  /** 1.8.0 (ADR-0111): the operating system (tests pass one; the app uses process.platform). */
+  platform?: NodeJS.Platform;
   /**
    * 1.6.5 (ADR-0085): every open Kite window, so opening the overlay turns Private on for all of them.
    * Optional in tests.
@@ -1521,6 +1543,8 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       loadedUrl = url;
       // Above normal windows, including a maximised meeting window.
       window.setAlwaysOnTop(true, 'floating');
+      // 1.8.0 (ADR-0111): and, on a Mac, over a meeting in full screen.
+      floatOverFullScreen(window, deps.platform ?? process.platform);
       deps.protection.attach(window);
       // Shown without focus: the meeting keeps the keyboard.
       window.once('ready-to-show', () => window.showInactive());

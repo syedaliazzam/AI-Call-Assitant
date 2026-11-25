@@ -230,7 +230,7 @@ async function main(): Promise<void> {
   await overlay.setViewportSize({ width: 680, height: 390 });
   await overlay.getByRole('button', { name: 'Show the transcript', exact: true }).click();
   await shot(overlay, 'transcript-panel');
-  await overlay.getByRole('button', { name: 'Close the transcript' }).click();
+  await overlay.getByRole('button', { name: 'Close the full transcript' }).click();
 
   await overlay.setViewportSize({ width: 680, height: 452 });
   await say(call, 'them', 'HOW WOULD YOU DESIGN A VOICE AGENT FOR A HOSPITAL');
@@ -250,7 +250,7 @@ async function main(): Promise<void> {
   await overlay.getByRole('button', { name: 'Overlay menu' }).click();
   await shot(overlay, 'live-menu');
   await overlay.keyboard.press('Escape');
-  await overlay.getByRole('button', { name: 'Close the transcript' }).click();
+  await overlay.getByRole('button', { name: 'Close the full transcript' }).click();
 
   await overlay.setViewportSize({ width: 680, height: 452 });
   await overlay.getByRole('button', { name: 'End call' }).click();

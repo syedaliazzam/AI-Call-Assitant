@@ -13,6 +13,7 @@ import {
   columnAlignClass,
   gripSide,
   overlayColumn,
+  panelsColumn,
   panelsShare,
   panelsWidthStyle,
   widthAfterDrag,
@@ -93,5 +94,14 @@ describe('panelWidth', () => {
     expect(panelsWidthStyle(0.3165)).toBe('31.7%');
     expect(panelsWidthStyle(2)).toBe('100%');
     expect(panelsWidthStyle(0)).toBe(`${OVERLAY_PANELS_WIDTH.min * 100}%`);
+  });
+});
+
+describe('panelsColumn (ADR-0124)', () => {
+  it('centres the answer alone on every position, and lines the pair up by the position', () => {
+    for (const column of ['start', 'center', 'end'] as const) {
+      expect(panelsColumn(column, false)).toBe('center');
+      expect(panelsColumn(column, true)).toBe(column);
+    }
   });
 });

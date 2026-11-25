@@ -13,6 +13,9 @@
  *          side is transcribed up to the press (at most 300 ms; a second press answers at once), then answers
  *          the newest unanswered speech by time (core/answer/newestQuestion.ts), and every press shows what
  *          it did: a new card, "Showing the earlier answer", "Already answering" or "Nothing new to answer".
+ *          ADR-0123: a press answers the user's own newest spoken question instead when the other side has
+ *          been quiet for ON_CALL_WINDOW_MS (or there is no other side), and Ctrl+Shift+Space always does
+ *          (core/answer/ownQuestion.ts); those words are sent as the user's own question (mode 'chat').
  * Used by: src/features/live/LiveAnswers.tsx
  * Depends on: src/core/answer (context.ts, answerClient.ts, history.ts, warm.ts, keepWarm.ts,
  *             unavailable.ts),
@@ -47,6 +50,7 @@ import { warmGroup, warmSession } from '@/core/answer/warm';
 import { answerFailureText, OFFLINE_TEXT, type AnswerProblem } from '@/core/answer/unavailable';
 import { finishedReplyAction } from '@/core/answer/finishedReply';
 import { choosePress, PRESS_WAIT_MS } from '@/core/answer/pressQuestion';
+import { chooseOwnQuestion, OWN_WAIT_MS, pressTarget } from '@/core/answer/ownQuestion';
 import {
   chooseNewest,
   FINISHING_NOTICE_AFTER_MS,
@@ -152,6 +156,13 @@ export const NO_QUESTION_NOTICE =
   'No question to answer yet. Press Answer this on what they said, or type it.';
 
 /**
+ * ADR-0123: a press for the user's own question (Ctrl+Enter on your own, Ctrl+Shift+Space) when they have asked
+ * nothing aloud yet.
+ */
+export const NO_OWN_QUESTION_NOTICE =
+  'No question of yours yet. Ask it aloud, then press the key again, or type it in Chat.';
+
+/**
  * ADR-0107: how long to wait before taking a blank capture again (a page still drawing after a tab switch;
  * captures land 0.3–0.5 s after the press, measured on the developer's laptop).
  */
@@ -165,6 +176,11 @@ export interface AnswerEntry {
   mode: 'answer' | 'chat' | 'screenshot';
   /** True when Kite answered by itself (auto-answer, Day 6 Stage 4f); shown as "Auto". */
   auto?: boolean;
+  /**
+   * ADR-0123: the question is the user's own words (typed in a chat box, spoken as a voice question, or their
+   * own spoken question from the "You" transcript): the overlay's card says "Your question:". In memory only.
+   */
+  yours?: true;
   /**
    * The screenshot a screenshot answer was made from, as a JPEG data URL, for the thumbnail.
    * In memory only: never saved (toStored() leaves it out) and never logged.
@@ -212,6 +228,11 @@ export interface AnswerEntry {
   meta?: AnswerMeta;
   /** Words the claim check could not find in the documents or the call (ADR-0030). */
   claims?: string[];
+  /**
+   * ADR-0121: the reply reached its output-token limit, so its end is missing (the card, the overlay and the
+   * review say "Answer cut off"). Saved with the answer. Absent otherwise.
+   */
+  cutOff?: true;
   /**
    * ADR-0076 (E3 rule 2): the press gave up waiting for the other side's last words, so the question may
    * be incomplete (the card says so). In memory only.
@@ -268,6 +289,7 @@ function toStored(
     ...(entry.reported ? { reported: true } : {}),
     ...(entry.meta ? { meta: entry.meta } : {}),
     ...(entry.claims?.length ? { claims: entry.claims } : {}),
+    ...(entry.cutOff ? { cutOff: true as const } : {}),
     ...(entry.sourceLineId ? { sourceLineId: entry.sourceLineId } : {}),
     ...(entry.rerunOf ? { rerunOf: entry.rerunOf } : {}),
   };
@@ -394,6 +416,11 @@ export interface LiveAnswersInput {
    * @returns Stops listening.
    */
   themTurns?: (listener: (event: 'start' | 'eager' | 'end' | 'resumed') => void) => () => void;
+  /**
+   * ADR-0123: false when this call has no other-side source: Ctrl+Enter then answers the user's own questions
+   * (core/answer/ownQuestion.ts pressTarget()). Default true.
+   */
+  themConnected?: boolean;
 }
 
 /** What useLiveAnswers() returns. */
@@ -449,6 +476,13 @@ export interface LiveAnswers {
   autoNewest: (decision: NewestAutoDecision) => void;
   /** Answers a typed question. */
   chat: (question: string) => void;
+  /**
+   * ADR-0123: answers the user's own newest spoken question or request from the "You" transcript (Ctrl+Enter on
+   * your own, Ctrl+Shift+Space always). Only ever on a key press; never automatic.
+   *
+   * @param trigger What asked (the call timing log).
+   */
+  ownQuestion: (trigger: 'own-question' | 'own-question-key') => void;
   /**
    * Answers one transcript bubble's question (its "Answer this" button, v1.0.2). Guarded like
    * Answer: speech already answered shows its answer instead of asking again.
@@ -655,6 +689,17 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   );
   // ADR-0101: the card the last ask() put up (a voice question keeps it to show, cancel or extend).
   const lastAskedIdRef = useRef<string | null>(null);
+  // ADR-0123: the user's own spoken lines already answered as their question (line id → its card), and how to
+  // end a press that waits for the user's own last words to finish (null when none waits).
+  const ownAnsweredRef = useRef(new Map<string, string>());
+  const ownWaitRef = useRef<{
+    /** Answers now with what there is (a second press). */
+    force: () => void;
+    /** Stops waiting and sends nothing (the call ended). */
+    cancel: () => void;
+  } | null>(null);
+  // ADR-0123: whether the call has an other-side source (read when a key is pressed).
+  const themConnectedRef = useRef(input.themConnected ?? true);
   // ADR-0101: when the answer's prompt cache was last warmed for a voice question (Unix ms).
   const lastPrewarmRef = useRef(0);
   // Batch C (P1-1): an answer's finishing work (save, history) when it finished while still held, by id;
@@ -713,6 +758,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     chatTargetRef.current = input.chatTarget ?? 'auto';
     warmInputRef.current = { session, documents, lessons };
     catchUpRef.current = input.catchUp;
+    themConnectedRef.current = input.themConnected ?? true;
   });
 
   // A new call: a new conversation; End (unmount) stops any answer still streaming.
@@ -727,7 +773,11 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     ownEndRef.current = null;
     lastPressEndRef.current = null;
     streamingIdRef.current = null;
+    // ADR-0123: a new call starts with none of the user's own questions answered.
+    ownAnsweredRef.current = new Map();
     return () => {
+      // ADR-0123: a press still waiting for the user's last words ends with the call (nothing is sent).
+      ownWaitRef.current?.cancel();
       // Batch C (P1-1): a held answer goes with the call (the runner's cancel below stops its request).
       hold.drop();
       heldRef.current = null;
@@ -1135,6 +1185,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         model: session.preferences.model,
         rating: null,
         note: '',
+        // ADR-0123: typed, spoken as a voice question, or the user's own spoken question: their own words.
+        ...(typed ? { yours: true as const } : {}),
         ...(options.exact?.incomplete ? { incomplete: true } : {}),
         ...(options.exact?.audioLost ? { audioLost: true } : {}),
         // ADR-0112: a silent retry is held hidden too, until its first words (onText below).
@@ -1544,6 +1596,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
               ...(meta ? { meta } : {}),
               ...(cleanQuestion ? { cleanQuestion } : {}),
               ...(claims.length > 0 ? { claims } : {}),
+              // ADR-0121: the reply reached its output limit; the card says its end is missing.
+              ...(done.cutOff ? { cutOff: true as const } : {}),
             };
             update(entry.id, finished);
             finishedRef.current = [
@@ -2126,6 +2180,91 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     });
   }, [callStartedAt]);
 
+  /**
+   * ADR-0123: answers the user's own newest spoken question or request (core/answer/ownQuestion.ts), as their
+   * own question (mode 'chat', exactly as a typed or voice question is sent: no new prompt). When the newest one
+   * is still grey it waits for it to finish, at most OWN_WAIT_MS ("Finishing the question…" after 150 ms; a
+   * second press answers at once). A question answered already shows its card again. Only ever on a key press.
+   *
+   * @param trigger 'own-question' (Ctrl+Enter on your own) or 'own-question-key' (Ctrl+Shift+Space).
+   */
+  const ownQuestion = useCallback(
+    (trigger: 'own-question' | 'own-question-key') => {
+      callTimings.noteTrace('press', { trigger });
+      if (!isOnline()) {
+        setNotice(OFFLINE_TEXT);
+        return;
+      }
+      const waiting = ownWaitRef.current;
+      if (waiting) {
+        waiting.force();
+        return;
+      }
+      const resolve = (id: string) => transcript.resolveId(id);
+      /**
+       * Decides on the lines as they are now.
+       *
+       * @param final True to send even words still grey.
+       * @returns False when it should wait for the user's last words.
+       */
+      const decide = (final: boolean): boolean => {
+        const lines = transcript.lines().filter((line) => !noiseLinesRef.current.has(line.id));
+        // By the ids the lines have now (a grey line's words may have joined an earlier line).
+        const answered = new Map<string, string>();
+        for (const [id, card] of ownAnsweredRef.current) {
+          answered.set(id, card);
+          answered.set(resolve(id), card);
+        }
+        const choice = chooseOwnQuestion({ lines, answeredLineIds: new Set(answered.keys()) });
+        if (choice.kind === 'answer' && choice.grey && !final) return false;
+        // Ids and the decision only (never the words).
+        callTimings.noteTrace('press-decision', { decision: `own-${choice.kind}`, trigger });
+        if (choice.kind === 'none') {
+          setNotice(NO_OWN_QUESTION_NOTICE);
+          return true;
+        }
+        if (choice.kind === 'answered') {
+          const card = choice.lineIds.map((id) => answered.get(id)).find(Boolean);
+          if (card) setShownId(card);
+          setNotice(SHOWING_EARLIER_NOTICE);
+          return true;
+        }
+        const asked = ask('chat', { typed: choice.text, trigger, pressedAt: performance.now() });
+        const card = lastAskedIdRef.current;
+        if (asked && card) for (const id of choice.lineIds) ownAnsweredRef.current.set(id, card);
+        return true;
+      };
+      if (decide(false)) return;
+      // The user's last words are still grey: wait for them to finish (each transcript change), at most
+      // OWN_WAIT_MS, then send what there is.
+      let done = false;
+      const end = () => {
+        done = true;
+        clearTimeout(noticeTimer);
+        clearTimeout(limit);
+        stopListening();
+        ownWaitRef.current = null;
+      };
+      const finish = (final: boolean) => {
+        if (done || !decide(final)) return;
+        end();
+        setNotice((current) => (current === FINISHING_NOTICE ? null : current));
+      };
+      const noticeTimer = setTimeout(() => {
+        if (!done) setNotice(FINISHING_NOTICE);
+      }, FINISHING_NOTICE_AFTER_MS);
+      const limit = setTimeout(() => finish(true), OWN_WAIT_MS);
+      const stopListening = transcript.subscribe(() => finish(false));
+      ownWaitRef.current = {
+        force: () => finish(true),
+        cancel: () => {
+          if (!done) end();
+        },
+      };
+    },
+    [ask, transcript],
+  );
+
   const reanswer = useCallback(
     (id: string, answerType: AnswerType) => {
       const entry = entries.find((candidate) => candidate.id === id);
@@ -2158,12 +2297,19 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     notice,
     answer: useCallback(
       (trigger?: AnswerTrigger) => {
+        // ADR-0123: on your own (the other side quiet for ON_CALL_WINDOW_MS, or no other side), the user's own
+        // newest question; on a call only the other person's, exactly as before.
+        if (pressTarget(transcript.lines(), Date.now(), themConnectedRef.current) === 'you') {
+          ownQuestion('own-question');
+          return;
+        }
         // ADR-0076: the E3 rules in calls with cloud transcription.
         if (rules === 'newest') pressNewest(trigger ?? 'hotkey');
         else void ask('answer', { ...(trigger ? { trigger } : {}) });
       },
-      [ask, pressNewest, rules],
+      [ask, pressNewest, rules, transcript, ownQuestion],
     ),
+    ownQuestion,
     autoNewest: useCallback(
       (decision: NewestAutoDecision) => {
         // A re-ask of a press's card stays a press (no "Auto" mark).

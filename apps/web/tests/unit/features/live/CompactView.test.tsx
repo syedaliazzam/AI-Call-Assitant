@@ -7,6 +7,8 @@
  * fills it; the answer's corner grip sits on the side that moves (bottom left on a right position) and its
  * Clear button always shows its key. ADR-0115: before any drag the answer alone is 62 % of the bars' width
  * and the pair beside the transcript the bars' whole width; the question carries a muted "Question:" label.
+ * ADR-0118: bar 2 (the transcript bar) stays with the words when the full transcript opens under it, a warning
+ * has its own line between them, and both are mirrored on the bottom row.
  */
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +22,8 @@ vi.mock('@/platform', () => ({
     setShareProtection: async (on: boolean) => ({ supported: true, on }),
     hotkeyModifier: () => 'Ctrl',
   }),
+  // ADR-0120 §4: the recording warning asks whether this is a Mac (useIsMac); here it is not.
+  isMacComputer: () => false,
 }));
 const { CompactView } = await import('@/features/live/CompactView');
 const { OVERLAY_PANELS_WIDTH_KEY } = await import('@/core/storage/overlayPrefs');
@@ -69,15 +73,17 @@ afterEach(() => vi.unstubAllGlobals());
  *
  * @param position The overlay's position (undefined: none, as in a browser).
  * @param panels   Which panels are open.
+ * @param state    What the live page shows (a call with one answer by default).
  * @returns The markup.
  */
 function overlay(
   position: OverlayPreset | undefined,
   panels: OverlayPanels = { transcript: false, answer: true },
+  state: CompactState = ANSWERED,
 ): string {
   return renderToString(
     <CompactView
-      state={ANSWERED}
+      state={state}
       protection={{ supported: true, on: true }}
       onCommand={() => undefined}
       glass
@@ -143,8 +149,12 @@ describe('CompactView (ADR-0113)', () => {
     stored.set(OVERLAY_PANELS_WIDTH_KEY, '0.5');
     const html = overlay('top-right');
     expect(html).toMatch(/data-panels-block=""[^>]*style="width:50%"/);
-    // The block lines up on the bar's right edge, and is a container (side by side or stacked by its width).
+    // ADR-0124: the answer alone is centred under the bars on every position (ADR-0113 lined it up on the
+    // bar's right edge here); the pair still lines up by the position's column. A container either way.
     expect(html).toMatch(
+      /class="[^"]*items-center[^"]*w-0 min-w-full[^"]*"><div data-gap="" data-panels-block/,
+    );
+    expect(overlay('top-right', { transcript: true, answer: true })).toMatch(
       /class="[^"]*items-end[^"]*w-0 min-w-full[^"]*"><div data-gap="" data-panels-block/,
     );
     expect(classOf(html, 'data-panels-block')).toContain('@container');
@@ -185,10 +195,151 @@ describe('CompactView (ADR-0113)', () => {
     expect(card?.[0]).toMatch(/class="[^"]*font-semibold[^"]*text-ui-heading/);
   });
 
+  it('ADR-0123: says "Your question:" when the question is the user’s own words', () => {
+    const mine = overlay('top-left', undefined, {
+      ...ANSWERED,
+      answer: { ...ANSWERED.answer!, mode: 'chat', yours: true },
+    });
+    expect(mine).toMatch(/data-question-label="yours"[^>]*>Your question:</);
+    expect(overlay('top-left')).toMatch(/data-question-label="theirs"[^>]*>Question:</);
+  });
+
   it('puts the corner grip on the side that moves', () => {
-    expect(overlay('top-left')).toContain('data-grip-side="right"');
-    expect(overlay('top-center')).toContain('data-grip-side="right"');
-    expect(overlay('top-right')).toContain('data-grip-side="left"');
-    expect(overlay('bottom-right')).toContain('data-grip-side="left"');
+    const both = { transcript: true, answer: true };
+    expect(overlay('top-left', both)).toContain('data-grip-side="right"');
+    expect(overlay('top-center', both)).toContain('data-grip-side="right"');
+    expect(overlay('top-right', both)).toContain('data-grip-side="left"');
+    expect(overlay('bottom-right', both)).toContain('data-grip-side="left"');
+    // ADR-0124: the answer alone is centred, so both its edges move; the grip is on the right.
+    expect(overlay('top-right')).toContain('data-grip-side="right"');
+  });
+});
+
+describe('CompactView (ADR-0124: transcript and answer the same height, the answer alone centred)', () => {
+  it('makes the transcript exactly as tall as the answer side by side, and only then', () => {
+    const pair = classOf(
+      overlay('top-center', { transcript: true, answer: true }),
+      'data-transcript-panel',
+    );
+    expect(pair).toContain('@min-[600px]/overlay:h-[var(--k-pair-height,auto)]');
+    // It scrolls inside itself (its own scroll area; "Scroll to bottom" when scrolled up).
+    expect(pair).toContain('overflow-hidden');
+    expect(pair).toContain('min-h-0');
+    // The transcript alone keeps its own height.
+    expect(
+      classOf(overlay('top-center', { transcript: true, answer: false }), 'data-transcript-panel'),
+    ).not.toContain('--k-pair-height');
+  });
+
+  it('gives the pair the default answer height even before the first answer', () => {
+    const none: CompactState = { ...ANSWERED, answer: null, index: -1, total: 0 };
+    expect(overlay('top-center', { transcript: true, answer: true }, none)).toMatch(
+      /data-answer-panel="" data-min-height="\d+"/,
+    );
+    // The answer alone with no answer yet stays as small as its "no answer" view.
+    expect(overlay('top-center', { transcript: false, answer: true }, none)).not.toContain(
+      'data-min-height',
+    );
+  });
+
+  it('centres the answer alone under the bars on every position, mirrored rows included', () => {
+    for (const position of ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const) {
+      expect(overlay(position)).toMatch(
+        /class="[^"]*items-center[^"]*w-0 min-w-full[^"]*"><div data-gap="" data-panels-block/,
+      );
+    }
+    // The bars themselves still line up by the position (ADR-0113).
+    expect(rootClass(overlay('top-left'))).toContain('items-start');
+  });
+});
+
+/** A call where the other side cannot be heard (a warning with its button). */
+const SILENT_THEM: CompactState = {
+  ...ANSWERED,
+  callNotice: {
+    kind: 'them-silent',
+    text: "We can't hear the other side — check the audio source.",
+    detail: '',
+    action: { list: 'audio', label: 'Choose audio source' },
+  },
+};
+
+describe('CompactView (ADR-0118: the transcript bar like ParakeetAI)', () => {
+  it('keeps bar 2 with the live words when the full transcript opens, and the panel under it', () => {
+    const html = overlay('top-left', { transcript: true, answer: true });
+    const bar2 = html.indexOf('aria-label="Status bar"');
+    const panel = html.indexOf('aria-label="Transcript panel"');
+    expect(bar2).toBeGreaterThan(-1);
+    expect(panel).toBeGreaterThan(bar2);
+    // Only one status bar (the panel has no header of its own) and it still shows the words.
+    expect(html.split('aria-label="Status bar"')).toHaveLength(2);
+    expect(html).toContain('tell me about');
+    expect(html).toContain('aria-label="Close the full transcript"');
+    // Bar 1 has no Transcript switch any more.
+    expect(html).not.toContain('aria-label="Transcript"');
+  });
+
+  it('shows a warning in its own line under bar 2, never in place of the words', () => {
+    const html = overlay('top-left', { transcript: false, answer: true }, SILENT_THEM);
+    const bar2 = html.indexOf('aria-label="Status bar"');
+    const line = html.indexOf('data-status="them-silent"');
+    expect(line).toBeGreaterThan(bar2);
+    expect(line).toBeLessThan(html.indexOf('data-panels-block'));
+    expect(html).toContain('Choose audio source');
+    expect(html).toContain('tell me about');
+    // No line at all when nothing applies.
+    expect(overlay('top-left')).not.toContain('data-status=');
+  });
+
+  it('mirrors bar 2 and the warning line on the bottom row (the line above bar 2)', () => {
+    const top = overlay('top-left', { transcript: false, answer: true }, SILENT_THEM);
+    const bottom = overlay('bottom-left', { transcript: false, answer: true }, SILENT_THEM);
+    // The wrapper that holds bar 2 and the line: a column on the top row, reversed on the bottom row.
+    const wrapper = (html: string) =>
+      html.match(
+        /<div data-gap="" class="([^"]*)"><div class="[^"]*"[^>]*data-bars=""[^>]*><div role="group" aria-label="Status bar"/,
+      )?.[1] ?? '';
+    expect(wrapper(top)).toMatch(/(^| )flex-col( |$)/);
+    expect(wrapper(bottom)).toContain('flex-col-reverse');
+  });
+});
+
+describe('CompactView (ADR-0119: side by side from the window width)', () => {
+  it('makes the root the named container "overlay" that the panels follow', () => {
+    expect(rootClass(overlay('top-left'))).toContain('@container/overlay');
+    const area = classOf(
+      overlay('top-left', { transcript: true, answer: true }),
+      'data-panels-area',
+    );
+    expect(area).toContain('@min-[600px]/overlay:flex-row');
+    // The bottom row is mirrored, as before.
+    const bottom = classOf(
+      overlay('bottom-left', { transcript: true, answer: true }),
+      'data-panels-area',
+    );
+    expect(bottom).toContain('flex-col-reverse');
+    expect(bottom).toContain('@min-[600px]/overlay:items-end');
+  });
+
+  it('lets the pair be as wide as the window or 720 px (wider than bar 1) only with both panels open', () => {
+    const both = classOf(
+      overlay('top-center', { transcript: true, answer: true }),
+      'data-panels-block',
+    );
+    expect(both).toContain('@min-[600px]/overlay:min-w-[min(720px,100cqw)]');
+    expect(both).toContain('@min-[600px]/overlay:max-w-none');
+    // One panel alone keeps ADR-0113 / ADR-0115's width (the answer's share, the transcript the bars' width).
+    expect(classOf(overlay('top-center'), 'data-panels-block')).not.toContain('min-w-[min(');
+    expect(
+      classOf(overlay('top-center', { transcript: true, answer: false }), 'data-panels-block'),
+    ).not.toContain('min-w-[min(');
+  });
+
+  it('keeps each panel’s minimum (transcript 240, answer 340) side by side, by the window', () => {
+    const html = overlay('top-left', { transcript: true, answer: true });
+    expect(html).toContain('@min-[600px]/overlay:min-w-[240px]');
+    expect(html).toContain('@min-[600px]/overlay:min-w-[340px]');
+    // No query left on the block's own width.
+    expect(html).not.toMatch(/@min-\[600px\]:(flex-row|min-w|grow-0|basis|flex )/);
   });
 });

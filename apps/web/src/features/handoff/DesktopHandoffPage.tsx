@@ -7,11 +7,11 @@
  *          account sync, ADR-0092), so the link carries a one-time sign-in code (60 s, used once), asked
  *          for fresh on each press, and the app opens on the session signed in. A desktop app before
  *          1.3.0 cannot read such a link: after a few seconds the page says how to update or open the
- *          session from the app.
+ *          session from the app. 1.8.0 (ADR-0109): on a Mac the main download is the Mac install steps.
  * Used by: app/(app)/sessions/[id]/desktop/page.tsx
  * Depends on: @kite/shared (the link), lucide-react, next/link, src/core/auth/desktopLink.ts,
- *             src/features/session-setup/labels.ts, src/ui
- * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S9); ADR-0052, ADR-0092
+ *             src/features/session-setup/labels.ts, src/features/shell/MacInstall.tsx, src/ui
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S9); ADR-0052, ADR-0092, ADR-0109, ADR-0114
  */
 'use client';
 
@@ -21,9 +21,9 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { requestLinkCode } from '@/core/auth/desktopLink';
 import { DESKTOP_DOWNLOAD_URL, DESKTOP_INSTALL_ONCE_HINT } from '@/features/session-setup/labels';
+import { MAC_INSTALL_TITLE, MacInstallDialog, MacInstallLink } from '@/features/shell/MacInstall';
 import { Button, buttonClasses } from '@/ui/Button';
-import { SOON_TOOLTIP } from '@/ui/Chip';
-import { Tooltip } from '@/ui/Tooltip';
+import { useIsMac } from '@/ui/useIsMac';
 
 /** Props for DesktopHandoffPage. */
 export interface DesktopHandoffPageProps {
@@ -55,6 +55,9 @@ export function DesktopHandoffPage({ sessionId }: DesktopHandoffPageProps) {
   const asked = useRef(false);
   const [noCode, setNoCode] = useState(false);
   const [hint, setHint] = useState(false);
+  // ADR-0109: a Mac gets the Mac install steps as the main download.
+  const mac = useIsMac();
+  const [macSteps, setMacSteps] = useState(false);
 
   /** Opens the app on this session, with a fresh one-time code. */
   const open = useCallback(async () => {
@@ -101,15 +104,32 @@ export function DesktopHandoffPage({ sessionId }: DesktopHandoffPageProps) {
         className="flex w-full flex-col gap-3 rounded-card border border-ui-border p-5 text-left"
       >
         <h2 className="text-label text-ui-heading">Don’t have the desktop app yet?</h2>
-        <a href={DESKTOP_DOWNLOAD_URL} className={buttonClasses('primary', 'lg', 'w-full')}>
-          Download for Windows
-        </a>
-        <p className="text-helper text-ui-muted">{DESKTOP_INSTALL_ONCE_HINT}</p>
-        <Tooltip content={SOON_TOOLTIP} className="self-center">
-          <span tabIndex={0} className="text-helper text-ui-muted">
-            Need it for macOS?
-          </span>
-        </Tooltip>
+        {/* ADR-0109: the main button matches this computer; the other system's link sits under it. */}
+        {mac ? (
+          <Button variant="primary" size="lg" className="w-full" onClick={() => setMacSteps(true)}>
+            {MAC_INSTALL_TITLE}
+          </Button>
+        ) : (
+          <>
+            {/* ADR-0114: the installer itself (/download/windows), in the same tab. */}
+            <a href={DESKTOP_DOWNLOAD_URL} className={buttonClasses('primary', 'lg', 'w-full')}>
+              Download for Windows
+            </a>
+            {/* The hint names the Start menu and the Desktop icon: Windows only. */}
+            <p className="text-helper text-ui-muted">{DESKTOP_INSTALL_ONCE_HINT}</p>
+          </>
+        )}
+        {mac ? (
+          <a
+            href={DESKTOP_DOWNLOAD_URL}
+            className="self-center rounded-control text-helper text-ui-muted underline underline-offset-4 hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+          >
+            Need it for Windows?
+          </a>
+        ) : (
+          <MacInstallLink className="self-center text-helper text-ui-muted" />
+        )}
+        <MacInstallDialog open={macSteps} onClose={() => setMacSteps(false)} />
       </section>
 
       <Link

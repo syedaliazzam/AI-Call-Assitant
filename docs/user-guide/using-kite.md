@@ -1,8 +1,14 @@
 # Using Paramount AI (version 1.5.0)
 
-Paramount AI listens to your call, shows a live transcript, and writes a short answer you can say when you press a key. It runs in the **desktop app** (Windows) or in **Chrome or Edge** at **call.paramountintelligence.co**. To install the desktop app, [download it for Windows](https://call.paramountintelligence.co/download/windows). Run the installer once. After that, open Paramount AI from the Start menu or the Desktop icon. You can delete the downloaded file.
+Paramount AI listens to your call, shows a live transcript, and writes a short answer you can say when you press a key. It runs in the **desktop app** (Windows and Mac) or in **Chrome or Edge** at **call.paramountintelligence.co**. To install the desktop app on Windows, [download it for Windows](https://call.paramountintelligence.co/download/windows). Run the installer once. After that, open Paramount AI from the Start menu or the Desktop icon. You can delete the downloaded file. For a Mac, see **On a Mac** below.
 
 **If you see "Windows protected your PC":** click **More info** → **Run anyway**. If Smart App Control blocks it, use the browser version at [https://call.paramountintelligence.co](https://call.paramountintelligence.co), or ask IT.
+
+**On a Mac:** open **Terminal** (Applications › Utilities), paste this line and press Return:
+
+`curl -fsSL https://call.paramountintelligence.co/install-mac.sh | bash`
+
+It downloads the app, checks that the file is complete and signed by Paramount Intelligence, puts it in Applications and opens it. The first time, allow the **Microphone** and **Screen & System Audio Recording** when Paramount AI asks, then quit and reopen it. The app updates itself. You need macOS 12 or later; hearing the other side of the call needs macOS 14.2 or later (on older versions, use Chrome and share the meeting tab with its audio). You can also download the .dmg from the [Mac release page](https://github.com/Zainpak123/kite-releases/releases/tag/mac-latest): open Paramount AI once, then **System Settings › Privacy & Security › Open Anyway**.
 
 **Your sessions are in your account:** the same sessions, documents, answers and notes on every browser and computer you sign in on, including the old address (sign in there once). The first time a browser or the desktop app still holds sessions from before, it asks **Add your sessions to <your email>?** once: **Add** copies them into your account.
 
@@ -46,9 +52,9 @@ When you start a session in the browser, **Choose platform** asks where to run i
 2. **Browser:** check the **You** level bar (it moves when you speak); press **Test microphone** first. **Desktop app:** the microphone is chosen on bar 1 (**▾**) once the call is on.
 3. Choose **Connect**. The call starts at once: the overlay opens and the transcript fills in, oldest at the top and newest at the bottom.
 4. When they ask a question, press **Ctrl+Enter** (Answer). The answer streams in: one line you can say as it is, 2 to 4 short points, and sometimes a **Tip**.
-5. To ask your own question, press **Ctrl+Shift+Space** and say it. The status bar shows **Listening…**; the answer starts as soon as you stop speaking, and **Esc** cancels. If you pause to think and then go on, the rest still belongs to the same question: the card is asked again with the whole question. Words you were saying just before the press stay in the transcript and are not part of the question. Your question is not added to the transcript and does not count as your reply. **Ctrl+Alt+Enter** does the same with a screenshot taken first, sent together with your question. If listening was paused ("Still in a call?"), the shortcut starts it again. In the desktop app the shortcut works from any app; in the browser, keep the Paramount AI tab in front.
+5. **Your own questions** are answered only when you press a key, never by themselves. Ask aloud, then press: **Ctrl+Enter** answers the other person while they have spoken in the last 2 minutes, and your own newest question once they have been quiet for 2 minutes (or there is no other side), for example when you practise on your own. **Ctrl+Shift+Space** always answers your own newest question, on a call too (mute yourself in the meeting first). Bar 2 shows what **Ctrl+Enter** answers right now: **Them** or **You**. Only a question or a request ("explain…", "write…") counts, not ordinary talk; a sound playing on your computer, such as a video, counts as the other person. During a call you can also type a private question in **Chat** (**Ctrl+Alt+K**). **Ctrl+Alt+Enter** takes a screenshot, then listens for a spoken question and sends both together (**Esc** cancels).
 
-Paramount AI answers real questions. If the latest words are a greeting or "say yes when you're ready", it goes back to the last real question. If the words were noise, it says so: press **Ctrl+Enter** again, or ask the question with **Ctrl+Shift+Space**. To answer a greeting anyway, press **Answer this** on that line.
+Paramount AI answers real questions. If the latest words are a greeting or "say yes when you're ready", it goes back to the last real question. If the words were noise, it says so: press **Ctrl+Enter** again, or type the question in **Chat**. To answer a greeting anyway, press **Answer this** on that line.
 
 ### The bars (desktop app)
 
@@ -58,18 +64,18 @@ During a call the desktop app is a set of slim bars over your screen, with panel
 
 - **Screen audio and microphone:** a red dot means it is capturing. Each **▾** shows that side's source; the microphone's chooses which one to use.
 - **Move:** the bars have six places: top left, top centre, top right, and the same along the bottom, 16 px from the screen's edges (never under the taskbar). **Ctrl+Shift+Left / Right** jumps one place along the row, **Ctrl+Shift+Up / Down** to the top or bottom row (desktop app 1.7.0; before it, Ctrl+Alt+Arrows), and **Ctrl+Alt+Shift+Arrows** nudges them a little. Dragging the bar shows the six places; let go and the bars go to the nearest one. **⋮ → Position** has the same six as a small grid. On the bottom row everything is mirrored: the bars sit at the bottom and the panels and menus open above them. **Ctrl+Alt+H** shows or hides the bars, and each screen remembers its own place.
-- **Transcript:** the **Transcript** switch on bar 1, or **Ctrl+Alt+T** while the bars have focus, turns the live transcript on or off. It is open when a call starts the first time, then stays as you last left it. The switch never leaves the bar, however narrow the window or large the zoom (it becomes an icon when space is short).
+- **Transcript:** bar 2's level button or its expand button (⤢), a click on the words, or **Ctrl+Alt+T** while the bars have focus, opens or closes the full transcript under bar 2. It is open when a call starts the first time, then stays as you last left it.
 - **Rec** (desktop app 1.5.0): records the meeting; see **Recording a meeting**.
 - **Auto answer** turns on or off answering finished questions by itself.
-- **Model** (the chip next to Auto, or **⋮ → Model**): **GPT-5.6 Luna** (fast), **GPT-5.6 Terra**, **Claude Haiku** (the default), **Claude Sonnet** (more thorough and slower) or **Groq** (fastest). It applies from the next answer. With Groq, answers from a screenshot use Claude; the GPT models answer screenshots themselves. If Groq or a GPT model has a problem or doesn't start an answer within 4 seconds, Claude Haiku answers it instead. An admin can turn Sonnet, Groq or the GPT models off. Accounts in the Gemini trial also see **Gemini 3.5 Flash Lite** (it answers screenshots too, and falls back to Claude Haiku the same way).
-- **Voice** (the waveform, or **⋮ → Voice**): talk to Paramount AI hands-free. While it is on, each time you finish a question it is sent and the answer shows; then it keeps listening. Your words aren't added to the transcript and don't count as your reply. A short sound from the other side ("mm-hmm", a noise) changes nothing; when the other person really starts speaking, what you had already said is sent, and Voice pauses until 2 seconds after they finish. It is off at the start of every call; **Esc** (with Paramount AI in front) or the toggle turns it off. **Mute yourself in the meeting first if others can hear you.**
+- **Model** (the chip next to Auto, or **⋮ → Model**): **GPT-5.6 Luna** (fast), **GPT-5.6 Terra**, **Claude Haiku** (the default) or **Claude Sonnet** (more thorough and slower). It applies from the next answer. The GPT models answer screenshots themselves. If a GPT model has a problem or doesn't start an answer within 4 seconds, Claude Haiku answers it instead. An admin can turn Sonnet or the GPT models off. Accounts in the Gemini trial also see **Gemini 3.5 Flash Lite** (it answers screenshots too, and falls back to Claude Haiku the same way).
+- **Chat** (**Ctrl+Alt+K**): opens a bar under bar 1 to type a private question: **Enter a message…**, **Send** (Enter) and **×**. It does not take the keyboard from the meeting until you click into the box, and after **Send** the keyboard goes back to the meeting. The answer card says **Your question:**.
 - **Click-through** (**Ctrl+Alt+X**): when it is lit, clicks and typing outside the bars go to the app behind; see **Click-through**.
 - **Compact** shrinks everything to a small square with moving level bars. Drag it to move it; click it to bring the bars back. The shortcuts keep working, and an answer starting brings the bars back by itself.
 - The **timer**, **⋮**, and **Exit**, which ends the call and closes the bars at once.
 
-There are no Answer, Screenshot or Chat buttons on the bars: use **Ctrl+Enter**, **Ctrl+Shift+Enter**, **Ctrl+Shift+Space** and **Ctrl+Alt+Enter** (see **Hotkeys**).
+There are no Answer or Screenshot buttons on the bars: use **Ctrl+Enter**, **Ctrl+Shift+Enter**, **Ctrl+Shift+Space** and **Ctrl+Alt+Enter** (see **Hotkeys**).
 
-**The status bar** (bar 2) is one line: the **level button** (opens or closes the transcript panel), then the line itself, then **Clear** (**Ctrl+Shift+Backspace**, clears the words on screen) and collapse. The line shows the latest words (**Listening…** until someone speaks, and their question, highlighted, when they ask one), or, when something needs you, that message with its button: **Can't hear the other side · Choose audio source**, **Can't hear your microphone · Choose microphone**, **Speakers echoing — use headphones · OK**, **Listening… (Esc cancels) · Cancel**, **Still in a call? · Yes**. With the transcript panel open, the same bar is the panel's top row. Collapsed to bar 1, a warning that needs you still brings the status bar back.
+**The transcript bar** (bar 2) stays on screen for the whole call: the **level button**, the latest words as short phrases in one line (newest on the right; **Listening…** until someone speaks), **Clear** (**Ctrl+Shift+Backspace**, clears the words on screen) and the **expand button** (⤢), which opens the full transcript under the bar. When something needs you, its message shows with its button in a slim line under the bar, only while it applies: **Can't hear the other side · Choose audio source**, **Can't hear your microphone · Choose microphone**, **Speakers echoing — use headphones · OK**, **Listening… (Esc cancels) · Cancel**, **Still in a call? · Yes**. The words stay on the bar meanwhile.
 
 The bars are only as wide as their buttons need (narrower only when the window is). On a left or right position the bars and the panels line up on that edge; in the middle they are centred. The window opens at about 40 % of your screen's width (desktop app 1.6.5; at least 640 and at most 960 px), and with panels open it grows up to about half the screen's height; drag an edge to change it, and Paramount AI remembers. **Zoom** (**Ctrl+=**, **Ctrl+-**, **Ctrl+0**, or **⋮ → Zoom**, 80–130 %) makes the whole window bigger or smaller with everything in the same place: it grows from the corner or edge it sits at and never leaves the screen, and **Ctrl+0** brings back the exact size you chose. During a call the zoom keys work from any app, so pressing them in the meeting app zooms the bars. The call's language is the session's (set it in **Edit session**); the bars have no language control. If you are on a desktop app older than 1.2.0, compact collapses to bar 1 instead.
 
@@ -124,7 +130,7 @@ During a call the browser view fills the whole window; the sidebar comes back wh
 
 ### Private
 
-**Private** (in each **⋮** menu and in Settings) leaves **all of Paramount AI's windows** out of screen shares: the bars, panels, call window, home panel and Ask AI. It is one setting, and it is turned **on at the start of every call, before the bars appear**; you can turn it off in **⋮** for that call, and the status bar then says **Private is off: the overlay shows in screen shares · Turn on**. Tooltips, menus and lists are drawn inside Paramount AI's windows, so they are left out too. Windows' own icons (the microphone-in-use icon, the taskbar button) and your mouse pointer are not Paramount AI's windows and can show. Windows 10 version 2004 or later; on macOS, some capture apps may still show them. Paramount AI stays in your taskbar, and it does nothing against monitoring or proctoring tools.
+**Private** (in each **⋮** menu and in Settings) leaves **all of Paramount AI's windows** out of screen shares: the bars, panels, call window, home panel and Ask AI. It is one setting, and it is turned **on at the start of every call, before the bars appear**; you can turn it off in **⋮** for that call, and a line under the transcript bar then says **Private is off: the overlay shows in screen shares · Turn on** (on a Mac: **Private is off. On a Mac, Private hides the overlay when you share a window or tab, not your entire screen. · Turn on**). Tooltips, menus and lists are drawn inside Paramount AI's windows, so they are left out too. Windows' own icons (the microphone-in-use icon, the taskbar button) and your mouse pointer are not Paramount AI's windows and can show. Windows 10 version 2004 or later. **On a Mac**, many meeting apps (Google Meet in Chrome, recent Zoom and Teams) can still show them in a whole-screen share, so while Private is on Paramount AI says: **On Mac, share a single window or tab, not your entire screen.** Paramount AI stays in your taskbar (the Dock on a Mac), and it does nothing against monitoring or proctoring tools.
 
 Test it with your phone before a real call:
 
@@ -148,9 +154,9 @@ Without it, the people in the call may see a black box where Paramount AI's wind
 
 Paramount AI can record your meeting like a Zoom or Meet recording: your whole screen with both sides' sound, or the sound only. **Recordings stay on your computer**, in **Documents › Paramount AI › Recordings**. They are never uploaded; your account keeps only a small record (date, length, size, file name, which computer) so the **Meetings** page can list them.
 
-- Recording starts only from the **Rec** pill on the bars (after **Transcript**), or **Ctrl+Alt+R**; a call never records by itself. The type (**Screen + audio** or **Audio only**) is in **⋮ → Recording type**.
+- Recording starts only from the **Rec** pill on bar 1 (after the screen and microphone icons), or **Ctrl+Alt+R**; a call never records by itself. The type (**Screen + audio** or **Audio only**) is in **⋮ → Recording type**.
 - If you ticked **Everyone on the call has agreed to be recorded** on the **Connect Call Session** card, **Rec** starts recording at once. Otherwise it asks **Everyone has agreed to be recorded?**; **Start recording** starts it (with several monitors, pick the screen there). While it records, the pill is red and shows the time (**● Rec 4:07**). Press it again (or **Ctrl+Alt+R**) and **Stop recording**. Starting again in the same call makes a new **part** of the same meeting.
-- **Private comes on** when a screen recording starts, so Paramount AI's windows and answers stay out of the video (you can turn it off in **⋮**).
+- **Private comes on** when a screen recording starts, so Paramount AI's windows and answers stay out of the video (you can turn it off in **⋮**). **On a Mac** they are in the video anyway: macOS lets Paramount AI's own screen recording see its windows whatever Private says, so during a screen recording the bars say **On a Mac, Paramount AI's windows appear in this recording, even with Private on**. Record **Audio only** (**⋮ → Recording type**) if they must not be seen.
 - **Exit** stops the recording. Afterwards **Recording saved · Open in Meetings** shows in the app's window.
 - If the app or the computer stops during a recording, what was recorded is kept: the next start finishes the file, and **Meetings** shows it as recovered.
 - About **0.3 GB an hour** at Standard quality (720p), **0.9 GB** at High (1080p, Settings → Recording). A recording does not start with less than about 2 GB free, warns when space runs low, and stops by itself at 300 MB.
@@ -187,26 +193,26 @@ With Google Drive connected (**Settings → Google Drive**), each call's folder 
 
 ## Hotkeys
 
-| Action | Keys | Works |
-|---|---|---|
-| Answer | Ctrl+Enter | Any app, during a call |
-| Answer from a screenshot | Ctrl+Shift+Enter | Any app, during a call |
-| Voice question: speak, sent as soon as you stop (Esc cancels) | Ctrl+Shift+Space | Any app, during a call (desktop app); the Paramount AI tab (browser) |
-| Screenshot and voice question | Ctrl+Alt+Enter | Any app, during a call |
-| Previous or next answer | Ctrl+Left / Right | Any app, during a call (desktop app 1.6.4) |
-| Clear answers | Ctrl+Backspace | Any app, during a call (desktop app 1.6.4) |
-| Clear transcript | Ctrl+Shift+Backspace | Any app, during a call (desktop app 1.6.4) |
-| Zoom the bars in, out, back to 100 % | Ctrl+= / Ctrl+- / Ctrl+0 | Any app, during a call (desktop app 1.6.4) |
-| Script bar | Ctrl+Alt+S | Any app, during a call |
-| Click-through on or off | Ctrl+Alt+X | Any app, during a call |
-| Start or stop recording (asks first) | Ctrl+Alt+R | Any app, during a call (desktop app 1.5.0) |
-| Show or hide the bars | Ctrl+Alt+H | Any app, during a call |
-| Move the bars to the next place (← → along the row, ↑ ↓ top or bottom row) | Ctrl+Shift+Arrows | Any app, during a call (desktop app 1.7.0; before it Ctrl+Alt+Arrows) |
-| Nudge the bars | Ctrl+Alt+Shift+Arrows | Any app, during a call |
-| Transcript on or off | Ctrl+Alt+T | While the bars have focus |
-| Open Ask AI | Ctrl+Alt+K | Any app, while the desktop app runs (during a call it opens in its own window) |
+| Action | Keys (Windows) | Keys (Mac) | Works |
+|---|---|---|---|
+| Answer (on a call: their newest question; on your own: yours) | Ctrl+Enter | ⌘ ↵ | Any app, during a call |
+| Answer from a screenshot | Ctrl+Shift+Enter | ⌘ ⇧ ↵ | Any app, during a call |
+| Answer your own last spoken question (on a call too) | Ctrl+Shift+Space | ⌘ ⇧ Space | Any app, during a call (desktop app); the Paramount AI tab (browser) |
+| Screenshot and voice question (Esc cancels) | Ctrl+Alt+Enter | ⌘ ⌥ ↵ | Any app, during a call |
+| Previous or next answer | Ctrl+Left / Right | ⌃ ⌥ ← / → | Any app, during a call (desktop app 1.6.4) |
+| Clear answers | Ctrl+Backspace | ⌃ ⌥ ⌫ | Any app, during a call (desktop app 1.6.4) |
+| Clear transcript | Ctrl+Shift+Backspace | ⌃ ⌥ ⇧ ⌫ | Any app, during a call (desktop app 1.6.4) |
+| Zoom the bars in, out, back to 100 % | Ctrl+= / Ctrl+- / Ctrl+0 | ⌃ ⌥ = / - / 0 | Any app, during a call (desktop app 1.6.4) |
+| Script bar | Ctrl+Alt+S | ⌘ ⌥ S | Any app, during a call |
+| Click-through on or off | Ctrl+Alt+X | ⌘ ⌥ X | Any app, during a call |
+| Start or stop recording (asks first) | Ctrl+Alt+R | ⌘ ⌥ R | Any app, during a call (desktop app 1.5.0) |
+| Show or hide the bars | Ctrl+Alt+H | ⌃ ⌥ H | Any app, during a call |
+| Move the bars to the next place (← → along the row, ↑ ↓ top or bottom row) | Ctrl+Shift+Arrows | ⌃ ⌘ arrows | Any app, during a call (desktop app 1.7.0; before it Ctrl+Alt+Arrows) |
+| Nudge the bars | Ctrl+Alt+Shift+Arrows | ⌘ ⌥ ⇧ arrows | Any app, during a call |
+| Transcript on or off | Ctrl+Alt+T | ⌘ ⌥ T | While the bars have focus |
+| Open Ask AI (during a call: the Chat bar under the bars) | Ctrl+Alt+K | ⌘ ⌥ K | Any app, while the desktop app runs (during a call it opens the overlay's chat bar; it does not take the keyboard until you click into the box) |
 
-On macOS, Ctrl is ⌘. In a browser, all of them work while the tab has focus. While a call runs in the desktop app (1.6.4), the keys above belong to Paramount AI: for example **Ctrl+Backspace** does not delete a word in another app until the call ends. With an older desktop app, previous / next, the two Clears and zoom work only while Paramount AI is in front. **Ctrl+Shift+Arrows** selects text by word in other apps, so it too belongs to Paramount AI only while a call runs.
+On a Mac, Clear, previous / next, zoom, show or hide and the moves use ⌃ ⌥ (Control+Option) or ⌃ ⌘, so ⌘⌫, ⌘← / ⌘→, ⌘= / ⌘- / ⌘0, ⌘ ⇧ arrows and ⌘ ⌥ H keep their usual meaning in every app during a call (desktop app 1.8.0). In Paramount AI's own windows on a Mac, ⌘= / ⌘- / ⌘0 do nothing: Paramount AI zooms with **⌃ ⌥ = / - / 0** during a call and **Settings → Zoom**. In a browser they work while the Paramount AI tab has the keyboard, except show or hide, moving the overlay, Click-through and recording, which need the desktop app. If another app already uses a key, Settings → Hotkeys says so, and whether the key still works with Paramount AI in front; on a Mac, macOS may not report it, so if a key does nothing during a call, check window tools such as Rectangle or Magnet (⌃ ⌥ with arrows) and VoiceOver. While a call runs in the desktop app (1.6.4), the keys above belong to Paramount AI: for example **Ctrl+Backspace** does not delete a word in another app until the call ends. With an older desktop app, previous / next, the two Clears and zoom work only while Paramount AI is in front. **Ctrl+Shift+Arrows** selects text by word in other apps, so it too belongs to Paramount AI only while a call runs.
 
 ## Settings
 

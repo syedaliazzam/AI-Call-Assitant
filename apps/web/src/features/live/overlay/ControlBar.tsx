@@ -1,22 +1,25 @@
 /**
  * File: apps/web/src/features/live/overlay/ControlBar.tsx
  * Purpose: Bar 1 of the call bars (spec S13): the screen-audio and microphone icons, each with its ▾;
- *          the Transcript pill with its on/off switch (ADR-0055: it opens and closes the transcript panel,
- *          as the level button does); desktop 1.5.0 (ADR-0068): the Rec pill after the Transcript pill,
- *          where the app can record; 1.6.3 (ADR-0075): the Auto answer toggle (labelled "AA" since 24 Nov
+ *          desktop 1.5.0 (ADR-0068): the Rec pill after them, where the app can record (ADR-0118: the
+ *          Transcript pill that sat between them is gone; bar 2's level and expand buttons and Ctrl+Alt+T open
+ *          and close the full transcript); 1.6.3 (ADR-0075): the Auto answer toggle (labelled "AA" since 24 Nov
  *          2026); ADR-0082: the Click-through toggle (as Ctrl+Alt+X; labelled "W"), where clicks can pass; ADR-0094: the model chip (Fast / Smart / Fastest) next to
- *          Auto, which opens the model choice; ADR-0095: the Voice toggle (hands-free talking to the assistant)
- *          next to the model chip; then move and compact, the call timer, ⋮ and Exit
- *          (red; web 9 Nov 2026: one press ends the call). ADR-0082: no Answer, Screenshot or Chat buttons
- *          (their shortcuts still work). The bar is the window's drag handle; its buttons opt out.
+ *          Auto, which opens the model choice (ADR-0095's Voice toggle after it was removed by ADR-0123: the
+ *          user's own questions are answered on Ctrl+Enter / Ctrl+Shift+Space); then move and compact, the call
+ *          timer, ⋮ and Exit
+ *          (red; web 9 Nov 2026: one press ends the call). ADR-0082: no Answer or Screenshot buttons (their
+ *          shortcuts still work). ADR-0122: Chat is back, first in the part that gives way, with its shortcut
+ *          (Ctrl+Alt+K) as a key-cap; it opens the chat bar under this bar. The bar is the window's drag handle;
+ *          its buttons opt out.
  *
  *          1.6.3 (ADR-0075): ⋮ and Exit are pinned on the right and never leave the window. ADR-0085: the
- *          device icons, the Transcript switch (every account) and, while recording, the Rec pill are
+ *          device icons and, while recording, the Rec pill are
  *          pinned on the left the same way: never hidden, never cut. When the bar has too little room, the
  *          rest gives way one step at a time, measured rather than guessed: first Rec's key-cap, then the
- *          word "Transcript", the Click-through pill (it becomes a square "W") and the timer's clock, then the
+ *          Click-through pill (it becomes a square "W") and the timer's clock, then the
  *          Auto answer pill (it becomes a square "AA"), the model chip's word (ADR-0094)
- *          and the word "Voice" (ADR-0095); after that
+ *          and the word "Chat" (ADR-0122); after that
  *          things go: the move icon (the whole bar drags), the Click-through toggle (⋮ and Ctrl+Alt+X still
  *          turn it on), and the timer last (only a picture-in-picture window is that narrow). Every control names itself and its shortcut in BarTooltip.tsx ("Click-through: Off ·
  *          Ctrl+Alt+X"). ADR-0113: the bar keeps its natural width (it no longer stretches to the window),
@@ -29,8 +32,8 @@
  */
 'use client';
 
-import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
-import { AudioLines, Clock, ScrollText } from 'lucide-react';
+import { ASK_KITE_HOTKEY, DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
+import { Clock } from 'lucide-react';
 import {
   useEffect,
   useLayoutEffect,
@@ -43,6 +46,7 @@ import { flushSync } from 'react-dom';
 import { callClock } from '@/features/live/callClock';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import {
+  ChatIcon,
   ChevronDownIcon,
   CollapseIcon,
   ExpandIcon,
@@ -57,6 +61,7 @@ import {
   BUTTON_BASE,
   CHEVRON_BUTTON,
   ICON_BUTTON,
+  KeyChip,
   ownResizeObserver,
   PILL,
   StatusIcon,
@@ -95,10 +100,6 @@ export interface ControlBarProps {
    * like any press outside it; data-popup-button only marks the buttons that open one.)
    */
   menuButton: RefObject<HTMLButtonElement | null>;
-  /** Whether the transcript panel is open (the Transcript pill's switch). */
-  transcriptOpen?: boolean;
-  /** Opens or closes the transcript panel (remembered with the panels). */
-  onTranscript?: (open: boolean) => void;
   /**
    * ADR-0082: turns Click-through on or off from its toggle on this bar (v1.3.2 to 1.6.3 an indicator showed
    * only while it was on). Absent where clicks cannot pass (a browser, an older shell): no toggle then. The
@@ -123,10 +124,12 @@ export interface ControlBarProps {
   /** ADR-0094: the model chip (its popover sits under it). */
   modelButton?: RefObject<HTMLButtonElement | null>;
   /**
-   * ADR-0095: turns Voice mode on or off from its toggle on this bar. Absent, or a live page that does not say
-   * its Voice mode (an older one, or no microphone in this call): no toggle.
+   * ADR-0122: opens or closes the chat bar under this bar (as Ctrl+Alt+K does during a call). Absent: no Chat
+   * button.
    */
-  onVoice?: (on: boolean) => void;
+  onChat?: () => void;
+  /** ADR-0122: whether the chat bar is open (the Chat button shows it). */
+  chatOpen?: boolean;
 }
 
 /**
@@ -134,11 +137,11 @@ export interface ControlBarProps {
  * step hides what the one before did, and more.
  */
 const FIT = {
-  /** From here: no key-cap on the Rec pill. */
+  /** From here: no key-cap on the Rec pill (ADR-0122: nor on Chat). */
   noRecKey: 1,
-  /** From here: the Transcript word gives way to its icon, Click-through's "W" pill to a square; no clock icon. */
+  /** From here: Click-through's "W" pill gives way to a square; no clock icon (ADR-0118: no Transcript word any more). */
   noWords: 2,
-  /** From here: Auto answer's "AA" pill is a square, the model chip its icon (ADR-0094), Voice its waveform (ADR-0095). */
+  /** From here: Auto answer's "AA" pill is a square, the model chip its icon (ADR-0094) and Chat its icon (ADR-0122). */
   iconAuto: 3,
   /** From here: no move icon (the whole bar still drags the window). */
   noMove: 4,
@@ -158,142 +161,67 @@ const FIT_MOST = FIT.noTimer;
  * @param hotkey The shortcut's accelerator, if it has one.
  * @param mac    True on macOS.
  * @returns The tooltip's words.
- * Called from: ControlBar, TranscriptPill
+ * Called from: ControlBar
  */
 function tipText(name: string, hotkey: string | undefined, mac: boolean): string {
   return hotkey ? `${name} · ${tipShortcut(hotkey, mac)}` : name;
 }
 
-/** Ctrl+Alt+T: the transcript on or off while the bars have focus (ADR-0056; platform/keymap.ts). */
-const TRANSCRIPT_ACCELERATOR = 'CommandOrControl+Alt+T';
-
 /** Ctrl+Shift+Arrows: the six positions (ADR-0056; ADR-0095 moved them from Ctrl+Alt+Arrows). */
 const POSITION_ACCELERATOR = 'CommandOrControl+Shift+Arrows';
 
-/** ADR-0095: Voice mode's tooltip, whatever its state adds after it. */
-export const VOICE_TIP = 'Talk to Paramount AI hands-free';
-
 /**
- * ADR-0095: the Voice toggle's tooltip for a state.
+ * ADR-0122: Chat on bar 1, with its shortcut (Ctrl+Alt+K; ⌘⌥K on a Mac) as a key-cap: opens or closes the chat
+ * bar under bar 1 ("Enter a message…", Send, ×). It gives way like the others: first its key-cap, then its
+ * word (the icon stays). A click gives the keyboard back to the meeting (data-releases-focus): only a click into
+ * the chat bar's box takes it.
  *
- * @param voice Voice mode's state.
- * @returns The tooltip's words.
- * Called from: VoiceToggle; LiveMenu.tsx; tests
- */
-export function voiceTip(voice: 'off' | 'listening' | 'paused'): string {
-  if (voice === 'listening') return `${VOICE_TIP} · On (Esc turns it off)`;
-  if (voice === 'paused') return `${VOICE_TIP} · Paused while they speak`;
-  return `${VOICE_TIP} · Off`;
-}
-
-/**
- * ADR-0095: Voice mode on bar 1: a waveform and "Voice", with a dot lit while it is on (amber while paused
- * because the other person is speaking). On, each pause of about 1.5 s in what the user says is sent to the
- * assistant as a question; the words never become "You" lines.
- *
- * @param props.voice    Voice mode's state.
+ * @param props.open     True while the chat bar is open.
  * @param props.disabled True before the live page answers, or once the call ended.
- * @param props.word     False to show the waveform only.
- * @param props.onToggle Turns it on or off.
- * @returns The toggle.
+ * @param props.keyCap   False to leave out the key-cap.
+ * @param props.word     False to show the icon only.
+ * @param props.mac      True on macOS (the shortcut's name).
+ * @param props.onToggle Opens or closes the chat bar.
+ * @returns The button.
  * Rendered by: ControlBar
  */
-function VoiceToggle({
-  voice,
-  disabled,
-  word,
-  onToggle,
-}: {
-  /** Voice mode's state. */
-  voice: 'off' | 'listening' | 'paused';
-  /** True before the live page answers, or once the call ended. */
-  disabled: boolean;
-  /** False to show the waveform only. */
-  word: boolean;
-  /** Turns it on or off. */
-  onToggle: () => void;
-}) {
-  const on = voice !== 'off';
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label="Voice: talk to Paramount AI hands-free"
-      data-tip={voiceTip(voice)}
-      data-voice-mode={voice}
-      className={`${word ? `${PILL} gap-1.5` : `${ICON_BUTTON} relative`} ${on ? 'text-ui-text ring-1 ring-inset ring-ui-accent-fill' : 'text-ui-muted'}`}
-      onClick={onToggle}
-      disabled={disabled}
-    >
-      <span aria-hidden="true" className={`inline-flex ${on ? 'text-ui-accent' : ''}`}>
-        <AudioLines size={15} strokeWidth={1.75} />
-      </span>
-      {word && 'Voice'}
-      <span
-        aria-hidden="true"
-        className={`size-1.5 shrink-0 rounded-full ${word ? '' : 'absolute right-1 top-1'} ${
-          voice === 'listening'
-            ? 'bg-ui-accent-fill'
-            : voice === 'paused'
-              ? 'bg-ui-warning'
-              : 'bg-ui-muted opacity-60'
-        }`}
-      />
-    </button>
-  );
-}
-
-/**
- * The Transcript pill (ADR-0055): the word and a small switch inside; on opens the transcript panel,
- * off closes it. When the bar is short of room the word gives way to an icon.
- *
- * @param props.open     True while the transcript panel is open.
- * @param props.disabled True before the live page answers, or once the call ended.
- * @param props.word     False to show the icon instead of the word.
- * @param props.mac      True on macOS.
- * @param props.onToggle Opens or closes the panel.
- * @returns The pill.
- * Rendered by: ControlBar
- */
-function TranscriptPill({
+function ChatButton({
   open,
   disabled,
+  keyCap,
   word,
   mac,
   onToggle,
 }: {
-  /** True while the transcript panel is open. */
+  /** True while the chat bar is open. */
   open: boolean;
   /** True before the live page answers, or once the call ended. */
   disabled: boolean;
-  /** False to show the icon instead of the word. */
+  /** False to leave out the key-cap. */
+  keyCap: boolean;
+  /** False to show the icon only. */
   word: boolean;
   /** True on macOS (the shortcut's name). */
   mac: boolean;
-  /** Opens or closes the panel. */
-  onToggle: (open: boolean) => void;
+  /** Opens or closes the chat bar. */
+  onToggle: () => void;
 }) {
   return (
     <button
       type="button"
-      role="switch"
-      aria-checked={open}
-      aria-label="Transcript"
-      data-tip={tipText(`Transcript: ${open ? 'On' : 'Off'}`, TRANSCRIPT_ACCELERATOR, mac)}
-      className={`${PILL} gap-2`}
-      onClick={() => onToggle(!open)}
+      aria-label="Chat"
+      aria-expanded={open}
+      aria-keyshortcuts={hotkeyLabel(ASK_KITE_HOTKEY, mac)}
+      data-tip={tipText(open ? 'Close chat' : 'Chat: type a question', ASK_KITE_HOTKEY, mac)}
+      data-chat-button=""
+      data-releases-focus=""
+      className={`${word ? `${PILL} gap-1.5` : ICON_BUTTON} ${open ? 'text-ui-text ring-1 ring-inset ring-ui-accent-fill' : ''}`}
+      onClick={onToggle}
       disabled={disabled}
     >
-      {word ? 'Transcript' : <ScrollText aria-hidden="true" size={16} />}
-      <span
-        aria-hidden="true"
-        className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-(--k-dur) ${open ? 'bg-ui-accent-fill' : 'bg-ui-control-strong'}`}
-      >
-        <span
-          className={`absolute left-0.5 size-3 rounded-full bg-white transition-transform duration-(--k-dur) ${open ? 'translate-x-3' : 'translate-x-0'}`}
-        />
-      </span>
+      <ChatIcon />
+      {word && 'Chat'}
+      {word && keyCap && <KeyChip hotkey="ask-kite" />}
     </button>
   );
 }
@@ -656,8 +584,6 @@ export function ControlBar(props: ControlBarProps) {
   const clickThroughOn = (state?.clickThrough ?? false) && props.onClickThrough !== undefined;
   // ADR-0094: the model chip, when the live page says its model.
   const modelChoice = props.onModel ? modelOf(state) : null;
-  // ADR-0095: the Voice toggle, when the live page says Voice mode's state.
-  const voice = props.onVoice && state?.voiceMode !== undefined ? state.voiceMode : null;
 
   const bar = useRef<HTMLDivElement>(null);
   // What changes the left side's width on a re-render; a change starts the fitting again.
@@ -667,14 +593,13 @@ export function ControlBar(props: ControlBarProps) {
     autoOn,
     clickThroughOn,
     props.onClickThrough !== undefined,
-    props.onTranscript !== undefined,
     collapsed,
     onIcon !== undefined,
     state?.capturing ?? false,
     // ADR-0094: "Smart" is wider than "Fast".
     modelChoice?.model ?? 'no-model',
-    // ADR-0095: the Voice toggle appearing or going.
-    voice === null ? 'no-voice' : 'voice',
+    // ADR-0122: the Chat button appearing or going.
+    props.onChat ? 'chat' : 'no-chat',
   ].join('|');
   const { step, room, content } = useFitStep(fitKey);
   const recKey = step < FIT.noRecKey;
@@ -687,7 +612,7 @@ export function ControlBar(props: ControlBarProps) {
       aria-label="Overlay controls"
       className="relative flex h-11 shrink-0 items-center gap-1 px-1.5 [-webkit-app-region:drag]"
     >
-      {/* ADR-0085: pinned on the left, always whole: what is captured, the Transcript switch, and the
+      {/* ADR-0085: pinned on the left, always whole: what is captured (ADR-0118: no Transcript switch), and the
           recording while it runs. */}
       <div data-bar-pinned="" className="flex shrink-0 items-center gap-1">
         <span className="inline-flex shrink-0 items-center">
@@ -710,20 +635,8 @@ export function ControlBar(props: ControlBarProps) {
         </span>
         <span className="w-1 shrink-0" />
 
-        {props.onTranscript && (
-          <TranscriptPill
-            open={props.transcriptOpen ?? false}
-            disabled={ended}
-            word={words}
-            mac={mac}
-            onToggle={(open) => {
-              if (collapsed) props.onCollapse(false);
-              props.onTranscript?.(open);
-            }}
-          />
-        )}
         {recording && props.onRecord && (
-          // Desktop 1.5.0 (ADR-0068): after the Transcript pill, in the same style.
+          // Desktop 1.5.0 (ADR-0068): after the device icons (ADR-0118: the Transcript pill is gone).
           <RecPill
             recording={recording}
             open={props.recordOpen ?? false}
@@ -746,6 +659,17 @@ export function ControlBar(props: ControlBarProps) {
           data-fit-key={fitKey}
           className="flex shrink-0 items-center gap-1 pr-0.5"
         >
+          {props.onChat && (
+            // ADR-0122: first in the part that gives way, so the pinned controls never leave the window.
+            <ChatButton
+              open={props.chatOpen ?? false}
+              disabled={ended}
+              keyCap={recKey}
+              word={step < FIT.iconAuto}
+              mac={mac}
+              onToggle={props.onChat}
+            />
+          )}
           <AutoAnswerToggle
             on={autoOn}
             disabled={!state}
@@ -762,16 +686,6 @@ export function ControlBar(props: ControlBarProps) {
               disabled={ended}
               buttonRef={props.modelButton}
               onToggle={props.onModel}
-            />
-          )}
-          {voice !== null && props.onVoice && (
-            // ADR-0095: next to the model chip; it gives way to its waveform with Auto, and never pushes the
-            // pinned controls out (it is inside the part that gives way).
-            <VoiceToggle
-              voice={voice}
-              disabled={ended}
-              word={step < FIT.iconAuto}
-              onToggle={() => props.onVoice?.(voice === 'off')}
             />
           )}
           {props.onClickThrough && step < FIT.noClickThrough && (

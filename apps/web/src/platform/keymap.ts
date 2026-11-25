@@ -7,8 +7,10 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (default hotkeys);
  *               day-04-answers.md Stage 6
  *
- * The modifier is ⌘ on macOS and Ctrl elsewhere. While the user types in a text box, no
- * shortcut is taken: Ctrl+← / Ctrl+→ and Ctrl+Backspace already move and delete by word there,
+ * The modifier is ⌘ on macOS and Ctrl elsewhere; ADR-0110: on a Mac, Clear, Clear transcript, previous /
+ * next and zoom are ⌃⌥ keys (macHotkeyFor()), so ⌘⌫, ⌘←/→ and ⌘= / - / 0 keep their Mac meaning. While
+ * the user types in a text box, no shortcut is taken: Ctrl+← / Ctrl+→ and Ctrl+Backspace already move
+ * and delete by word there,
  * and Enter sends the chat question. Two exceptions (v1.2.0, spec S14), keys that edit nothing and are
  * meant for use from the chat box itself: Chat (pressed twice for the microphone) and Ctrl+Alt+Enter.
  */
@@ -30,6 +32,11 @@ export interface KeyPress {
   repeat: boolean;
   /** Where the key was pressed (checked for text boxes). */
   target: EventTarget | null;
+  /**
+   * The key's place on the keyboard ('Equal', 'ArrowLeft', 'KeyK'), when known. ADR-0110: on a Mac,
+   * Option changes the character (⌥= types "≠"), so the Mac keys are matched by place.
+   */
+  code?: string;
 }
 
 /**
@@ -51,10 +58,55 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 /**
+ * ADR-0110: the Mac's keys (packages/shared MAC_GLOBAL_HOTKEYS). ⌘ for Answer, Screenshot, the voice
+ * question, Ask AI, the script bar and the screenshot and voice question, as before; ⌃⌥ (Control+Option)
+ * for Clear answers, Clear transcript, previous / next and zoom, so ⌘⌫, ⌘← / ⌘→ and ⌘= / ⌘- / ⌘0 keep
+ * their usual Mac meaning.
+ *
+ * @param press  The key press (not a repeat).
+ * @param typing True when it happened in a text box.
+ * @returns The action, or null.
+ * Called from: hotkeyFor()
+ */
+function macHotkeyFor(press: KeyPress, typing: boolean): HotkeyAction | null {
+  const place = press.code ?? '';
+  // ⌃⌥ with no ⌘: never while typing (Option+arrows and Option+⌫ edit text).
+  if (press.ctrlKey && press.altKey && !press.metaKey) {
+    if (typing) return null;
+    if (place === 'Backspace' || press.key === 'Backspace') {
+      return press.shiftKey ? 'clear-transcript' : 'clear';
+    }
+    // "+" is Shift+= on most layouts, so both count for zoom in.
+    if (place === 'Equal') return 'zoom-in';
+    if (press.shiftKey) return null;
+    if (place === 'ArrowLeft' || press.key === 'ArrowLeft') return 'prev';
+    if (place === 'ArrowRight' || press.key === 'ArrowRight') return 'next';
+    if (place === 'Minus') return 'zoom-out';
+    if (place === 'Digit0') return 'zoom-reset';
+    return null;
+  }
+  if (!press.metaKey || press.ctrlKey) return null;
+  // ⌘⌥: the screenshot and voice question (also from a text box), Ask AI and the script bar.
+  if (press.altKey) {
+    if (press.shiftKey) return null;
+    if (press.key === 'Enter') return 'screenshot-send';
+    if (typing) return null;
+    if (place === 'KeyK' || press.key.toLowerCase() === 'k') return 'ask-kite';
+    if (place === 'KeyS' || press.key.toLowerCase() === 's') return 'script-bar';
+    return null;
+  }
+  // ⌘ alone: Answer, Screenshot and the voice question (the voice question also from a text box).
+  if (press.key === ' ' && press.shiftKey) return 'chat';
+  if (typing) return null;
+  if (press.key === 'Enter') return press.shiftKey ? 'screenshot' : 'answer';
+  return null;
+}
+
+/**
  * The hotkey action for a key press, or null when it is not a Kite shortcut.
  *
  * @param press The key press.
- * @param mac   True on macOS (⌘ is the modifier), false elsewhere (Ctrl).
+ * @param mac   True on macOS (the Mac's keys, ADR-0110), false elsewhere (Ctrl).
  * @returns 'answer', 'screenshot', 'screenshot-send', 'chat', 'clear', 'clear-transcript', 'prev',
  *          'next', 'ask-kite', 'script-bar', or null.
  * Called from: listenForHotkeys(); tests
@@ -62,10 +114,11 @@ function isTyping(target: EventTarget | null): boolean {
 export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
   if (press.repeat) return null;
   const typing = isTyping(press.target);
+  if (mac) return macHotkeyFor(press, typing);
   // The shortcuts with Alt: Ask Kite (ADR-0030) and the script bar (v1.0.2, ADR-0035). Every other
   // Alt combination stays the browser's.
   if (press.altKey) {
-    const held = mac ? press.metaKey && !press.ctrlKey : press.ctrlKey && !press.metaKey;
+    const held = press.ctrlKey && !press.metaKey;
     if (!held || press.shiftKey) return null;
     // Where Ctrl+Alt is AltGr, e.key is the letter it types ("ś" on a Polish layout), so typing that
     // letter in the page is never taken as a shortcut.
@@ -75,8 +128,8 @@ export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
     if (key === 'k') return 'ask-kite';
     return key === 's' ? 'script-bar' : null;
   }
-  // Exactly the platform's modifier: Ctrl+⌘ together is not a shortcut.
-  const modifier = mac ? press.metaKey && !press.ctrlKey : press.ctrlKey && !press.metaKey;
+  // Exactly Ctrl: Ctrl with the Windows key is not a shortcut.
+  const modifier = press.ctrlKey && !press.metaKey;
   if (!modifier) return null;
   if (typing) return press.key === ' ' && press.shiftKey ? 'chat' : null;
   switch (press.key) {

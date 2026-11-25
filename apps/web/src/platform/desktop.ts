@@ -22,7 +22,7 @@ import type {
   ShareProtectionState,
   WindowControlAction,
 } from '@kite/shared';
-import { LINK_CODE_PATTERN } from '@kite/shared';
+import { LINK_CODE_PATTERN, worksInPage } from '@kite/shared';
 import { installDesktopDocument } from './desktopDocument';
 import { CaptureError } from './errors';
 import { listenForAskKite, listenForHotkeys } from './keymap';
@@ -37,7 +37,7 @@ import {
   watchBatteryState,
   type DisplayCaptureOptions,
 } from './media';
-import type { Platform } from './types';
+import type { MacPermissionsHost, Platform } from './types';
 
 /**
  * What the desktop page asks for. The shell (apps/desktop/src/media.ts) answers for the Kite
@@ -56,14 +56,15 @@ export const DESKTOP_DISPLAY_OPTIONS: DisplayCaptureOptions = {
 };
 
 /**
- * Message when the OS gave no audio track (macOS 12 and earlier cannot capture system audio).
+ * Message when the OS gave no audio track (macOS before 14.2 cannot capture system audio for the app;
+ * 1.8.0, ADR-0111).
  *
  * @param os The desktop OS.
  * @returns Text for the user.
  */
 function noSystemAudioMessage(os: DesktopOs): string {
   return os === 'mac'
-    ? 'This version of macOS can’t share your computer’s sound with Paramount AI (macOS 13 or later is needed). Use Paramount AI in Chrome and share the meeting tab with its audio instead.'
+    ? 'This version of macOS can’t share your computer’s sound with Paramount AI (macOS 14.2 or later is needed). Use Paramount AI in Chrome and share the meeting tab with its audio instead.'
     : 'Paramount AI couldn’t capture your computer’s sound. Use Paramount AI in Chrome and share the meeting tab with its audio instead.';
 }
 
@@ -77,8 +78,34 @@ function noSystemAudioMessage(os: DesktopOs): string {
  */
 function endedAudioMessage(os: DesktopOs): string {
   return os === 'mac'
-    ? 'Paramount AI is not allowed to record system audio. Allow Paramount AI under System Settings → Privacy & Security → Screen & System Audio Recording, then try again.'
+    ? 'Paramount AI is not allowed to record system audio. Allow Paramount AI under System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen Paramount AI and connect again.'
     : 'Paramount AI couldn’t capture your computer’s sound. Try again; if it keeps failing, use Paramount AI in Chrome and share the meeting tab with its audio.';
+}
+
+/**
+ * The macOS permission host over the bridge (1.8.0, ADR-0111), or null on Windows and in an older shell.
+ *
+ * @param bridge The shell's bridge.
+ * @returns The host, or null.
+ * Called from: createDesktopPlatform(); tests
+ */
+export function desktopMacPermissions(bridge: KiteDesktopApi): MacPermissionsHost | null {
+  const { macPermissions, requestMacPermission, openMacPrivacySettings, relaunchApp } = bridge;
+  if (
+    bridge.os !== 'mac' ||
+    !macPermissions ||
+    !requestMacPermission ||
+    !openMacPrivacySettings ||
+    !relaunchApp
+  ) {
+    return null;
+  }
+  return {
+    read: () => macPermissions(),
+    request: (kind) => requestMacPermission(kind),
+    openSettings: (kind) => openMacPrivacySettings(kind),
+    relaunch: () => relaunchApp(),
+  };
 }
 
 /** The desktop Platform, plus details about the shell that only exist on desktop. */
@@ -109,6 +136,10 @@ export function acceleratorLabel(accelerator: string, os: DesktopOs): string {
   const keys: Record<string, string> = { Left: '←', Right: '→', Enter: 'Enter' };
   const parts = accelerator.split('+').map((part) => {
     if (part === 'CommandOrControl') return os === 'mac' ? '⌘' : 'Ctrl';
+    // ADR-0110: a Mac's keys name ⌃ (Control), ⌘ (Command) and ⌥ (Option) themselves.
+    if (part === 'Control') return os === 'mac' ? '⌃' : 'Ctrl';
+    if (part === 'Command') return '⌘';
+    if (part === 'Alt') return os === 'mac' ? '⌥' : 'Alt';
     if (part === 'Shift') return os === 'mac' ? '⇧' : 'Shift';
     return keys[part] ?? part;
   });
@@ -603,6 +634,9 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     // 1.5.0 (ADR-0068): meeting recording, when this shell has every recording method.
     recording: desktopRecordingHost(bridge),
 
+    // 1.8.0 (ADR-0111): the macOS permissions, in a Mac shell that has the four methods.
+    macPermissions: desktopMacPermissions(bridge),
+
     // 1.6.0 (ADR-0072): Drive uploads of recordings and native notifications, when this shell has them.
     drive: desktopDriveHost(bridge),
 
@@ -652,9 +686,14 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
           if (active && taken.length > 0) {
             // ADR-0076 (G4): the Answer shortcut is named apart, for the overlay's lasting warning.
             const answer = taken.find((status) => status.action === 'answer');
+            // ADR-0110 (amended 25 Nov 2026): the page handles some of them itself (they still work with
+            // Paramount AI in front); the rest (show or hide, moves, Click-through, Rec) then do not work.
+            const label = (status: (typeof taken)[number]) =>
+              acceleratorLabel(status.accelerator, bridge.os);
             onTaken?.(
-              taken.map((status) => acceleratorLabel(status.accelerator, bridge.os)),
+              taken.filter((status) => worksInPage(status.action)).map(label),
               answer ? acceleratorLabel(answer.accelerator, bridge.os) : null,
+              taken.filter((status) => !worksInPage(status.action)).map(label),
             );
           }
         })

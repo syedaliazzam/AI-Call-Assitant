@@ -1,7 +1,7 @@
 /**
  * Tests for apps/web/src/features/live/overlay/PanelSplit.tsx (ADR-0085): the divider's share at a point
  * (clamped to the split's limits; none for an area with no width), and its markup (a focusable vertical
- * separator with its value, hidden below 600 CSS px). Also (ADR-0085, Private): no file of the overlay
+ * separator with its value, hidden below 600 CSS px of the window, ADR-0119). Also (ADR-0085, Private): no file of the overlay
  * uses a title attribute, whose native tooltip is a separate window that screen-share protection does not
  * cover.
  */
@@ -34,7 +34,8 @@ describe('PanelSplit', () => {
     expect(html).toContain('aria-orientation="vertical"');
     expect(html).toContain('aria-valuenow="40"');
     expect(html).toContain('tabindex="0"');
-    expect(html).toMatch(/class="[^"]*hidden[^"]*@min-\[600px\]:flex/);
+    // ADR-0119: shown from 600 CSS px of the window (the root container "overlay").
+    expect(html).toMatch(/class="[^"]*hidden[^"]*@min-\[600px\]\/overlay:flex/);
     // Not one of the bars, not a gap: see the file's header.
     expect(html).not.toContain('data-bars');
     expect(html).not.toContain('data-gap');

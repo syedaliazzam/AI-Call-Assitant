@@ -32,6 +32,7 @@ import {
   type ModelTier,
 } from '@kite/shared';
 import { getClaudeEnv } from './env';
+import { readJsonPrefix } from './jsonPrefix';
 
 /** Server time limit for one Claude reply (architecture §7.2: "Set a 60 s timeout"). */
 export const CLAUDE_TIMEOUT_MS = 60_000;
@@ -248,23 +249,74 @@ export interface JsonReplyInput {
   schema: Record<string, unknown>;
   /** Most tokens Claude may write. */
   maxTokens: number;
+  /**
+   * ADR-0121: true to keep the complete part of a reply cut off at maxTokens (readJsonPrefix()) instead
+   * of throwing ReplyCutOffError. The call notes set it; the graders do not (half a grade is no grade).
+   */
+  keepCutOff?: boolean;
+}
+
+/** What jsonReply() returns. */
+export interface JsonReplyResult {
+  /**
+   * The parsed JSON value. When `cutOff` is true it holds only the values completed before the cut
+   * (readJsonPrefix()), so required fields may be missing: the caller checks its shape. Never logged.
+   */
+  value: unknown;
+  /** Token counts. */
+  usage: AnswerUsage;
+  /** Why Claude stopped ('end_turn' normally; 'max_tokens' when cut off). */
+  stopReason: Anthropic.StopReason | null;
+  /** ADR-0121: true when the reply reached maxTokens and `value` is its complete part only. */
+  cutOff: boolean;
+}
+
+/**
+ * ADR-0121: a reply reached its output-token limit and nothing usable came before the cut (or the caller
+ * did not ask to keep a cut-off reply). Sending the same request again would be cut off the same way, so
+ * callers must not retry it. Carries counts only, never text.
+ */
+export class ReplyCutOffError extends Error {
+  /**
+   * @param outputTokens How many tokens the reply used (its limit), for the log.
+   */
+  constructor(readonly outputTokens: number) {
+    super('REPLY_CUT_OFF');
+    this.name = 'ReplyCutOffError';
+  }
+}
+
+/**
+ * ADR-0121: Claude declined to write the reply (stop reason 'refusal'). The same request would be declined
+ * again, so callers must not retry it.
+ */
+export class ReplyRefusedError extends Error {
+  /** Creates the error (no details: a refusal carries nothing worth logging). */
+  constructor() {
+    super('REPLY_REFUSED');
+    this.name = 'ReplyRefusedError';
+  }
 }
 
 /**
  * Asks Claude for a reply in a fixed JSON shape, using structured outputs
- * (`output_config.format` with a JSON schema, so the reply always parses), not streamed.
+ * (`output_config.format` with a JSON schema), not streamed.
+ *
+ * ADR-0121: the stop reason is checked before the text is parsed. A reply cut off at maxTokens is not
+ * whole JSON: with `keepCutOff` its complete part is returned (`cutOff: true`); otherwise, or when nothing
+ * complete came before the cut, ReplyCutOffError is thrown. A refusal throws ReplyRefusedError. Before,
+ * a cut-off reply threw a SyntaxError that became a generic 'internal' failure, and the after-call runner
+ * paid for the same request three times.
  *
  * @param input See JsonReplyInput.
- * @returns The parsed JSON value and the token usage.
- * @throws Anthropic.APIError for API failures; Error('NO_JSON') when the reply has no text
- *         (for example a refusal).
+ * @returns The parsed JSON value, the token usage, the stop reason and whether it was cut off.
+ * @throws Anthropic.APIError for API failures; ReplyCutOffError (see above); ReplyRefusedError;
+ *         Error('NO_JSON') when a finished reply has no text.
  * Called from: scripts/eval-answers.ts and scripts/eval-notes.ts (the graders);
- *              src/server/notes.ts (the call notes, Day 5). Not the documents summary: a JSON reply
- *              cut off at maxTokens does not parse, so the summary uses textReply() (ADR-0116).
+ *              src/server/notes.ts (the call notes, Day 5; keepCutOff since ADR-0121). Not the documents
+ *              summary, which is plain text (textReply(), ADR-0116).
  */
-export async function jsonReply(
-  input: JsonReplyInput,
-): Promise<{ value: unknown; usage: AnswerUsage }> {
+export async function jsonReply(input: JsonReplyInput): Promise<JsonReplyResult> {
   const message = await getClaude().messages.create(
     {
       model: input.model,
@@ -276,9 +328,17 @@ export async function jsonReply(
     },
     { timeout: input.timeoutMs ?? CLAUDE_TIMEOUT_MS },
   );
-  const text = message.content.find((block) => block.type === 'text');
-  if (!text || text.type !== 'text') throw new Error('NO_JSON');
-  return { value: JSON.parse(text.text) as unknown, usage: toAnswerUsage(message.usage) };
+  const usage = toAnswerUsage(message.usage);
+  const stopReason = message.stop_reason;
+  if (stopReason === 'refusal') throw new ReplyRefusedError();
+  const text = message.content.map((block) => (block.type === 'text' ? block.text : '')).join('');
+  if (stopReason === 'max_tokens') {
+    const value = input.keepCutOff ? readJsonPrefix(text) : undefined;
+    if (value === undefined || value === null) throw new ReplyCutOffError(usage.output_tokens);
+    return { value, usage, stopReason, cutOff: true };
+  }
+  if (!text) throw new Error('NO_JSON');
+  return { value: JSON.parse(text) as unknown, usage, stopReason, cutOff: false };
 }
 
 /** Input for textReply(). */
@@ -413,6 +473,16 @@ export function describeClaudeError(error: unknown): { code: AnswerErrorCode; me
   const unavailable = unavailableReason(error);
   if (unavailable) {
     return { code: 'claude_unavailable', message: CLAUDE_UNAVAILABLE_MESSAGES[unavailable] };
+  }
+  // ADR-0121: a reply that would end the same way if asked again (callers must not retry these codes).
+  if (error instanceof ReplyCutOffError) {
+    return {
+      code: 'cut_off',
+      message: 'The reply was too long and stopped before anything usable.',
+    };
+  }
+  if (error instanceof ReplyRefusedError) {
+    return { code: 'refused', message: 'Claude declined to write this.' };
   }
   if (error instanceof Anthropic.APIConnectionTimeoutError) {
     return { code: 'timeout', message: 'Claude took too long to answer.' };

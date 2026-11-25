@@ -1,9 +1,10 @@
 /**
  * Tests apps/web/src/core/session/modelChoices.ts (ADR-0099, ADR-0102, ADR-0104): an account outside the Gemini
- * rollout sees the GPT models, Claude Haiku, Claude Sonnet and Groq; one in the rollout also sees Gemini 3.5 Flash
+ * rollout sees the GPT models, Claude Haiku and Claude Sonnet; one in the rollout also sees Gemini 3.5 Flash
  * Lite, in the developer's order and words; Gemini 3.6 Flash is retired (in no list, named as Claude Haiku, always
  * off); "Recommended" is on Claude Haiku (ADR-0104); every model has one name for every account; and a choice
- * is off when its switch, key or rollout says so.
+ * is off when its switch, key or rollout says so. ADR-0121: Groq is hidden: in no list, named as Claude Haiku,
+ * always off.
  */
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_MODEL_ACCESS } from '@/core/session/modelAccess';
@@ -23,11 +24,10 @@ describe('modelChoices', () => {
       ['gpt-terra', 'GPT-5.6 Terra'],
       ['fast', 'Claude Haiku (Recommended)'],
       ['smart', 'Claude Sonnet'],
-      ['groq', 'Groq (Fastest)'],
     ]);
   });
 
-  it("lists the rollout's six models in the developer's order and words, without Gemini 3.6 Flash (ADR-0104)", () => {
+  it("lists the rollout's five models in the developer's order and words, without Gemini 3.6 Flash (ADR-0104)", () => {
     expect(modelChoices(true)).toBe(ROLLOUT_MODEL_CHOICES);
     expect(ROLLOUT_MODEL_CHOICES.map((choice) => [choice.value, choice.label])).toEqual([
       ['gemini-lite', 'Gemini 3.5 Flash Lite'],
@@ -35,7 +35,6 @@ describe('modelChoices', () => {
       ['gpt-terra', 'GPT-5.6 Terra'],
       ['fast', 'Claude Haiku (Recommended)'],
       ['smart', 'Claude Sonnet'],
-      ['groq', 'Groq (Fastest)'],
     ]);
   });
 });
@@ -45,11 +44,14 @@ describe('modelEntry', () => {
     expect(modelEntry('gemini-lite').title).toBe('Gemini 3.5 Flash Lite');
     expect(modelEntry('gpt-luna').name).toBe('Luna');
     expect(modelEntry('fast').name).toBe('Haiku');
-    expect(modelEntry('groq').label).toBe('Groq (Fastest)');
   });
 
   it('names a session still set to the retired Gemini 3.6 Flash as Claude Haiku (ADR-0104)', () => {
     expect(modelEntry('gemini-flash').name).toBe('Haiku');
+  });
+
+  it('ADR-0121: names a session still set to the hidden Groq as Claude Haiku', () => {
+    expect(modelEntry('groq').name).toBe('Haiku');
   });
 });
 
@@ -59,6 +61,8 @@ describe('modelOff', () => {
     expect(modelOff('fast', { ...DEFAULT_MODEL_ACCESS, smart: false })).toBe(false);
     expect(modelOff('smart', { ...all, smart: false })).toBe(true);
     expect(modelOff('groq', { ...all, groq: false })).toBe(true);
+    // ADR-0121: hidden, so off even with its switch on.
+    expect(modelOff('groq', all)).toBe(true);
     expect(modelOff('gemini-lite', { ...all, gemini: false })).toBe(true);
     // ADR-0104: retired, so off even with every switch on.
     expect(modelOff('gemini-flash', all)).toBe(true);

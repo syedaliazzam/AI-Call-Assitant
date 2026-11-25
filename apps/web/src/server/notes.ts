@@ -18,6 +18,8 @@
  * - Ratings in the notes come from the request (the user's own ratings), never from the model.
  * - A part of the call too unclear to follow is listed as unclear instead of guessed.
  * - Proposed lessons are suggestions: nothing is learned until the user approves one (Stage 7).
+ * - ADR-0121: a reply cut off at the token limit keeps its complete items and is marked `cutOff`
+ *   (src/server/jsonPrefix.ts); the sections come summary first, so a cut loses the later ones first.
  * Notes, transcript and session text is never logged.
  */
 import 'server-only';
@@ -31,13 +33,18 @@ import {
   type AnswerUsage,
   type SessionContext,
 } from '@kite/shared';
-import { cachedBlock, jsonReply } from './claude';
+import { cachedBlock, jsonReply, ReplyCutOffError } from './claude';
 import { clockTime, smartSessionBlock, themSpeaker } from './prompt';
 import { NOTES_CONTRACT, NOTES_END_REMINDER, withGlobalPrompt } from './prompts/contract';
 import { DEFAULT_NOTES_PROMPT } from './prompts/defaults';
 
-/** Most tokens the notes may use (a long call's notes are about 1,000–1,500). */
-export const NOTES_MAX_TOKENS = 4_000;
+/**
+ * Most tokens the notes may use. A 60-minute call's notes measured 615 output tokens (verify-notes,
+ * 25 Nov 2026). ADR-0121 raised it from 4,000 to 8,000: Sonnet wrote about 165 tokens a second, so a
+ * full 8,000 takes about 50 s, inside NOTES_TIMEOUT_MS; a reply that still reaches it keeps its complete
+ * items (cutOff).
+ */
+export const NOTES_MAX_TOKENS = 8_000;
 
 /** Time limit for the notes request, in ms (a 60-minute call takes about 20–40 s). */
 export const NOTES_TIMEOUT_MS = 110_000;
@@ -244,13 +251,87 @@ export function finishNotes(model: ModelNotes, answers: readonly NotesAnswer[]):
 }
 
 /**
+ * Whether a value is a plain object (not an array or null).
+ *
+ * @param value Anything.
+ * @returns True for an object.
+ * Called from: modelNotesOf()
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The items of one notes section that have the schema's shape. A whole reply always has it (structured
+ * outputs); ADR-0121: the complete part of a cut-off reply may lack a section (it was not reached), so a
+ * missing section is empty.
+ *
+ * @param value The section as read.
+ * @param keep  True for an item with the section's shape.
+ * @returns The section's well-formed items.
+ * Called from: modelNotesOf()
+ */
+function sectionOf<T>(value: unknown, keep: (item: unknown) => item is T): T[] {
+  return Array.isArray(value) ? value.filter(keep) : [];
+}
+
+/**
+ * Turns the reply's JSON (whole, or the complete part of a cut-off reply) into the model's notes, keeping
+ * only well-formed items (ADR-0121).
+ *
+ * @param value The parsed reply.
+ * @returns The model's notes, every section present (empty when not reached).
+ * Called from: generateCallNotes(); tests
+ */
+export function modelNotesOf(value: unknown): ModelNotes {
+  const notes = isRecord(value) ? value : {};
+  const isString = (item: unknown): item is string => typeof item === 'string' && item !== '';
+  return {
+    summary: sectionOf(notes.summary, isString),
+    questions: sectionOf(
+      notes.questions,
+      (item): item is ModelNotes['questions'][number] =>
+        isRecord(item) &&
+        typeof item.question === 'string' &&
+        typeof item.at === 'number' &&
+        (item.answered === 'yes' || item.answered === 'partly' || item.answered === 'no') &&
+        (typeof item.answerId === 'string' || item.answerId === null),
+    ),
+    nextSteps: sectionOf(
+      notes.nextSteps,
+      (item): item is CallNotes['nextSteps'][number] =>
+        isRecord(item) && typeof item.step === 'string' && typeof item.owner === 'string',
+    ),
+    unclear: sectionOf(
+      notes.unclear,
+      (item): item is CallNotes['unclear'][number] =>
+        isRecord(item) &&
+        typeof item.from === 'number' &&
+        typeof item.to === 'number' &&
+        typeof item.reason === 'string',
+    ),
+    lessons: sectionOf(
+      notes.lessons,
+      (item): item is CallNotes['lessons'][number] =>
+        isRecord(item) && typeof item.text === 'string' && typeof item.evidence === 'string',
+    ),
+  };
+}
+
+/**
  * Writes the notes for a call with the smart model.
+ *
+ * ADR-0121: a reply cut off at NOTES_MAX_TOKENS keeps every item completed before the cut (jsonReply()
+ * with keepCutOff) and is marked `cutOff: true`, so the review can say the notes stop early. Only a cut
+ * before the first complete summary bullet (nothing worth showing) throws ReplyCutOffError, which the
+ * route answers with 'cut_off' and the after-call runner does not retry.
  *
  * @param request      A validated notes request.
  * @param model        The smart model's name (KITE_MODEL_SMART).
  * @param globalPrompt The admin's global prompt for notes (ADR-0089).
- * @returns The notes and the token usage.
- * @throws Anthropic.APIError on API failures; Error('NO_JSON') when the reply has no notes.
+ * @returns The notes, the token usage and the stop reason.
+ * @throws Anthropic.APIError on API failures; ReplyCutOffError (see above); ReplyRefusedError when Claude
+ *         declines; Error('NO_JSON') when a finished reply has no notes.
  * Called from: POST handler in app/api/notes/route.ts; scripts/verify-notes.ts,
  *              scripts/eval-notes.ts
  */
@@ -258,9 +339,9 @@ export async function generateCallNotes(
   request: NotesRequest,
   model: string,
   globalPrompt: string = DEFAULT_NOTES_PROMPT,
-): Promise<{ notes: CallNotes; usage: AnswerUsage }> {
+): Promise<{ notes: CallNotes; usage: AnswerUsage; stopReason: string | null }> {
   const { system, prompt } = notesPrompt(request, globalPrompt);
-  const { value, usage } = await jsonReply({
+  const { value, usage, stopReason, cutOff } = await jsonReply({
     model,
     tier: 'smart',
     system,
@@ -268,6 +349,11 @@ export async function generateCallNotes(
     schema: NOTES_SCHEMA,
     maxTokens: NOTES_MAX_TOKENS,
     timeoutMs: NOTES_TIMEOUT_MS,
+    keepCutOff: true,
   });
-  return { notes: finishNotes(value as ModelNotes, request.answers), usage };
+  const fromModel = modelNotesOf(value);
+  // The summary comes first in the schema: a cut before its first bullet leaves nothing worth saving.
+  if (cutOff && fromModel.summary.length === 0) throw new ReplyCutOffError(usage.output_tokens);
+  const notes = finishNotes(fromModel, request.answers);
+  return { notes: cutOff ? { ...notes, cutOff: true } : notes, usage, stopReason };
 }

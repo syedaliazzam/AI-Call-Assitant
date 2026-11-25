@@ -47,6 +47,10 @@ export interface AnswerDone {
    * otherwise.
    */
   templated?: true;
+  /**
+   * ADR-0121: true when the reply reached its output-token limit, so its end is missing; absent otherwise.
+   */
+  cutOff?: true;
 }
 
 /** A failed answer. */
@@ -244,6 +248,8 @@ export function streamAnswer(
             : {}),
           // ADR-0112: only the literal true is passed on.
           ...(payload.templated === true ? { templated: true as const } : {}),
+          // ADR-0121: the same, for a reply cut off at its output limit.
+          ...(payload.cutOff === true ? { cutOff: true as const } : {}),
         }),
       );
     } else if (event === 'error') {

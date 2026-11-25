@@ -23,13 +23,33 @@ export const PRIVATE_LABEL = 'Private';
 const PRIVATE_CHANNEL = 'kite.private';
 
 /**
+ * 1.8.0 (ADR-0111): what Mac users see while Private is on. On recent macOS, apps that capture the screen
+ * with ScreenCaptureKit (Chrome, so Google Meet; recent Zoom and Teams) can still show Paramount AI's windows
+ * in a whole-screen share (Electron docs), so the safe way is to share one window or tab.
+ */
+export const PRIVATE_MAC_NOTE = 'On Mac, share a single window or tab, not your entire screen.';
+
+/**
+ * The line shown under the Private switch: the Mac advice while Private is on, on a Mac.
+ *
+ * @param state The current state, or null while it is being read.
+ * @param mac   True on a Mac.
+ * @returns PRIVATE_MAC_NOTE, or undefined for no line.
+ * Called from: HomeMenu.tsx, LiveMenu.tsx, Settings.tsx; tests
+ */
+export function privateNote(state: ShareProtectionState | null, mac: boolean): string | undefined {
+  return mac && state?.on && state.supported ? PRIVATE_MAC_NOTE : undefined;
+}
+
+/**
  * What Private does, for its info button and for Settings.
  *
  * @param state The current state, or null while it is being read.
+ * @param mac   True on a Mac (ADR-0111: says plainly what it cannot promise there); default false.
  * @returns The words.
  * Called from: HomeMenu.tsx, LiveMenu.tsx, Settings.tsx; tests
  */
-export function privateHint(state: ShareProtectionState | null): string {
+export function privateHint(state: ShareProtectionState | null, mac = false): string {
   if (state && !state.supported) {
     return getPlatform().kind === 'desktop'
       ? 'This computer cannot hide a window from screen sharing. Share a single window instead of the whole screen, or keep Paramount AI on another monitor.'
@@ -40,6 +60,9 @@ export function privateHint(state: ShareProtectionState | null): string {
     state && state.scope !== 'all'
       ? "Paramount AI's overlay is"
       : "All of Paramount AI's windows are";
+  if (mac) {
+    return `${what} hidden from screen sharing where macOS allows it, but on recent macOS many meeting apps (Google Meet in Chrome, recent Zoom and Teams) can still show them in a whole-screen share. ${PRIVATE_MAC_NOTE} Paramount AI stays in your Dock. It does nothing against monitoring or proctoring tools.`;
+  }
   return `${what} left out of screen shares (Windows 10 version 2004 or later; on macOS, some capture apps may still show them). Paramount AI stays in your taskbar. It does nothing against monitoring or proctoring tools.`;
 }
 

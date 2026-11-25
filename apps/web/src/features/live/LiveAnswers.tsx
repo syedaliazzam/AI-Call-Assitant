@@ -9,7 +9,9 @@
  *          dictation), going between the overlay and this window (⋮, Back to compact, Esc), and the
  *          duplicate-safe "Answer this" for transcript bubbles (registered with the live page). v1.1.0
  *          (ADR-0041): also what the stacked overlay's panels and menu need. Desktop 1.5.0 (ADR-0068): the
- *          meeting recording's state, its commands and Ctrl+Alt+R.
+ *          meeting recording's state, its commands and Ctrl+Alt+R. ADR-0122: Ctrl+Alt+K during an overlay call
+ *          opens the overlay's chat bar. ADR-0123: Ctrl+Enter answers the other person on a call and the user's
+ *          own newest spoken question on their own; Ctrl+Shift+Space always the user's own; no Voice mode.
  * Used by: src/features/live/LivePage.tsx (live view);
  *          tests/integration/harness/answers.tsx (the answer harness test)
  * Depends on: src/features/live (useLiveAnswers, TopBar, ChatBox, AnswerPanel, useCallDictation),
@@ -40,7 +42,7 @@ import {
   type AnswerModelAccess,
 } from '@/core/session/modelAccess';
 import { modelOff } from '@/core/session/modelChoices';
-import { mustMoveToHaiku } from '@/core/session/retireModels';
+import { mustMoveToHaiku, offeredModel } from '@/core/session/retireModels';
 import { callTimings } from '@/core/live/callTimings';
 import {
   clampStep,
@@ -78,6 +80,7 @@ import { useAutoAnswer } from './useAutoAnswer';
 import type { CallDictation } from './useCallDictation';
 import { openDashboard } from '@/features/sync/dashboardLink';
 import { useLiveAnswers, type AnswerStore } from './useLiveAnswers';
+import { usePressTarget } from './usePressTarget';
 import type { CallRecording } from './useCallRecording';
 import type { CallNotice } from '@/core/live/callNotice';
 
@@ -187,6 +190,12 @@ export interface LiveAnswersProps {
 /** How many of the latest bubbles the overlay gets: the call window and Review have them all. */
 const OVERLAY_GROUPS = 150;
 
+/**
+ * ADR-0118: how many phrase chips the overlay's transcript bar gets (three words each): enough to fill a wide
+ * bar; a narrow one shows the newest that fit and scrolls the rest out (it had 6, of which it showed 4).
+ */
+const OVERLAY_CHIPS = 10;
+
 /** How many hidden echo lines in a call before the one-time "Use headphones" hint shows. */
 const HEADPHONES_HINT_AFTER = 3;
 
@@ -195,9 +204,6 @@ const HEADPHONES_HINT_AFTER = 3;
  * 250 (was 120): each message re-renders the overlay, which competed with the live speech engine.
  */
 const LEVELS_EVERY_MS = 250;
-
-/** ADR-0095: how long Voice mode's one-time tip stays up by itself, in ms. */
-const VOICE_TIP_MS = 8_000;
 
 /** What the transcript's "Answer this" buttons need from the answers (v1.0.2). */
 export interface AnswerThisBridge {
@@ -263,11 +269,15 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const [style, setStyle] = useState(props.session.preferences.style);
   // ADR-0094: the overlay's model chip and ⋮ Model row can switch the model during a call. It follows the
   // session too when that changes (Edit session in another window), while rendering as React advises.
-  const [model, setModel] = useState<AnswerModel>(props.session.preferences.model);
+  // ADR-0121: a session still set to a hidden model (Groq) is asked as Claude Haiku from the first answer,
+  // before its stored choice has moved (below), so no request names a model no list offers.
+  const [model, setModel] = useState<AnswerModel>(() =>
+    offeredModel(props.session.preferences.model),
+  );
   const [seenSessionModel, setSeenSessionModel] = useState(props.session.preferences.model);
   if (props.session.preferences.model !== seenSessionModel) {
     setSeenSessionModel(props.session.preferences.model);
-    setModel(props.session.preferences.model);
+    setModel(offeredModel(props.session.preferences.model));
   }
   // ADR-0094: Smart is off once the server says an admin has turned the deeper model off (it then shows
   // disabled in the overlay). ADR-0095: Groq, and ADR-0099: the Gemini and GPT models, are off until the server
@@ -290,11 +300,15 @@ export function LiveAnswers(props: LiveAnswersProps) {
   // ADR-0101: a session still set to Groq while Groq is off moves to Claude Haiku in its stored preferences
   // (the overlay already shows Claude Haiku, and the server answers it with Claude Haiku, never asking Groq).
   // ADR-0104: the same for a retired model (Gemini 3.6 Flash).
+  // ADR-0121: the same for a hidden model (Groq); `model` already says 'fast' for it, so the stored choice is
+  // checked as well.
   const sessionIdForModel = props.session.id;
+  const storedModel = props.session.preferences.model;
   useEffect(() => {
-    if (!accessKnown || !mustMoveToHaiku(model, access)) return;
+    if (!accessKnown) return;
+    if (!mustMoveToHaiku(model, access) && !mustMoveToHaiku(storedModel, access)) return;
     updateSessionPreferences(sessionIdForModel, { model: 'fast' }).catch(() => undefined);
-  }, [accessKnown, access, model, sessionIdForModel]);
+  }, [accessKnown, access, model, storedModel, sessionIdForModel]);
   // The answers use the new style and model from the next answer: one already streaming keeps its request.
   const session = useMemo(
     () => ({ ...props.session, preferences: { ...props.session.preferences, style, model } }),
@@ -315,9 +329,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
   // v1.1.0: the overlay's ⋮ can turn auto-answer on or off for this call.
   const [autoChoice, setAutoChoice] = useState<boolean | null>(null);
   const [headphonesClosed, setHeadphonesClosed] = useState(false);
-  // ADR-0095: Voice mode's one-time tip, shown when it is first turned on on this device.
-  const [voiceTip, setVoiceTip] = useState(false);
+  // ADR-0123: no Voice mode any more (its button, menu switch and tip are gone): the user's own spoken questions
+  // are answered on a key press instead (Ctrl+Enter on your own, Ctrl+Shift+Space always).
   const answers = useLiveAnswers({
+    // ADR-0123: with no other-side source, Ctrl+Enter answers the user's own questions.
+    themConnected: props.audio?.them ?? true,
     chatTarget,
     session,
     documents: props.documents,
@@ -349,6 +365,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
   );
   // Desktop app: global shortcuts another app already uses (they work only while Kite has focus).
   const [taken, setTaken] = useState<string[]>([]);
+  // ADR-0110 (amended 25 Nov 2026): taken ones the page does not handle (show or hide, moves, Click-through,
+  // Rec): they do not work at all during this call.
+  const [takenUnavailable, setTakenUnavailable] = useState<string[]>([]);
   // ADR-0076 (G4): the Answer shortcut's label when another app holds it (a lasting overlay warning).
   const [answerTaken, setAnswerTaken] = useState<string | null>(null);
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
@@ -418,6 +437,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const recordingCompact = props.recording?.compact;
   // ADR-0101: where the voice shortcut works (browser only; the platform says).
   const [voiceHint] = useState(() => getPlatform().voiceShortcutHint());
+  // ADR-0123: who Ctrl+Enter answers right now, for the hint on bar 2 (the press reads the same rule).
+  const target = usePressTarget(lines, audioThem);
   const compactState = useMemo<CompactState>(() => {
     const parts = entry ? splitAnswer(entry.text) : null;
     const answeredIds = answeredGroupIds(
@@ -430,6 +451,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       chips: transcriptChips(
         visibleLines.filter((line) => !line.final || !looksGarbled(line.text)),
         terms,
+        OVERLAY_CHIPS,
       ),
       liveQuestion: liveQuestion(
         visibleLines.filter((line) => !line.final || !looksGarbled(line.text)),
@@ -470,10 +492,14 @@ export function LiveAnswers(props: LiveAnswersProps) {
               headline: parts.headline,
               ...(entry.meta ? { meta: entry.meta } : {}),
               claims: entry.claims ?? [],
+              // ADR-0121: the reply reached its output limit (the overlay card says so).
+              ...(entry.cutOff ? { cutOff: true } : {}),
               askedAt: entry.askedAt,
               rating: entry.rating,
               reported: entry.reported ?? false,
               auto: entry.auto ?? false,
+              // ADR-0123: the user's own words ("Your question:" on the card).
+              ...(entry.yours ? { yours: true } : {}),
               status: entry.status,
               mode: entry.mode,
               error: entry.status === 'error' ? (entry.error ?? null) : null,
@@ -508,10 +534,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
       // ADR-0101: in a browser, where the voice shortcut works (shown while a voice question listens).
       ...(voiceHint ? { voiceShortcutHint: voiceHint } : {}),
       dictationNotice: props.dictation?.notice ?? null,
-      // ADR-0095: only where dictation works in this call (the microphone is running).
-      ...(props.dictation?.supported
-        ? { voiceMode: props.dictation?.voice ?? 'off', voiceTip }
-        : {}),
+      // ADR-0123: no voiceMode or voiceTip any more (Voice mode has no control), so the overlay shows neither.
+      pressTarget: target,
       startedAt: props.callStartedAt,
       ...(recordingCompact ? { recording: recordingCompact } : {}),
     };
@@ -538,8 +562,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     props.dictation?.supported,
     props.dictation?.listening,
     props.dictation?.notice,
-    props.dictation?.voice,
-    voiceTip,
+    target,
     questionClearedAt,
     terms,
     entry,
@@ -644,33 +667,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
       voiceShotCard.current = null;
     }
     dictationRef.current?.start(voiceQuestionTarget(chatTargetRef.current));
-  });
-  /**
-   * ADR-0095: turns Voice mode on or off (bar 1's Voice toggle, the ⋮ menu, Escape). Its questions go where a
-   * voice question's go (the setOnText handler below). The first time on this device it shows the tip
-   * "Mute yourself in the meeting first if others can hear you". Off by default in every call: the state
-   * lives in the call's dictation, which starts off.
-   *
-   * @param on True to turn it on.
-   */
-  const setVoiceMode = useRef((on: boolean) => {
-    const dictation = dictationRef.current;
-    if (!dictation?.supported) return;
-    voiceShot.current = null;
-    // ADR-0101: Voice mode turned on also resumes a paused listen.
-    if (on) resumeForVoice.current();
-    if (!on) {
-      dictation.setVoice(false, 'auto');
-      setVoiceTip(false);
-      callTimings.noteTrace('voice-mode', { on: false });
-      return;
-    }
-    dictation.setVoice(true, voiceQuestionTarget(chatTargetRef.current));
-    callTimings.noteTrace('voice-mode', { on: true });
-    if (!hintSeen('voice-mode')) {
-      markHintSeen('voice-mode');
-      setVoiceTip(true);
-    }
   });
   /**
    * ADR-0101: before a voice question (or Voice mode) listens: a paused listen ("Still in a call?" went
@@ -787,10 +783,17 @@ export function LiveAnswers(props: LiveAnswersProps) {
       else if (command.type === 'dictate') {
         if (command.on) dictationRef.current?.start(chatTargetRef.current);
         else dictationRef.current?.stop();
-      } else if (command.type === 'voice') void voiceQuestion.current(command.screenshot);
-      // ADR-0095: Voice mode, and its tip closed.
-      else if (command.type === 'voice-mode') setVoiceMode.current(command.on);
-      else if (command.type === 'voice-tip-seen') setVoiceTip(false);
+      } else if (command.type === 'voice') {
+        // ADR-0123: Ctrl+Alt+Enter (screenshot: true) is still the screenshot and voice question; without a
+        // screenshot (an overlay from before ADR-0123) it is Ctrl+Shift+Space: the user's own last question.
+        if (command.screenshot) void voiceQuestion.current(true);
+        else actions.current.ownQuestion('own-question-key');
+      }
+      // ADR-0123: Ctrl+Shift+Space with the overlay focused: the user's own last spoken question.
+      else if (command.type === 'own-question') actions.current.ownQuestion('own-question-key');
+      // ADR-0123: Voice mode has no control any more; 'voice-mode' and 'voice-tip-seen' are ignored.
+      // ADR-0122: Ctrl+Alt+K with the overlay focused opens its chat bar, as the global key does.
+      else if (command.type === 'open-chat') setAskKiteCount((count) => count + 1);
       else if (command.type === 'voice-cancel') cancelVoice.current();
       else if (command.type === 'prev') actions.current.prev();
       else if (command.type === 'next') actions.current.next();
@@ -862,10 +865,12 @@ export function LiveAnswers(props: LiveAnswersProps) {
     () =>
       getPlatform().onHotkey(
         (action) => {
+          // ADR-0123: on a call the other person's newest question; on your own, yours.
           if (action === 'answer') actions.current.answer('hotkey');
-          // ADR-0082: Ctrl+Shift+Space is the voice question; Ctrl+Alt+Enter the screenshot and voice
-          // question (until 1.6.3: the chat box, and the chat box's message with a screenshot).
-          else if (action === 'chat') void voiceQuestion.current(false);
+          // ADR-0123: Ctrl+Shift+Space answers the user's own last spoken question, in both modes (ADR-0082 to
+          // ADR-0123 it listened for a new voice question). Ctrl+Alt+Enter is still the screenshot and voice
+          // question.
+          else if (action === 'chat') actions.current.ownQuestion('own-question-key');
           else if (action === 'screenshot-send') void voiceQuestion.current(true);
           else if (action === 'voice-cancel') cancelVoice.current();
           else if (action === 'zoom-in' || action === 'zoom-out' || action === 'zoom-reset') {
@@ -889,10 +894,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
             // is a click, never the shortcut alone).
             overlayProps.current.recording?.prompt();
           } else if (action === 'ask-kite') {
-            // ADR-0082: the overlay has no message box any more, so while it is in use Ask AI opens in
-            // the dashboard, in the browser, and the call goes on here.
+            // ADR-0122: while the overlay is in use it opens the overlay's chat bar (it counts the presses), without
+            // taking the keyboard from the meeting. (ADR-0082 to ADR-0122 the overlay had no message box, and Ask
+            // AI opened in the dashboard.)
             if (overlayOpened.current) {
-              openDashboard('/ask-kite');
+              setAskKiteCount((count) => count + 1);
               return;
             }
             // Leaving this page would end the call, so during a call the shortcut opens the chat
@@ -903,9 +909,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
             setAskKiteCount((count) => count + 1);
           }
         },
-        (labels, answer) => {
+        (labels, answer, unavailable) => {
           setTaken(labels);
           setAnswerTaken(answer ?? null);
+          setTakenUnavailable(unavailable ?? []);
         },
       ),
     [],
@@ -926,7 +933,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     // ADR-0101: a voice question is answered as soon as the user stops: held hidden at the first
     // end-of-speech signal, shown when they have really finished, cancelled silently if they go on, and asked
     // again on the same card with the whole question if they go on just after it was shown. The screenshot
-    // taken before a Ctrl+Alt+Enter question goes with every one of these.
+    // taken before a Ctrl+Alt+Enter question goes with every one of these. ADR-0121: except the held one: a
+    // question with a screenshot is sent only when it is shown, so a cancelled attempt never sends the image.
     /** The card of the question being asked now, and whether its answer is still held hidden. */
     let card: { id: string; held: boolean } | null = null;
     /**
@@ -952,9 +960,22 @@ export function LiveAnswers(props: LiveAnswersProps) {
     const usedShot = (id: string | null, image: string | null) => {
       if (id && image) voiceShotCard.current = id;
     };
+    /**
+     * ADR-0121: true while a question with a screenshot waits out its hold without a request. A held request
+     * that the user talks over is cancelled, but it was already sent with the whole image (about 2,000 input
+     * tokens, billed, and counted against the daily limit) and each new attempt sent it again. With a
+     * screenshot the question is therefore sent once, when it is shown (at most VOICE_HOLD_MS, 0.3 s, later;
+     * at once on a strong end of speech); without one, nothing changes.
+     */
+    let shotWaiting = false;
     dictation.setVoiceHandler({
       speculate: (text, _target, timing) => {
         const image = shotForNewQuestion();
+        if (image) {
+          // ADR-0121: nothing is sent yet; show() sends it with the screenshot once the hold is over.
+          shotWaiting = true;
+          return;
+        }
         const id = actions.current.voiceAsk(text, {
           image,
           held: true,
@@ -964,6 +985,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         card = id ? { id, held: true } : null;
       },
       show: (text, _target, timing) => {
+        shotWaiting = false;
         if (card?.held) {
           actions.current.voiceShow(card.id);
           card = { id: card.id, held: false };
@@ -979,12 +1001,20 @@ export function LiveAnswers(props: LiveAnswersProps) {
         card = id ? { id, held: false } : null;
       },
       cancel: () => {
+        if (shotWaiting) {
+          // ADR-0121: the user went on speaking before a screenshot question was sent: nothing to cancel,
+          // nothing paid; the screenshot stays free for the whole question.
+          shotWaiting = false;
+          card = null;
+          return;
+        }
         if (card?.held) actions.current.voiceCancel(card.id);
         // ADR-0107: the user went on speaking: the same question continues, so the screenshot stays free for it.
         if (card && voiceShotCard.current === card.id) voiceShotCard.current = null;
         card = null;
       },
       extend: (text, _target, timing) => {
+        shotWaiting = false;
         // The same question, asked again on its card: it keeps its screenshot.
         const image = voiceShot.current;
         const id = actions.current.voiceAsk(text, {
@@ -1028,28 +1058,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
       window.removeEventListener('keydown', onKey, true);
     };
   }, [listening]);
-
-  // ADR-0095: while Voice mode is on, Escape in this window turns it off. Escape is not held from other apps
-  // for it: Voice mode can stay on for a long time, and Escape belongs to the meeting app meanwhile.
-  const voiceOn = (props.dictation?.voice ?? 'off') !== 'off';
-  useEffect(() => {
-    if (!voiceOn) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (!isVoiceCancelKey(event)) return;
-      // Before the Escape that goes back to the overlay.
-      event.preventDefault();
-      setVoiceMode.current(false);
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [voiceOn]);
-
-  // ADR-0095: the tip hides by itself after a while (it was marked seen when shown).
-  useEffect(() => {
-    if (!voiceTip) return;
-    const timer = setTimeout(() => setVoiceTip(false), VOICE_TIP_MS);
-    return () => clearTimeout(timer);
-  }, [voiceTip]);
 
   // ADR-0082: Ctrl+Alt+Enter is a call shortcut. A desktop app from 1.2.0 to 1.6.3 holds it only while the
   // page asks (it was the chat bar's key), so the page asks for the whole call; 1.6.4 holds it anyway.
@@ -1198,14 +1206,27 @@ export function LiveAnswers(props: LiveAnswersProps) {
           {compactNotice}
         </p>
       )}
-      {taken.length > 0 && (
+      {(taken.length > 0 || takenUnavailable.length > 0) && (
         <p
           role="status"
           className="rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
         >
-          Another app already uses {taken.join(', ')}, so{' '}
-          {taken.length === 1 ? 'it works' : 'they work'} only while Paramount AI is in front. Close
-          that app&rsquo;s shortcut, or use the buttons.
+          {taken.length > 0 && (
+            <>
+              Another app already uses {taken.join(', ')}, so{' '}
+              {taken.length === 1 ? 'it works' : 'they work'} only while Paramount AI is in
+              front.{' '}
+            </>
+          )}
+          {takenUnavailable.length > 0 && (
+            <>
+              {/* ADR-0110 (amended 25 Nov 2026): these have no in-page fallback. */}
+              Another app already uses {takenUnavailable.join(', ')}, so{' '}
+              {takenUnavailable.length === 1 ? 'it does' : 'they do'} not work during this
+              call.{' '}
+            </>
+          )}
+          Close that app&rsquo;s shortcut, or use the buttons.
         </p>
       )}
       {!online && (

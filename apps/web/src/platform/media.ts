@@ -234,12 +234,21 @@ export function toCaptureError(
   if (error instanceof CaptureError) return error;
   const name = error instanceof Error ? error.name : '';
   const message = error instanceof Error ? error.message : '';
+  // 1.8.0 (ADR-0111): macOS applies a new Screen Recording permission only to a freshly started app.
   const macPrivacy =
-    'Allow Paramount AI under System Settings → Privacy & Security → Screen & System Audio Recording, then try again.';
+    'Allow Paramount AI under System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen Paramount AI and connect again.';
   if (platform === 'browser' && name === 'NotAllowedError' && !/system/i.test(message)) {
     return new CaptureError(
       'user-cancelled',
       'Sharing was cancelled. Click Connect again and pick the meeting tab.',
+    );
+  }
+  // 1.8.0 (ADR-0111): Chrome on a Mac without the Screen Recording permission can share a tab (no permission
+  // needed) but not a window or the screen.
+  if (platform === 'browser' && os === 'mac' && name === 'NotAllowedError') {
+    return new CaptureError(
+      'permission-denied',
+      'macOS did not let your browser share that. Pick the meeting’s Chrome tab instead (no permission needed), or allow your browser under System Settings → Privacy & Security → Screen & System Audio Recording and reopen it.',
     );
   }
   if (name === 'NotAllowedError' || name === 'AbortError') {

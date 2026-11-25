@@ -162,7 +162,21 @@ export type NotesOutcome =
       status: 'failed';
       /** Why Claude was unavailable (usage limit or overload), or null for any other failure. */
       unavailable: UnavailableReason | null;
+      /**
+       * ADR-0121: true when sending the same request again would fail the same way (the reply was cut
+       * off before anything usable, Claude declined, or the server refused the request as invalid), so
+       * the after-call runner does not pay for it again. Absent for failures that may clear by themselves.
+       */
+      final?: true;
     };
+
+/**
+ * ADR-0121: the /api/notes error codes that the same request would get again.
+ * - cut_off: the reply reached its token limit before its first summary bullet;
+ * - refused: Claude declined to write the notes;
+ * - bad_request: the server rejected the request itself (shape or size).
+ */
+const FINAL_NOTES_CODES: ReadonlySet<string> = new Set(['cut_off', 'refused', 'bad_request']);
 
 /** The JSON body of a failed /api/notes response. */
 interface ErrorBody {
@@ -178,7 +192,8 @@ interface ErrorBody {
  * @param input The call.
  * @param deps  fetch, save and clock (tests).
  * @returns 'saved' with the notes; 'skipped' when the call had nothing to write about; or
- *          'failed', with the reason when Claude was unavailable (usage limit or overload).
+ *          'failed', with the reason when Claude was unavailable (usage limit or overload), and
+ *          (ADR-0121) `final` when the same request would fail the same way again.
  * Called from: LivePage.tsx (at End, not awaited); the review page (Stage 6); tests
  */
 export async function generateNotes(
@@ -214,7 +229,11 @@ export async function generateNotes(
         status: response.status,
         code: failure.code,
       });
-      return { status: 'failed', unavailable: unavailableReason(failure.code, failure.message) };
+      return {
+        status: 'failed',
+        unavailable: unavailableReason(failure.code, failure.message),
+        ...(failure.code && FINAL_NOTES_CODES.has(failure.code) ? { final: true as const } : {}),
+      };
     }
     const body = (await response.json()) as NotesResponse;
     const stored: StoredNotes = {

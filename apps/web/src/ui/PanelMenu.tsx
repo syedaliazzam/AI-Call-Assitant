@@ -163,6 +163,7 @@ export function MenuAction({
  *
  * @param props.label    The words.
  * @param props.info     The explanation, if any.
+ * @param props.note     A line always shown under the row (ADR-0111), if any.
  * @param props.checked  True when on.
  * @param props.disabled True to grey it out.
  * @param props.soon     True for a feature that is visible but not available yet (spec §5).
@@ -173,6 +174,7 @@ export function MenuAction({
 export function MenuSwitch({
   label,
   info,
+  note,
   checked,
   disabled = false,
   soon = false,
@@ -182,6 +184,11 @@ export function MenuSwitch({
   label: string;
   /** The explanation, if any. */
   info?: string;
+  /**
+   * 1.8.0 (ADR-0111): a short line always shown under the row, if any (for example the Mac's Private
+   * advice), in the same muted style as the explanation.
+   */
+  note?: string;
   /** True when on. */
   checked: boolean;
   /** True to grey it out. */
@@ -221,6 +228,7 @@ export function MenuSwitch({
           <Switch checked={checked} ariaLabel={label} disabled={disabled} onChange={onChange} />
         )}
       </div>
+      {note && <p className="px-3 pb-2 text-[12px] leading-snug text-ui-muted">{note}</p>}
       {info && showInfo && (
         <p id={hintId} role="note" className="px-3 pb-2 text-[12px] leading-snug text-ui-muted">
           {info}

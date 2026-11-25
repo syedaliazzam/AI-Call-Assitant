@@ -147,4 +147,12 @@ describe('micErrorMessage', () => {
     expect(micErrorMessage({ name: 'NotFoundError' })).toMatch(/No microphone/);
     expect(micErrorMessage(new Error('anything'))).toMatch(/Voice input could not start/);
   });
+
+  it('ADR-0111: names macOS’s Microphone setting on a Mac, and Windows’ elsewhere', () => {
+    expect(micErrorMessage({ name: 'NotAllowedError' }, true)).toMatch(
+      /System Settings → Privacy & Security → Microphone/,
+    );
+    expect(micErrorMessage({ name: 'NotReadableError' }, true)).not.toMatch(/Windows/);
+    expect(micErrorMessage({ name: 'NotReadableError' })).toMatch(/In Windows/);
+  });
 });

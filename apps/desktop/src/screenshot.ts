@@ -88,6 +88,41 @@ export async function captureScreenshot(deps: ScreenshotDeps): Promise<DesktopSc
   }
 }
 
+/** A window hideByOpacity() can make see-through for a moment. */
+export type OpacityWindow = Pick<
+  BrowserWindow,
+  'getOpacity' | 'setOpacity' | 'isVisible' | 'isDestroyed'
+>;
+
+/**
+ * 1.8.0 (ADR-0111): leaves Kite's windows out of a screenshot on a Mac by making them fully see-through
+ * for the moment it is taken, then putting back each one's own opacity (the overlay's slider sets it).
+ * Windows uses setContentProtection for this (v1.1.0, ADR-0043), but on recent macOS the screen capture
+ * Electron uses (ScreenCaptureKit) ignores it (Electron docs), so the answer would describe Kite itself.
+ * Nothing is hidden from the Dock, the taskbar or the window list (CLAUDE.md): only the pixels, briefly.
+ *
+ * @param windows Every Kite window.
+ * @param wait    Waits so many ms (the window server draws the change first).
+ * @param settleMs How long to wait.
+ * @returns The function that puts the windows back.
+ * Called from: start() in main.ts (installScreenshot's hideOwnWindows, on macOS); tests
+ */
+export async function hideByOpacity(
+  windows: readonly OpacityWindow[],
+  wait: (ms: number) => Promise<void>,
+  settleMs: number,
+): Promise<() => void> {
+  const shown = windows.filter((window) => !window.isDestroyed() && window.isVisible());
+  const before = shown.map((window) => window.getOpacity());
+  for (const window of shown) window.setOpacity(0);
+  await wait(settleMs);
+  return () => {
+    shown.forEach((window, index) => {
+      if (!window.isDestroyed()) window.setOpacity(before[index] ?? 1);
+    });
+  };
+}
+
 /** What installScreenshot() needs. */
 export interface ScreenshotInstallDeps extends Omit<ScreenshotDeps, 'window'> {
   /** Electron's ipcMain. */

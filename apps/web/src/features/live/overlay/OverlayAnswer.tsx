@@ -9,7 +9,8 @@
  *          key), and the panel is never narrower than that strip (the answer text below it does not set the
  *          panel's smallest width: it wraps). The corner grip changes the panels' own width sideways and the
  *          window's height up and down; on a right position it sits in the bottom left.
- *          ADR-0115: the question starts with a small, muted "Question:" label (Parakeet's convention).
+ *          ADR-0115: the question starts with a small, muted "Question:" label (Parakeet's convention); ADR-0123:
+ *          "Your question:" when it is the user's own words.
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (hotkeys, AnswerType), src/core/answer/format.ts,
  *             src/core/live/liveChannel.ts, src/features/answers (AnswerBody, AnswerTags),
@@ -25,12 +26,7 @@
  */
 'use client';
 
-import {
-  FOCUSED_HOTKEYS,
-  hotkeyLabel,
-  type AnswerType,
-  type OverlayResizeStep,
-} from '@kite/shared';
+import { focusedHotkeys, hotkeyLabel, type AnswerType, type OverlayResizeStep } from '@kite/shared';
 import { useEffect, useRef, useState } from 'react';
 import { answerText, cardQuestion } from '@/core/answer/format';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
@@ -108,10 +104,12 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           aria-label="Previous question"
           disabled={index <= 0}
           onClick={() => onCommand({ type: 'prev' })}
-          aria-keyshortcuts={hotkeyLabel(FOCUSED_HOTKEYS.prev, mac)}
+          aria-keyshortcuts={hotkeyLabel(focusedHotkeys(mac).prev, mac)}
           // ADR-0085: words for screen readers (no title: its tooltip is an unprotected window). A spread,
           // as jsx-a11y's role list predates ARIA 1.3's aria-description (Chromium reads it).
-          {...{ 'aria-description': `Previous answer (${tipShortcut(FOCUSED_HOTKEYS.prev, mac)})` }}
+          {...{
+            'aria-description': `Previous answer (${tipShortcut(focusedHotkeys(mac).prev, mac)})`,
+          }}
         >
           {/* ADR-0082: the arrow only (no Ctrl on the chip). */}
           <span aria-hidden="true" className="px-0.5 text-[15px] leading-none">
@@ -124,10 +122,10 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           aria-label="Next question"
           disabled={index < 0 || index >= total - 1}
           onClick={() => onCommand({ type: 'next' })}
-          aria-keyshortcuts={hotkeyLabel(FOCUSED_HOTKEYS.next, mac)}
+          aria-keyshortcuts={hotkeyLabel(focusedHotkeys(mac).next, mac)}
           // ADR-0085: words for screen readers (no title: its tooltip is an unprotected window). A spread,
           // as jsx-a11y's role list predates ARIA 1.3's aria-description (Chromium reads it).
-          {...{ 'aria-description': `Next answer (${tipShortcut(FOCUSED_HOTKEYS.next, mac)})` }}
+          {...{ 'aria-description': `Next answer (${tipShortcut(focusedHotkeys(mac).next, mac)})` }}
         >
           <span aria-hidden="true" className="px-0.5 text-[15px] leading-none">
             →
@@ -150,10 +148,12 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           onClick={() => onCommand({ type: 'clear' })}
           disabled={!state}
           aria-label="Clear answers"
-          aria-keyshortcuts={hotkeyLabel(FOCUSED_HOTKEYS.clear, mac)}
+          aria-keyshortcuts={hotkeyLabel(focusedHotkeys(mac).clear, mac)}
           // ADR-0085: words for screen readers (no title: its tooltip is an unprotected window). A spread,
           // as jsx-a11y's role list predates ARIA 1.3's aria-description (Chromium reads it).
-          {...{ 'aria-description': `Clear answers (${tipShortcut(FOCUSED_HOTKEYS.clear, mac)})` }}
+          {...{
+            'aria-description': `Clear answers (${tipShortcut(focusedHotkeys(mac).clear, mac)})`,
+          }}
         >
           {/* ADR-0113: the key always shows: the strip never changes with the panel's width. */}
           Clear <KeyChip hotkey="clear" />
@@ -196,10 +196,11 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
               >
                 <span
                   aria-hidden="true"
-                  data-question-label=""
+                  data-question-label={answer.yours ? 'yours' : 'theirs'}
                   className="mr-1.5 select-none text-[13px] font-medium text-ui-muted"
                 >
-                  Question:
+                  {/* ADR-0123: the user's own words (typed, a voice question, or their own spoken question). */}
+                  {answer.yours ? 'Your question:' : 'Question:'}
                 </span>
                 {cardQuestion(answer.question, answer.cleanQuestion)}
               </p>
@@ -226,6 +227,7 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
                     headlineLabel="Answer line"
                     hideEmptyHeadline={answer.status === 'cancelled' || answer.status === 'error'}
                     claims={answer.claims}
+                    cutOff={answer.cutOff === true}
                     {...(answer.meta?.target ? { target: answer.meta.target } : {})}
                     {...(props.copy ? { copy: props.copy } : {})}
                   />

@@ -95,10 +95,12 @@ export async function setDeepModelAction(enabled: boolean): Promise<boolean> {
 
 /**
  * ADR-0095: turns Groq ("Fastest (Groq)") on or off for sessions.
+ * ADR-0121: dormant. Groq is hidden from every model list and its switch is no longer on the Usage page; this
+ * action is kept with Groq's server code so bringing Groq back needs only its list row and switch again.
  *
  * @param enabled The new state.
  * @returns True when saved.
- * Called from: the Groq DeepModelSwitch on app/(app)/admin/usage/page.tsx
+ * Called from: nothing since ADR-0121 (was the Groq DeepModelSwitch on app/(app)/admin/usage/page.tsx)
  */
 export async function setGroqModelAction(enabled: boolean): Promise<boolean> {
   const session = await requireAdmin();

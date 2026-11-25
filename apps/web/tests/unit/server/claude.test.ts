@@ -6,6 +6,8 @@
  * streaming, with the answers' thinking setting, and returns the cache usage; thinkingFor() turns
  * thinking off in the way each model accepts; jsonReply() asks for structured output with the
  * given schema and the tier's thinking setting, parses the reply, and throws NO_JSON without text;
+ * ADR-0121: jsonReply() checks the stop reason: a cut-off reply throws ReplyCutOffError, or with
+ * keepCutOff returns its complete part with cutOff true; a refusal throws ReplyRefusedError;
  * textReply() (ADR-0116) asks for plain text and returns a reply cut off at the token limit, with
  * its stop reason, instead of throwing;
  * describeClaudeError() maps SDK errors to Kite error codes without leaking API text, and maps
@@ -43,6 +45,8 @@ const {
   cachedBlock,
   describeClaudeError,
   jsonReply,
+  ReplyCutOffError,
+  ReplyRefusedError,
   streamReply,
   textReply,
   thinkingFor,
@@ -243,6 +247,71 @@ describe('jsonReply', () => {
     createMock.mockResolvedValue({ content: [], usage: { input_tokens: 1, output_tokens: 0 } });
     await expect(jsonReply(JSON_INPUT)).rejects.toThrow('NO_JSON');
   });
+
+  it('ADR-0121: returns the stop reason and cutOff false for a whole reply', async () => {
+    createMock.mockResolvedValue({
+      content: [{ type: 'text', text: '{"facts":3}' }],
+      usage: { input_tokens: 50, output_tokens: 9 },
+      stop_reason: 'end_turn',
+    });
+    const result = await jsonReply(JSON_INPUT);
+    expect(result).toMatchObject({ stopReason: 'end_turn', cutOff: false });
+  });
+
+  it('ADR-0121: a cut-off reply throws ReplyCutOffError (with its token count) unless asked to keep it', async () => {
+    createMock.mockResolvedValue({
+      content: [{ type: 'text', text: '{"summary":["one","tw' }],
+      usage: { input_tokens: 50, output_tokens: 300 },
+      stop_reason: 'max_tokens',
+    });
+    const error = await jsonReply(JSON_INPUT).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ReplyCutOffError);
+    expect((error as InstanceType<typeof ReplyCutOffError>).outputTokens).toBe(300);
+  });
+
+  it('ADR-0121: with keepCutOff, a cut-off reply keeps its complete part', async () => {
+    createMock.mockResolvedValue({
+      content: [{ type: 'text', text: '{"summary":["one","tw' }],
+      usage: { input_tokens: 50, output_tokens: 300 },
+      stop_reason: 'max_tokens',
+    });
+    const result = await jsonReply({ ...JSON_INPUT, keepCutOff: true });
+    expect(result).toMatchObject({
+      value: { summary: ['one'] },
+      stopReason: 'max_tokens',
+      cutOff: true,
+    });
+  });
+
+  it('ADR-0121: with keepCutOff, a cut in the first key gives an empty object; an empty reply throws', async () => {
+    createMock.mockResolvedValue({
+      content: [{ type: 'text', text: '{"summ' }],
+      usage: { input_tokens: 50, output_tokens: 300 },
+      stop_reason: 'max_tokens',
+    });
+    // '{"summ' reads as {} (an object with nothing complete): nothing usable, but not undefined either.
+    const result = await jsonReply({ ...JSON_INPUT, keepCutOff: true }).catch(
+      (caught: unknown) => caught,
+    );
+    expect(result).toMatchObject({ value: {}, cutOff: true });
+    createMock.mockResolvedValue({
+      content: [{ type: 'text', text: '' }],
+      usage: { input_tokens: 50, output_tokens: 300 },
+      stop_reason: 'max_tokens',
+    });
+    await expect(jsonReply({ ...JSON_INPUT, keepCutOff: true })).rejects.toBeInstanceOf(
+      ReplyCutOffError,
+    );
+  });
+
+  it('ADR-0121: a refusal throws ReplyRefusedError', async () => {
+    createMock.mockResolvedValue({
+      content: [],
+      usage: { input_tokens: 50, output_tokens: 0 },
+      stop_reason: 'refusal',
+    });
+    await expect(jsonReply(JSON_INPUT)).rejects.toBeInstanceOf(ReplyRefusedError);
+  });
 });
 
 describe('textReply (ADR-0116)', () => {
@@ -324,6 +393,11 @@ describe('describeClaudeError', () => {
     const described = describeClaudeError(error);
     expect(described.code).toBe('upstream_error');
     expect(described.message).not.toContain('secret details');
+  });
+
+  it('ADR-0121: maps a cut-off reply to "cut_off" and a refusal to "refused"', () => {
+    expect(describeClaudeError(new ReplyCutOffError(8000)).code).toBe('cut_off');
+    expect(describeClaudeError(new ReplyRefusedError()).code).toBe('refused');
   });
 
   it('maps anything else to "internal"', () => {

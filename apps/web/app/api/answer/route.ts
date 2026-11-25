@@ -64,7 +64,7 @@ import {
 } from '@/server/providerStream';
 import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
 import { companySettings, type BlockSettings } from '@/server/aiInstructions';
-import { ANSWER_MAX_TOKENS, buildPrompt } from '@/server/prompt';
+import { buildPrompt, liveMaxTokens } from '@/server/prompt';
 import { HELLO_MAX_TOKENS, HELLO_MESSAGES, HELLO_SYSTEM } from '@/server/prompts/hello';
 import { SSE_HEADERS, toEventStream } from '@/server/sse';
 import {
@@ -482,7 +482,8 @@ async function respond(
       mode === 'kite'
         ? buildKiteChatPrompt(data, company.globalPrompt)
         : buildPrompt(data, company.globalPrompt);
-    const maxTokens = mode === 'kite' ? KITE_CHAT_MAX_TOKENS : ANSWER_MAX_TOKENS;
+    // ADR-0121: a screenshot answer (often a whole coding answer) has its own, larger limit.
+    const maxTokens = mode === 'kite' ? KITE_CHAT_MAX_TOKENS : liveMaxTokens(mode);
     // The answer from Claude (the session's tier; Haiku for a Groq session).
     const claudeReply = () =>
       streamReply({
@@ -639,6 +640,11 @@ async function respond(
         ...(fallback ? { fallback } : {}),
         // ADR-0112: the reply was stopped on a copied template (the browser asks again once).
         ...(contract.templatedReply ? { templated: true as const } : {}),
+        // ADR-0121: the reply reached its output limit, so its end is missing (the card says so). Not for a
+        // warm-up, which stops at max_tokens 0 by design, or the hello test.
+        ...(result.stopReason === 'max_tokens' && mode !== 'warm' && mode !== 'hello'
+          ? { cutOff: true as const }
+          : {}),
       };
     },
     onError: (error): AnswerEvent => {

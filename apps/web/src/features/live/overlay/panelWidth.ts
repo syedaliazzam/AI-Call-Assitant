@@ -49,6 +49,21 @@ export function columnAlignClass(column: OverlayColumn): string {
 }
 
 /**
+ * ADR-0124 (like ParakeetAI): the column the panels' block lines up by. The answer open alone sits centred under
+ * the bars on every position; with the transcript open too, the pair lines up by the position's column, as
+ * ADR-0113 and ADR-0119 decided (on a left position it extends from bar 1's left edge, on a right one from its
+ * right edge, centred evenly).
+ *
+ * @param column The position's column (overlayColumn()).
+ * @param both   True when the transcript and the answer are both open.
+ * @returns The column for the panels' block (and for the answer's corner grip).
+ * Called from: CompactView.tsx; tests
+ */
+export function panelsColumn(column: OverlayColumn, both: boolean): OverlayColumn {
+  return both ? column : 'center';
+}
+
+/**
  * Which side of the answer panel its corner grip sits on: the side that moves when the panel grows. On a
  * right position the panel's right edge stays on the bar's right edge, so the grip is on the left.
  *
