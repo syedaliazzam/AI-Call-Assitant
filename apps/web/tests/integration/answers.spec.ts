@@ -326,13 +326,38 @@ test('the compact view shows the live answer; its Answer and Clear answers keys 
   await compact.goto(`${origin}/compact-harness`);
   const bar = compact.getByRole('toolbar', { name: 'Overlay controls' });
   await expect(bar).toBeVisible();
-  // ADR-0085: the transcript panel is open on a device's first call (this fresh profile), in bar 2's place;
-  // its switch closes it, and bar 2 with the latest words shows again.
-  const transcriptSwitch = bar.getByRole('switch', { name: 'Transcript' });
-  await expect(transcriptSwitch).toBeChecked();
-  await transcriptSwitch.click();
-  // Nothing has been answered since the reload: the live page says so.
-  await expect(compact.getByLabel('Latest words')).toContainText(/forty/i);
+  // ADR-0085: the transcript panel is open on a device's first call (this fresh profile). ADR-0118: it opens
+  // under bar 2, which stays with the live words; bar 1 has no Transcript switch any more, and bar 2's green
+  // level button, its expand button (⤢) and Ctrl+Alt+T (with the bars focused) each open or close the panel.
+  // (Until 25 Nov 2026 this test still used bar 1's Transcript switch, removed on purpose by ADR-0118.)
+  const statusBar = compact.getByRole('group', { name: 'Status bar' });
+  const panel = compact.getByRole('region', { name: 'Transcript panel' });
+  await expect(bar.getByRole('switch', { name: 'Transcript' })).toHaveCount(0);
+  await expect(panel).toBeVisible();
+  await expect(statusBar.getByRole('button', { name: 'Hide the transcript' })).toBeVisible();
+  await expect(
+    statusBar.getByRole('button', { name: 'Close the full transcript', exact: true }),
+  ).toBeVisible();
+  // Nothing has been answered since the reload: the live page says so, on bar 2, with the panel open.
+  await expect(statusBar.getByLabel('Latest words')).toContainText(/forty/i);
+  // The green level button closes it; bar 2 and its words stay.
+  await statusBar.getByRole('button', { name: 'Hide the transcript' }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(statusBar.getByLabel('Latest words')).toContainText(/forty/i);
+  // The expand button opens it again under bar 2.
+  await statusBar.getByRole('button', { name: 'Open the full transcript', exact: true }).click();
+  await expect(panel).toBeVisible();
+  const barBox = (await statusBar.boundingBox())!;
+  expect((await panel.boundingBox())!.y).toBeGreaterThanOrEqual(barBox.y + barBox.height);
+  // Ctrl+Alt+T with the bars focused closes it, and opens it again.
+  await bar.click({ position: { x: 4, y: 4 } });
+  await compact.keyboard.press('Control+Alt+t');
+  await expect(panel).toHaveCount(0);
+  await compact.keyboard.press('Control+Alt+t');
+  await expect(panel).toBeVisible();
+  await compact.keyboard.press('Control+Alt+t');
+  await expect(panel).toHaveCount(0);
+  await expect(statusBar.getByLabel('Latest words')).toContainText(/forty/i);
   // ADR-0082: no Answer, Screenshot or Chat buttons on the overlay, and no message box; the shortcuts do
   // their work. Ctrl+Enter with the overlay focused asks the live page.
   for (const name of ['Answer', 'Screenshot', 'Chat']) {
