@@ -607,6 +607,10 @@ function withOverlayParams(base: CompactState): CompactState {
     params.get('voice') === 'paused'
       ? { voiceMode: params.get('voice') as 'off' | 'listening' | 'paused' }
       : {}),
+    // ADR-0123: ?press=them|you shows bar 2's hint of what Ctrl+Enter answers now.
+    ...(params.get('press') === 'them' || params.get('press') === 'you'
+      ? { pressTarget: params.get('press') as 'them' | 'you' }
+      : {}),
     ...(rec === 'on' || rec === 'off'
       ? {
           recording: {

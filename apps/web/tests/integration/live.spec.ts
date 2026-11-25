@@ -2412,7 +2412,7 @@ test('WP3 pictures: chat bar, answer alone centred, transcript and answer the sa
           const page = await context.newPage();
           await page.goto(`${origin}/?view=gate`);
           await page.goto(
-            `${origin}/?view=compact&glass=1&alpha=0.82&shell=1&position=${position}&rec=off&ct=off&panels=${panels}&os=windows`,
+            `${origin}/?view=compact&glass=1&alpha=0.82&shell=1&position=${position}&rec=off&ct=off&panels=${panels}&os=windows&press=${position === 'top-center' ? 'them' : 'you'}`,
           );
           await page.getByRole('toolbar', { name: 'Overlay controls' }).waitFor();
           if (chat) {
@@ -2531,5 +2531,81 @@ test('ADR-0122: Chat on bar 1 opens the chat bar under it; it never takes the ke
   const low2 = (await page.getByRole('group', { name: 'Status bar' }).boundingBox())!;
   expect(lowChat.y + lowChat.height).toBeLessThan(low1.y + 1);
   expect(low2.y + low2.height).toBeLessThan(lowChat.y + 1);
+  await watched.context.close();
+});
+
+test('ADR-0124: transcript and answer always the same height side by side; the answer alone centred under the bars', async () => {
+  for (const width of [640, 1280]) {
+    for (const position of ['top-center', 'bottom-center', 'top-left', 'bottom-right'] as const) {
+      const watched = await openOverlayView(
+        { width, height: 620, touch: false },
+        `&panels=transcript,answer&shell=1&position=${position}`,
+      );
+      const { page } = watched;
+      const transcript = page.locator('[data-transcript-panel]');
+      const answer = page.locator('[data-answer-panel]');
+      // Side by side and exactly as tall as each other (top and bottom rows alike).
+      await expect
+        .poll(async () => {
+          const t = (await transcript.boundingBox())!;
+          const a = (await answer.boundingBox())!;
+          return {
+            sideBySide: t.x + t.width <= a.x + 1,
+            sameHeight: Math.abs(t.height - a.height) <= 1,
+            sameTop: Math.abs(t.y - a.y) <= 1,
+          };
+        }, `${width} ${position}`)
+        .toEqual({ sideBySide: true, sameHeight: true, sameTop: true });
+      // The transcript scrolls inside its own panel (never the page).
+      const scroller = transcript.locator('[data-scroll]');
+      expect(await scroller.evaluate((element) => getComputedStyle(element).overflowY)).toBe(
+        'auto',
+      );
+
+      // The answer alone is centred under the bars on every position.
+      await page.getByRole('button', { name: 'Close the full transcript', exact: true }).click();
+      await expect(transcript).toHaveCount(0);
+      const bars = (await page.locator('[data-bars-column]').boundingBox())!;
+      const alone = (await answer.boundingBox())!;
+      expect(
+        Math.abs(alone.x + alone.width / 2 - (bars.x + bars.width / 2)),
+        `${width} ${position} centred`,
+      ).toBeLessThan(2);
+      await watched.context.close();
+    }
+  }
+});
+
+test('ADR-0124: a long transcript scrolls inside its panel with "Scroll to bottom", and never makes the pair taller', async () => {
+  const watched = await openOverlayView(
+    { width: 640, height: 620, touch: false },
+    '&panels=transcript,answer&shell=1&position=top-center',
+  );
+  const { page } = watched;
+  const transcript = page.locator('[data-transcript-panel]');
+  const answer = page.locator('[data-answer-panel]');
+  const scroller = transcript.locator('[data-scroll]');
+  // Make the transcript much longer than the answer (its own content, as many turns would).
+  await scroller.evaluate((element) => {
+    const filler = document.createElement('div');
+    filler.style.height = '2000px';
+    element.prepend(filler);
+  });
+  await page.waitForTimeout(200);
+  const t = (await transcript.boundingBox())!;
+  const a = (await answer.boundingBox())!;
+  expect(Math.abs(t.height - a.height)).toBeLessThanOrEqual(1);
+  expect(await scroller.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
+    true,
+  );
+  // Scrolled up: "Scroll to bottom" shows; it goes back to the newest words.
+  await scroller.evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  const pill = transcript.getByRole('button', { name: 'Scroll to bottom' });
+  await expect(pill).toBeVisible();
+  await pill.click();
+  await expect(pill).toHaveCount(0);
   await watched.context.close();
 });

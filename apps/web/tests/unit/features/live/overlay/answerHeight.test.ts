@@ -120,3 +120,19 @@ describe('holdHeight: grow-only while the same answer shows', () => {
     expect(holdHeight(held, null, 200)).toBeNull();
   });
 });
+
+describe('answerHoldKey: the dragged share (ADR-0124)', () => {
+  it('keeps the old key without a share, and starts again when the dragged share changes', () => {
+    const base = {
+      answerId: 'a1',
+      transcript: false,
+      up: false,
+      zoom: 1,
+      fontScale: 1,
+      width: 640,
+    };
+    expect(answerHoldKey(base)).toBe('a1|-|down|1|1|640');
+    expect(answerHoldKey({ ...base, share: null })).toBe('a1|-|down|1|1|640|auto');
+    expect(answerHoldKey({ ...base, share: 0.5 })).not.toBe(answerHoldKey({ ...base, share: 0.6 }));
+  });
+});

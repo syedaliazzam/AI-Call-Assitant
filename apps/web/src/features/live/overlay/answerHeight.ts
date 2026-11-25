@@ -92,13 +92,18 @@ export function holdHeight(
  * @param input.zoom       The UI zoom.
  * @param input.fontScale  The answer text size.
  * @param input.width      The page's width, in CSS px (a resize by the person starts again).
+ * @param input.share      ADR-0124: the panels' dragged share of the bars' width, if any (a drag of the
+ *                         answer's corner grip starts again). Absent: not part of the key.
  * @returns The key, or null when no answer is shown.
  * Called from: CompactView; tests
  */
 export function answerHoldKey(input: {
   /** The answer shown, or null/undefined when none (or the answer panel is closed). */
   answerId: string | null | undefined;
-  /** Whether the transcript panel is open too. */
+  /**
+   * Whether the transcript panel is open too. ADR-0124: CompactView passes true only when it is stacked
+   * under the answer (side by side the pair is as tall as the answer, so opening it keeps the height).
+   */
   transcript: boolean;
   /** True on the bottom row. */
   up: boolean;
@@ -108,6 +113,8 @@ export function answerHoldKey(input: {
   fontScale: number;
   /** The page's width, in CSS px. */
   width: number;
+  /** ADR-0124: the panels' dragged share of the bars' width (null: not dragged); absent: not part of the key. */
+  share?: number | null;
 }): string | null {
   if (!input.answerId) return null;
   return [
@@ -117,5 +124,6 @@ export function answerHoldKey(input: {
     input.zoom,
     input.fontScale,
     Math.round(input.width),
+    ...(input.share === undefined ? [] : [input.share ?? 'auto']),
   ].join('|');
 }

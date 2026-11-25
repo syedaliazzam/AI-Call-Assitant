@@ -149,8 +149,12 @@ describe('CompactView (ADR-0113)', () => {
     stored.set(OVERLAY_PANELS_WIDTH_KEY, '0.5');
     const html = overlay('top-right');
     expect(html).toMatch(/data-panels-block=""[^>]*style="width:50%"/);
-    // The block lines up on the bar's right edge, and is a container (side by side or stacked by its width).
+    // ADR-0124: the answer alone is centred under the bars on every position (ADR-0113 lined it up on the
+    // bar's right edge here); the pair still lines up by the position's column. A container either way.
     expect(html).toMatch(
+      /class="[^"]*items-center[^"]*w-0 min-w-full[^"]*"><div data-gap="" data-panels-block/,
+    );
+    expect(overlay('top-right', { transcript: true, answer: true })).toMatch(
       /class="[^"]*items-end[^"]*w-0 min-w-full[^"]*"><div data-gap="" data-panels-block/,
     );
     expect(classOf(html, 'data-panels-block')).toContain('@container');
@@ -201,10 +205,51 @@ describe('CompactView (ADR-0113)', () => {
   });
 
   it('puts the corner grip on the side that moves', () => {
-    expect(overlay('top-left')).toContain('data-grip-side="right"');
-    expect(overlay('top-center')).toContain('data-grip-side="right"');
-    expect(overlay('top-right')).toContain('data-grip-side="left"');
-    expect(overlay('bottom-right')).toContain('data-grip-side="left"');
+    const both = { transcript: true, answer: true };
+    expect(overlay('top-left', both)).toContain('data-grip-side="right"');
+    expect(overlay('top-center', both)).toContain('data-grip-side="right"');
+    expect(overlay('top-right', both)).toContain('data-grip-side="left"');
+    expect(overlay('bottom-right', both)).toContain('data-grip-side="left"');
+    // ADR-0124: the answer alone is centred, so both its edges move; the grip is on the right.
+    expect(overlay('top-right')).toContain('data-grip-side="right"');
+  });
+});
+
+describe('CompactView (ADR-0124: transcript and answer the same height, the answer alone centred)', () => {
+  it('makes the transcript exactly as tall as the answer side by side, and only then', () => {
+    const pair = classOf(
+      overlay('top-center', { transcript: true, answer: true }),
+      'data-transcript-panel',
+    );
+    expect(pair).toContain('@min-[600px]/overlay:h-[var(--k-pair-height,auto)]');
+    // It scrolls inside itself (its own scroll area; "Scroll to bottom" when scrolled up).
+    expect(pair).toContain('overflow-hidden');
+    expect(pair).toContain('min-h-0');
+    // The transcript alone keeps its own height.
+    expect(
+      classOf(overlay('top-center', { transcript: true, answer: false }), 'data-transcript-panel'),
+    ).not.toContain('--k-pair-height');
+  });
+
+  it('gives the pair the default answer height even before the first answer', () => {
+    const none: CompactState = { ...ANSWERED, answer: null, index: -1, total: 0 };
+    expect(overlay('top-center', { transcript: true, answer: true }, none)).toMatch(
+      /data-answer-panel="" data-min-height="\d+"/,
+    );
+    // The answer alone with no answer yet stays as small as its "no answer" view.
+    expect(overlay('top-center', { transcript: false, answer: true }, none)).not.toContain(
+      'data-min-height',
+    );
+  });
+
+  it('centres the answer alone under the bars on every position, mirrored rows included', () => {
+    for (const position of ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const) {
+      expect(overlay(position)).toMatch(
+        /class="[^"]*items-center[^"]*w-0 min-w-full[^"]*"><div data-gap="" data-panels-block/,
+      );
+    }
+    // The bars themselves still line up by the position (ADR-0113).
+    expect(rootClass(overlay('top-left'))).toContain('items-start');
   });
 });
 
