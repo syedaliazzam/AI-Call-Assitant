@@ -1,17 +1,16 @@
 /**
- * Tests for apps/web/src/core/answer/ownQuestion.ts (ADR-0123): who Ctrl+Enter answers (the other person while
- * they have spoken within ON_CALL_WINDOW_MS and their audio is connected, otherwise the user), and which of the
- * user's words are their newest question or request (a question or an instruction to the assistant, looked for
- * past ordinary talk; a turn answered already is shown again, not asked twice). Invented words only.
+ * Tests for apps/web/src/core/answer/ownQuestion.ts (ADR-0123, amended 27 Nov 2026): who Ctrl+Enter answers (the
+ * other person while they have spoken within ON_CALL_WINDOW_MS and their audio is connected, otherwise the user),
+ * and which of the user's words are their newest unanswered speech (every "You" line since the last answered
+ * words, back to the other person's words, joined into one turn; greetings and small talk included; words
+ * answered already are shown again, not asked twice). Invented words only.
  */
 import { describe, expect, it } from 'vitest';
 import {
   chooseOwnQuestion,
-  isOwnRequest,
   lastThemSpeech,
   MAX_OWN_WORDS,
   ON_CALL_WINDOW_MS,
-  OWN_TURN_GAP_MS,
   pressTarget,
 } from '@/core/answer/ownQuestion';
 import type { Utterance } from '@/core/transcript/transcript';
@@ -40,7 +39,8 @@ const line = (
   final = true,
 ): Utterance => ({ id, speaker, text, tStart: at(start), tEnd: at(end), final });
 
-const NOTHING = new Set<string>();
+/** Nothing of the user's answered yet. */
+const NONE = null;
 
 describe('pressTarget (ADR-0123)', () => {
   const call = [
@@ -75,119 +75,124 @@ describe('pressTarget (ADR-0123)', () => {
   });
 });
 
-describe('isOwnRequest (ADR-0123)', () => {
-  it('takes questions and requests to the assistant', () => {
-    expect(isOwnRequest('What is the capital of Australia?')).toBe(true);
-    expect(isOwnRequest('how do I reverse a linked list')).toBe(true);
-    expect(isOwnRequest('Explain the CAP theorem in two sentences.')).toBe(true);
-    expect(isOwnRequest('Okay, write me a short thank-you email to Dana.')).toBe(true);
-    expect(isOwnRequest('Tell me about the Professional plan.')).toBe(true);
-    expect(isOwnRequest('I was thinking about it. Summarise what she said.')).toBe(true);
+describe('chooseOwnQuestion (ADR-0123, amended 27 Nov 2026)', () => {
+  it('answers a greeting: on your own everything the user says is meant for the assistant', () => {
+    expect(
+      chooseOwnQuestion({ lines: [line('u1', 'you', 'Hey there.', 1, 2)], answeredUntil: NONE }),
+    ).toEqual({ kind: 'answer', text: 'Hey there.', lineIds: ['u1'], grey: false, until: at(1) });
   });
 
-  it('leaves out ordinary talk, greetings, talk about the call and noise', () => {
-    expect(isOwnRequest('Yeah, that makes sense.')).toBe(false);
-    expect(isOwnRequest('I worked there for three years.')).toBe(false);
-    expect(isOwnRequest('Hi, good morning!')).toBe(false);
-    expect(isOwnRequest('Can you hear me okay?')).toBe(false);
-    expect(isOwnRequest('')).toBe(false);
-    expect(isOwnRequest('zzzz zzzz zzzz zzzz zzzz')).toBe(false);
-  });
-});
-
-describe('chooseOwnQuestion (ADR-0123)', () => {
-  it('answers the user’s newest question, never the other person’s', () => {
+  it('joins two lines in a row into one turn, however far apart (one answer covering both)', () => {
     const lines = [
-      line('u1', 'them', 'What would you change in your last project?', 10, 14),
-      line('u2', 'you', 'What is a good way to answer that?', 20, 22),
+      line('u1', 'you', 'Hi, how are you?', 1, 2),
+      line('u2', 'you', 'Tell me about myself.', 30, 32),
     ];
-    expect(chooseOwnQuestion({ lines, answeredLineIds: NOTHING })).toEqual({
+    expect(chooseOwnQuestion({ lines, answeredUntil: NONE })).toEqual({
       kind: 'answer',
-      text: 'What is a good way to answer that?',
-      lineIds: ['u2'],
+      text: 'Hi, how are you? Tell me about myself.',
+      lineIds: ['u1', 'u2'],
       grey: false,
+      until: at(30),
     });
   });
 
-  it('looks back past ordinary talk to the newest question', () => {
+  it('starts after the last answered words, so an answered line is never asked again', () => {
     const lines = [
-      line('u1', 'you', 'What does idempotent mean?', 1, 3),
-      line('u2', 'you', 'Okay, thanks, that is clear.', 30, 32),
-    ];
-    expect(chooseOwnQuestion({ lines, answeredLineIds: NOTHING })).toMatchObject({
-      kind: 'answer',
-      lineIds: ['u1'],
-    });
-  });
-
-  it('keeps one spoken question in two lines together, and splits turns on a pause or their words', () => {
-    const lines = [
-      line('u1', 'you', 'What is the difference between', 1, 2.5),
-      line('u2', 'you', 'a process and a thread?', 3, 4),
-      line('u3', 'them', 'Sure.', 5, 5.5),
-      line('u4', 'you', 'Explain virtual memory.', 6, 7),
-    ];
-    expect(chooseOwnQuestion({ lines: lines.slice(0, 2), answeredLineIds: NOTHING })).toMatchObject(
-      {
-        text: 'What is the difference between a process and a thread?',
-        lineIds: ['u1', 'u2'],
-      },
-    );
-    expect(chooseOwnQuestion({ lines, answeredLineIds: NOTHING })).toMatchObject({
-      lineIds: ['u4'],
-    });
-    const apart = [
       line('u1', 'you', 'What is a monad?', 1, 2),
-      line('u2', 'you', 'Explain functors.', 2 + OWN_TURN_GAP_MS / 1_000 + 0.5, 6),
+      line('u2', 'you', 'Okay, thanks.', 20, 21),
+      line('u3', 'you', 'And a functor?', 22, 23),
     ];
-    expect(chooseOwnQuestion({ lines: apart, answeredLineIds: NOTHING })).toMatchObject({
+    expect(chooseOwnQuestion({ lines, answeredUntil: at(1) })).toMatchObject({
+      kind: 'answer',
+      text: 'Okay, thanks. And a functor?',
+      lineIds: ['u2', 'u3'],
+    });
+  });
+
+  it('takes the new words that the transcript joined to an answered line (close lines merge)', () => {
+    const joined: Utterance = {
+      ...line('u1', 'you', 'What is a monad? Hey there.', 1, 6),
+      segments: [
+        { text: 'What is a monad?', tStart: at(1), tEnd: at(2) },
+        { text: 'Hey there.', tStart: at(5), tEnd: at(6) },
+      ],
+    };
+    expect(chooseOwnQuestion({ lines: [joined], answeredUntil: at(1) })).toEqual({
+      kind: 'answer',
+      text: 'Hey there.',
+      lineIds: ['u1'],
+      grey: false,
+      until: at(5),
+    });
+  });
+
+  it('answers the user’s newest words, never the other person’s, and stops at their words before mine', () => {
+    const lines = [
+      line('u1', 'you', 'I worked there for three years.', 1, 3),
+      line('u2', 'them', 'What would you change in your last project?', 10, 14),
+      line('u3', 'you', 'How long should my answer be?', 20, 22),
+      line('u4', 'them', 'Take your time.', 23, 24),
+    ];
+    expect(chooseOwnQuestion({ lines, answeredUntil: NONE })).toEqual({
+      kind: 'answer',
+      text: 'How long should my answer be?',
+      lineIds: ['u3'],
+      grey: false,
+      until: at(20),
+    });
+  });
+
+  it('says the newest words were answered already instead of asking twice (also once a grey line finishes)', () => {
+    const lines = [line('u1', 'you', 'Hello.', 1, 2), line('u2', 'you', 'What is a monad?', 3, 4)];
+    expect(chooseOwnQuestion({ lines, answeredUntil: at(3) })).toEqual({
+      kind: 'answered',
       lineIds: ['u2'],
     });
+    // Answered while grey ("What is a"), finished later with more words: the same stretch, not new.
+    expect(
+      chooseOwnQuestion({
+        lines: [line('u1', 'you', 'What is a monad?', 1, 4)],
+        answeredUntil: at(1),
+      }),
+    ).toEqual({ kind: 'answered', lineIds: ['u1'] });
   });
 
-  it('says a turn was answered already instead of asking twice', () => {
-    const lines = [line('u1', 'you', 'What is a monad?', 1, 2)];
-    expect(chooseOwnQuestion({ lines, answeredLineIds: new Set(['u1']) })).toEqual({
-      kind: 'answered',
-      lineIds: ['u1'],
-    });
-  });
-
-  it('marks a question still being spoken (grey), and sends only the newest words of a long turn', () => {
+  it('marks words still being spoken (grey), and sends only the newest words of a long turn', () => {
     expect(
       chooseOwnQuestion({
         lines: [line('u1', 'you', 'What is the best way to', 1, 2, false)],
-        answeredLineIds: NOTHING,
+        answeredUntil: NONE,
       }),
     ).toMatchObject({ kind: 'answer', grey: true });
-    // Ordinary words (one word repeated would read as noise), then the question.
     const long = `${'we moved the billing service to a new queue and '.repeat(30)}what do you think?`;
     const choice = chooseOwnQuestion({
       lines: [line('u1', 'you', long, 1, 60)],
-      answeredLineIds: NOTHING,
+      answeredUntil: NONE,
     });
     expect(choice.kind === 'answer' && choice.text.split(' ').length).toBe(MAX_OWN_WORDS);
+    expect(choice.kind === 'answer' && choice.text.endsWith('what do you think?')).toBe(true);
   });
 
-  it('finds nothing when the user asked nothing (only remarks, or only the other person spoke)', () => {
+  it('finds nothing when the user said nothing (only the other person spoke, or empty lines)', () => {
     expect(
       chooseOwnQuestion({
-        lines: [line('u1', 'you', 'I agree with that.', 1, 2)],
-        answeredLineIds: NOTHING,
-      }),
-    ).toEqual({ kind: 'none' });
-    expect(
-      chooseOwnQuestion({
-        lines: [line('u1', 'them', 'What is your notice period?', 1, 2)],
-        answeredLineIds: NOTHING,
+        lines: [
+          line('u1', 'them', 'What is your notice period?', 1, 2),
+          line('u2', 'you', '  ', 3, 3),
+        ],
+        answeredUntil: NONE,
       }),
     ).toEqual({ kind: 'none' });
   });
 
-  it('leaves out speech in another language', () => {
+  it('leaves out speech in another language (a placeholder, not the user’s words)', () => {
     const lines: Utterance[] = [
-      { ...line('u1', 'you', '[non-English speech]', 1, 2), nonEnglish: true },
+      line('u1', 'you', 'Good morning.', 1, 2),
+      { ...line('u2', 'you', '[non-English speech]', 3, 4), nonEnglish: true },
     ];
-    expect(chooseOwnQuestion({ lines, answeredLineIds: NOTHING })).toEqual({ kind: 'none' });
+    expect(chooseOwnQuestion({ lines, answeredUntil: NONE })).toMatchObject({
+      text: 'Good morning.',
+      lineIds: ['u1'],
+    });
   });
 });

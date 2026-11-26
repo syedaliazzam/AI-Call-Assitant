@@ -13,9 +13,10 @@
  *          side is transcribed up to the press (at most 300 ms; a second press answers at once), then answers
  *          the newest unanswered speech by time (core/answer/newestQuestion.ts), and every press shows what
  *          it did: a new card, "Showing the earlier answer", "Already answering" or "Nothing new to answer".
- *          ADR-0123: a press answers the user's own newest spoken question instead when the other side has
+ *          ADR-0123: a press answers the user's own newest unanswered speech instead when the other side has
  *          been quiet for ON_CALL_WINDOW_MS (or there is no other side), and Ctrl+Shift+Space always does
- *          (core/answer/ownQuestion.ts); those words are sent as the user's own question (mode 'chat').
+ *          (core/answer/ownQuestion.ts; amended 27 Nov 2026: any words, greetings included, joined since the
+ *          last answer); those words are sent as the user's own question (mode 'chat').
  * Used by: src/features/live/LiveAnswers.tsx
  * Depends on: src/core/answer (context.ts, answerClient.ts, history.ts, warm.ts, keepWarm.ts,
  *             unavailable.ts),
@@ -156,11 +157,11 @@ export const NO_QUESTION_NOTICE =
   'No question to answer yet. Press Answer this on what they said, or type it.';
 
 /**
- * ADR-0123: a press for the user's own question (Ctrl+Enter on your own, Ctrl+Shift+Space) when they have asked
- * nothing aloud yet.
+ * ADR-0123: a press for the user's own words (Ctrl+Enter on your own, Ctrl+Shift+Space) when they have said
+ * nothing yet.
  */
 export const NO_OWN_QUESTION_NOTICE =
-  'No question of yours yet. Ask it aloud, then press the key again, or type it in Chat.';
+  'Nothing of yours to answer yet. Say it aloud, then press the key again, or type it in Chat.';
 
 /**
  * ADR-0107: how long to wait before taking a blank capture again (a page still drawing after a tab switch;
@@ -477,7 +478,7 @@ export interface LiveAnswers {
   /** Answers a typed question. */
   chat: (question: string) => void;
   /**
-   * ADR-0123: answers the user's own newest spoken question or request from the "You" transcript (Ctrl+Enter on
+   * ADR-0123: answers the user's own newest unanswered speech from the "You" transcript (Ctrl+Enter on
    * your own, Ctrl+Shift+Space always). Only ever on a key press; never automatic.
    *
    * @param trigger What asked (the call timing log).
@@ -692,6 +693,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   // ADR-0123: the user's own spoken lines already answered as their question (line id → its card), and how to
   // end a press that waits for the user's own last words to finish (null when none waits).
   const ownAnsweredRef = useRef(new Map<string, string>());
+  // ADR-0123 (amended 27 Nov 2026): the capture time up to which the user's own words were answered (the start of
+  // the newest stretch sent); words after it are new even when the transcript joined them to an answered line.
+  const ownAnsweredUntilRef = useRef<number | null>(null);
   const ownWaitRef = useRef<{
     /** Answers now with what there is (a second press). */
     force: () => void;
@@ -775,6 +779,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     streamingIdRef.current = null;
     // ADR-0123: a new call starts with none of the user's own questions answered.
     ownAnsweredRef.current = new Map();
+    ownAnsweredUntilRef.current = null;
     return () => {
       // ADR-0123: a press still waiting for the user's last words ends with the call (nothing is sent).
       ownWaitRef.current?.cancel();
@@ -2181,7 +2186,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   }, [callStartedAt]);
 
   /**
-   * ADR-0123: answers the user's own newest spoken question or request (core/answer/ownQuestion.ts), as their
+   * ADR-0123: answers the user's own newest unanswered speech (core/answer/ownQuestion.ts), as their
    * own question (mode 'chat', exactly as a typed or voice question is sent: no new prompt). When the newest one
    * is still grey it waits for it to finish, at most OWN_WAIT_MS ("Finishing the question…" after 150 ms; a
    * second press answers at once). A question answered already shows its card again. Only ever on a key press.
@@ -2215,7 +2220,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           answered.set(id, card);
           answered.set(resolve(id), card);
         }
-        const choice = chooseOwnQuestion({ lines, answeredLineIds: new Set(answered.keys()) });
+        const choice = chooseOwnQuestion({ lines, answeredUntil: ownAnsweredUntilRef.current });
         if (choice.kind === 'answer' && choice.grey && !final) return false;
         // Ids and the decision only (never the words).
         callTimings.noteTrace('press-decision', { decision: `own-${choice.kind}`, trigger });
@@ -2231,7 +2236,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         }
         const asked = ask('chat', { typed: choice.text, trigger, pressedAt: performance.now() });
         const card = lastAskedIdRef.current;
-        if (asked && card) for (const id of choice.lineIds) ownAnsweredRef.current.set(id, card);
+        if (asked && card) {
+          for (const id of choice.lineIds) ownAnsweredRef.current.set(id, card);
+          ownAnsweredUntilRef.current = choice.until;
+        }
         return true;
       };
       if (decide(false)) return;

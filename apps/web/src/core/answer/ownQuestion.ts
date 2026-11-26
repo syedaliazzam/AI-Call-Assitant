@@ -1,35 +1,34 @@
 /**
  * File: apps/web/src/core/answer/ownQuestion.ts
- * Purpose: ADR-0123: the user's own spoken questions. Two rules, both pure:
- *          1. Who Ctrl+Enter answers (pressTarget()): ON A CALL, when the other side ("Them") has spoken within
- *             the last ON_CALL_WINDOW_MS, it answers only the other person's newest question, exactly as before
+ * Purpose: ADR-0123 (amended 27 Nov 2026): the user's own spoken words. Two rules, both pure:
+ *          1. Who Ctrl+Enter answers (pressTarget()): ON A CALL, when the other side ("Them") has spoken within the
+ *             last ON_CALL_WINDOW_MS, it answers only the other person's newest question, exactly as before
  *             (pressQuestion.ts / newestQuestion.ts); ON YOUR OWN, when they have not (or there is no other
- *             source), it answers the user's newest spoken question or request from the "You" transcript.
- *             Ctrl+Shift+Space always answers the user's own newest question, in both modes.
- *          2. Which of the user's words that is (chooseOwnQuestion()): the newest turn of "You" lines that asks
- *             something (a question, or a request such as "explain…", "write…"); ordinary talk does not count.
- *             A turn already answered shows its card again instead of asking twice.
+ *             source), it answers the user's own newest unanswered speech from the "You" transcript.
+ *             Ctrl+Shift+Space always answers the user's own newest unanswered speech, in both modes.
+ *          2. Which of the user's words that is (chooseOwnQuestion()): every "You" line said since the user's last
+ *             answered words, back to the other person's last words, joined into one turn. Anything counts,
+ *             greetings and small talk included: with no one else on the call, everything the user says is meant
+ *             for the assistant. Words answered already show their card again instead of asking twice.
  *          Never automatic: these rules run only on a key press. Auto-answer still answers only the other
  *          person (autoAnswer.ts, newestQuestion.ts), and the answer prompt is unchanged: the words are sent as
  *          the user's own question, the same way a typed or voice question is (mode 'chat').
- * Used by: src/features/live/useLiveAnswers.ts (answer, ownQuestion), src/features/live/LiveAnswers.tsx (the
+ * Used by: src/features/live/useLiveAnswers.ts (answer, ownQuestion), src/features/live/usePressTarget.ts (the
  *          hint on bar 2)
- * Depends on: src/core/transcript (questionKind.ts, transcript.ts)
+ * Depends on: src/core/transcript/transcript.ts (readableLine, Segment, Utterance), src/core/answer/newestQuestion.ts
+ *             (segmentsOf: a joined line's stretches)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1 (Trigger); ADR-0123
  *
  * Pure: the caller passes the lines, what was answered and the time. Transcript text is never logged.
  */
-import { lineKind } from '../transcript/questionKind';
-import { readableLine, type Utterance } from '../transcript/transcript';
+import { readableLine, type Segment, type Utterance } from '../transcript/transcript';
+import { segmentsOf } from './newestQuestion';
 
 /**
  * ADR-0123: the other side counts as "on the call" for this long after their last words, ms (about two
  * minutes, the brief's figure). A system sound such as a video playing counts as the other person too.
  */
 export const ON_CALL_WINDOW_MS = 120_000;
-
-/** ADR-0123: "You" lines further apart than this are separate turns, ms (a breath inside one question is shorter). */
-export const OWN_TURN_GAP_MS = 2_500;
 
 /**
  * ADR-0123: a press waits at most this long for the user's own last words to be finished (still grey) before
@@ -44,35 +43,11 @@ export const MAX_OWN_WORDS = 200;
 export type PressTarget = 'them' | 'you';
 
 /**
- * A request worded as an instruction to the assistant ("explain recursion", "okay, write me a short email…"),
- * which lineKind() calls a statement. Checked at the start of each sentence, after fillers and a name.
- */
-const OWN_REQUEST =
-  /^(?:(?:hey|hi|ok(?:ay)?|so|um+|uh+|and|now|right|alright|please|paramount(?: ai)?|kite)[,.!\s]+)*(?:can you |could you |would you |please )?(?:explain|summari[sz]e|give|write|draft|list|tell|show|help|translate|compare|describe|define|calculate|compute|convert|suggest|recommend|remind|find|check|rewrite|rephrase|fix|outline|plan|create|make|generate|teach|quiz)\b/i;
-
-/**
- * Whether the user's words ask something of the assistant: a question (questionKind.ts, which also counts "tell
- * me about…" requests) or an instruction to it. Greetings, talk about the call, noise and ordinary remarks do not.
- *
- * @param text The words (never logged).
- * @returns True for a question or a request.
- * Called from: chooseOwnQuestion(); tests
- */
-export function isOwnRequest(text: string): boolean {
-  const trimmed = text.trim();
-  if (trimmed === '') return false;
-  const kind = lineKind(trimmed);
-  if (kind === 'question') return true;
-  if (kind !== 'statement') return false;
-  return trimmed.split(/(?<=[.!?])\s+/).some((sentence) => OWN_REQUEST.test(sentence.trim()));
-}
-
-/**
  * When the other side last spoke: the end of their newest line with words (capture clock, Unix ms).
  *
  * @param lines The call's lines (Transcript.lines()).
  * @returns The time, or null when they have said nothing yet.
- * Called from: pressTarget(), LiveAnswers.tsx (the hint's timer); tests
+ * Called from: pressTarget(), usePressTarget.ts (the hint's timer); tests
  */
 export function lastThemSpeech(lines: readonly Utterance[]): number | null {
   const last = lines.findLast((line) => line.speaker === 'them' && line.text.trim() !== '');
@@ -87,7 +62,7 @@ export function lastThemSpeech(lines: readonly Utterance[]): number | null {
  * @param now           The current time (Unix ms, the lines' clock).
  * @param themConnected False when there is no other-side source in this call.
  * @returns 'them' or 'you'.
- * Called from: useLiveAnswers.ts (answer), LiveAnswers.tsx (the hint on bar 2); tests
+ * Called from: useLiveAnswers.ts (answer), usePressTarget.ts (the hint on bar 2); tests
  */
 export function pressTarget(
   lines: readonly Utterance[],
@@ -99,7 +74,7 @@ export function pressTarget(
   return last !== null && now - last < ON_CALL_WINDOW_MS ? 'them' : 'you';
 }
 
-/** What a press on the user's own question does. */
+/** What a press on the user's own words does. */
 export type OwnChoice =
   | {
       /** Ask these words. */
@@ -110,15 +85,17 @@ export type OwnChoice =
       lineIds: string[];
       /** True when the newest of them is still grey (the user may still be speaking). */
       grey: boolean;
+      /** The start of the newest stretch sent (capture time): the caller's next answeredUntil. */
+      until: number;
     }
   | {
-      /** The newest question was answered already: show its card. */
+      /** The user's newest words were answered already: show that card. */
       kind: 'answered';
-      /** Its lines. */
+      /** The user's newest line (the caller finds its card). */
       lineIds: string[];
     }
   | {
-      /** The user has asked nothing yet. */
+      /** The user has said nothing yet. */
       kind: 'none';
     };
 
@@ -126,42 +103,32 @@ export type OwnChoice =
 export interface OwnInput {
   /** The visible lines (finals and grey lines), noise left out, in order. */
   lines: readonly Utterance[];
-  /** The "You" lines already answered as the user's own question (ids as the lines have them now). */
-  answeredLineIds: ReadonlySet<string>;
+  /**
+   * The capture time (Unix ms) up to which the user's own words were answered: the start of the newest stretch
+   * sent. Stretches that start after it are new, even when the transcript joined them to an answered line (close
+   * lines of one speaker merge, merge.ts). Null or absent: nothing of the user's answered yet.
+   */
+  answeredUntil?: number | null;
 }
 
 /**
- * The user's spoken turns, newest first: consecutive "You" lines with words, no "Them" words between them, and
- * gaps under OWN_TURN_GAP_MS.
+ * Whether a line has words that count: not empty, and not marked as another language (the engine writes a
+ * placeholder for other languages, not the user's words).
  *
- * @param lines The lines, in order.
- * @returns The turns (each oldest first), newest turn first.
+ * @param line The line.
+ * @returns True for a line with words.
+ * Called from: chooseOwnQuestion()
  */
-function ownTurns(lines: readonly Utterance[]): Utterance[][] {
-  const turns: Utterance[][] = [];
-  let current: Utterance[] = [];
-  for (const line of lines) {
-    if (line.text.trim() === '' || line.nonEnglish) continue;
-    if (line.speaker !== 'you') {
-      if (current.length > 0) turns.push(current);
-      current = [];
-      continue;
-    }
-    const previous = current.at(-1);
-    if (previous && line.tStart - previous.tEnd > OWN_TURN_GAP_MS) {
-      turns.push(current);
-      current = [];
-    }
-    current.push(line);
-  }
-  if (current.length > 0) turns.push(current);
-  return turns.reverse();
+function hasWords(line: Utterance): boolean {
+  return line.text.trim() !== '' && line.nonEnglish !== true;
 }
 
 /**
- * ADR-0123: the user's newest spoken question or request. Looks back past ordinary talk ("okay, thanks") to the
- * newest turn that asks something; when every line of that turn was answered already, says so (the caller shows
- * that card).
+ * ADR-0123 (amended 27 Nov 2026): the user's newest unanswered speech. From the newest line back, it skips the
+ * other person's words said after the user's, then joins every "You" stretch until it reaches words already
+ * answered as the user's own (answeredUntil), or the other person's words before them. Any words count, greetings and small talk included
+ * (before the amendment only a question or a request did, so "Hey there" got no answer). When the user's newest
+ * line was answered already, it says so (the caller shows that card). At most the newest MAX_OWN_WORDS are sent.
  *
  * @param input See OwnInput.
  * @returns See OwnChoice.
@@ -169,18 +136,38 @@ function ownTurns(lines: readonly Utterance[]): Utterance[][] {
  */
 export function chooseOwnQuestion(input: OwnInput): OwnChoice {
   // Read with the punctuation model's marks where a line has none yet (as the other side's are).
-  const lines = input.lines.map(readableLine);
-  for (const turn of ownTurns(lines)) {
-    const text = turn.map((line) => line.text.trim()).join(' ');
-    if (!isOwnRequest(text)) continue;
-    const lineIds = turn.map((line) => line.id);
-    if (lineIds.every((id) => input.answeredLineIds.has(id))) return { kind: 'answered', lineIds };
-    return {
-      kind: 'answer',
-      text: text.split(/\s+/).slice(-MAX_OWN_WORDS).join(' '),
-      lineIds,
-      grey: turn.at(-1)?.final === false,
-    };
+  const lines = input.lines.map(readableLine).filter(hasWords);
+  // The user's newest line: the other person's words after it (on a call, Ctrl+Shift+Space) are skipped.
+  let end = lines.length - 1;
+  while (end >= 0 && lines[end]!.speaker !== 'you') end -= 1;
+  if (end < 0) return { kind: 'none' };
+  const newest = lines[end]!;
+  const until = input.answeredUntil ?? null;
+  // A stretch is new when it starts after the newest stretch already answered (a grey line answered early and
+  // finished later keeps its start, so it is not new; words joined to it later are).
+  const isNew = (segment: Segment) => until === null || segment.tStart > until;
+  const stretches: Segment[] = [];
+  const lineIds: string[] = [];
+  for (let index = end; index >= 0; index -= 1) {
+    const line = lines[index]!;
+    // The other person's words before mine end the turn.
+    if (line.speaker !== 'you') break;
+    const all = segmentsOf(line);
+    const fresh = all.filter(isNew);
+    if (fresh.length === 0) break;
+    stretches.unshift(...fresh);
+    lineIds.unshift(line.id);
+    // Part of this line was answered already: the turn starts inside it.
+    if (fresh.length < all.length) break;
   }
-  return { kind: 'none' };
+  // Nothing new since the last answer: that card again.
+  if (stretches.length === 0) return { kind: 'answered', lineIds: [newest.id] };
+  const text = stretches.map((segment) => segment.text.trim()).join(' ');
+  return {
+    kind: 'answer',
+    text: text.split(/\s+/).slice(-MAX_OWN_WORDS).join(' '),
+    lineIds,
+    grey: newest.final === false,
+    until: stretches.at(-1)!.tStart,
+  };
 }
