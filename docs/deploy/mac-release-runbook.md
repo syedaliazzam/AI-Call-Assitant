@@ -255,24 +255,36 @@ On the build Mac (and on each team Mac, at any time after (b)):
 
 ---
 
-## How future updates reach Mac and Windows (plain language)
+## How updates reach Mac and Windows (plain language)
 
-**Two kinds of change:**
-- **Website changes** reach everyone by a web deploy alone: screens, wording, the overlay's layout, settings, answers and prompts, server routes. Both desktop apps show the live website inside their windows, so a user sees the change the next time a window loads (or after quitting and reopening).
-- **Desktop app changes** need a new app version: the window's behaviour, menus, global keys, the installer, the updater, recording files on disk, new abilities given to the page. Windows and Mac are built separately.
+Both desktop apps are a thin window around the live website (`call.paramountintelligence.co`). Almost every change is a change to the website.
+
+**1. Website changes: a web deploy, then quit and reopen the app.** No desktop release, no build on a Mac.
+- What counts: every screen and its wording; the overlay's layout (bars, panels, their sizes and alignment); which keys answer what *inside the page* (for example who Ctrl+Enter answers); settings; answers, prompts and models; server routes; the `install-mac.sh` installer page; the Mac download box.
+- Also anything that uses an ability the installed app already gives the page through `window.kiteDesktop` (`apps/desktop/src/preload.ts`): for example resizing or moving the overlay window (`resizeOverlay`, `setOverlayLayout`), Click-through, opening windows. A new use of an existing ability is still a website change.
+- When users get it: the next time a window loads the page. **Quitting and reopening the app** (Mac: ⌘Q; Windows: tray › Quit) is the sure way. A call that is already running keeps the page it started with until it ends.
+
+**2. Desktop app changes: a new app version** (Windows and Mac built separately).
+- A new ability for the page (a new `window.kiteDesktop` method or a new field the shell accepts; the preload passes only the fields it knows, so a new one is dropped by older apps).
+- Window behaviour decided by the shell (`apps/desktop/src/windows.ts`: default size, position presets, how it is kept on screen, see-through on a Mac).
+- Global keys that work while another app has focus (`apps/desktop/src/hotkeys.ts`).
+- Menus and the tray (`apps/desktop/src/macMenu.ts`, `tray.ts`).
+- macOS permission texts and the app's identity (`apps/desktop/electron-builder.yml` `extendInfo`, `appId`, signing).
+- The bundled speech engine and model (`native/sherpa-onnx`, `native/stt-model`), recordings on disk, Drive uploads, the updater itself, the installer.
+
+**Check for Updates…:** the Mac app's **Paramount AI** menu has no **Check for Updates…** item in 1.8.0 (`apps/desktop/src/macMenu.ts`: About, Services, Hide, Hide Others, Show All, Quit). Adding it is a desktop change, listed for the next Mac release. Until then, quitting and reopening the app makes it check at once.
+
+**How auto-update works** (`apps/desktop/src/updater.ts`, both systems):
+- The installed app checks its channel when it starts and every 6 hours: Windows the newest release of `Zainpak123/kite-releases`, Mac the `mac-latest` pre-release.
+- A newer version downloads in the background by itself.
+- Then the app asks **Restart now / Later**, but **never during a call** (the page tells the app when a call is live) and never while Drive uploads are left; the question waits until the call ends or the uploads finish.
+- **Later** installs it the next time the app quits.
+- **On a Mac, macOS accepts the update only if it is signed with the same company certificate.** That is also why permissions survive updates. If the certificate is ever lost or replaced, every Mac must reinstall with the Terminal command and allow the permissions again.
 
 **Who builds what:**
 - **Windows:** the developer builds on the Windows laptop and publishes a normal GitHub release in `Zainpak123/kite-releases`.
-- **Mac:**
-  1. The teammate with the build Mac runs `bash apps/desktop/scripts/mac/build.sh` on the release commit. It needs the company certificate in that Mac's signing keychain, and the keychain password from the password manager.
-  2. The files go to the developer.
-  3. The developer runs `publish-mac.mjs`, which updates the `mac-latest` pre-release.
-
-**How auto-update works:**
-- Each desktop app checks its channel when it starts and every 6 hours: Windows the latest release, Mac `mac-latest`.
-- A newer version downloads in the background. The app then asks "Restart now / Later", but never during a call or while recordings are still uploading. "Later" installs it at the next quit.
-- **On a Mac, macOS accepts the update only if it is signed with the same company certificate.** That is also why permissions survive updates.
-- If the certificate is ever lost or replaced, every Mac must reinstall with the Terminal command and allow the permissions again.
+- **Mac, once its first dry run has passed: the cloud build** below (GitHub Actions on a macOS runner; nobody builds on a Mac). Until then it is untested. It signs with the same company certificate and runs the same `build.sh` and `verify-build.sh`.
+- **Mac, the old way (still works):** the teammate with the build Mac runs `bash apps/desktop/scripts/mac/build.sh`, sends the four files, and the developer runs `publish-mac.mjs` (section (a)).
 
 **How to confirm an update landed:**
 - **Mac:** Paramount AI menu › About shows the full version.
@@ -280,3 +292,88 @@ On the build Mac (and on each team Mac, at any time after (b)):
 - **Both:** the sidebar shows "Desktop app vX.Y" (the patch number is not shown there).
 - **The release side:** open `…/releases/download/mac-latest/latest-mac.yml`, or the latest Windows release's `latest.yml`, and read its `version:` line.
 - **The website:** `vercel ls --prod` shows which deployment is live and when.
+
+---
+
+## Cloud build (GitHub Actions): a Mac release without a Mac
+
+The workflow `.github/workflows/mac-build.yml` builds, signs and checks the Mac app on a GitHub macOS runner. It only ever starts when someone starts it by hand.
+
+**What one run does:**
+1. Checks out the branch you chose and installs the tools (Node 24, pnpm).
+2. Puts the company certificate into a **temporary keychain** on the runner. It refuses any certificate that is not the committed `apps/desktop/build/mac-signing/certificate.pem`, exactly as `import-signing-cert.sh` does.
+3. Runs `build.sh`, which also runs `verify-build.sh`. Every line must say PASS.
+4. Then one of two things:
+   - **Dry run (the default):** keeps the four files (`latest-mac.yml`, the zip, its blockmap, the dmg) on the run's page under **Artifacts** for 7 days. Nothing is published.
+   - **Publish (only with the "publish" box ticked):** runs `publish-mac.mjs`, which updates `mac-latest`. Macs then update to it. It refuses unless the branch is `main` or `mac-internal-release` and the version is newer than the one published now.
+5. Always deletes the temporary keychain and the certificate copy, even if a step failed.
+
+### One-time set-up: three repository secrets
+
+Add them yourself in GitHub. **Never paste them into a chat, a file in the repository, or an issue.**
+
+Where: https://github.com/syedaliazzam/AI-Call-Assitant › **Settings** › **Secrets and variables** › **Actions** › **New repository secret**. Use exactly these names:
+
+| Secret | What it holds | How to make the value |
+|---|---|---|
+| `MAC_SIGNING_P12_BASE64` | The company's signing certificate with its key (`paramount-signing.p12`, the master copy in the password manager), as text. | Download the .p12 from the password manager. **On a Mac:** `base64 -i ~/Downloads/paramount-signing.p12 \| pbcopy` puts it on the clipboard. **On Windows (PowerShell):** `[Convert]::ToBase64String([IO.File]::ReadAllBytes("$HOME\Downloads\paramount-signing.p12")) \| Set-Clipboard`. Paste it as the secret's value, then delete the downloaded .p12. |
+| `MAC_SIGNING_P12_PASSWORD` | The .p12 file's password. | From the same password-manager entry ("Paramount AI Mac signing certificate (.p12)"). Type or paste it straight into GitHub. |
+| `KITE_RELEASES_TOKEN` | A token that may publish releases in `Zainpak123/kite-releases`. Only the publish run needs it; a dry run works without it. | Signed in to GitHub as **Zainpak123** (the releases repository's owner): **Settings** › **Developer settings** › **Personal access tokens** › **Fine-grained tokens** › **Generate new token**. **Resource owner:** Zainpak123. **Repository access:** Only select repositories › `kite-releases`. **Permissions** › Repository permissions › **Contents: Read and write** (Metadata: Read-only is added by itself). **Expiration:** 90 days or the shortest you are comfortable with; renew it before a Mac release when it runs out. Copy it once into the secret, nowhere else. |
+
+**It must be the same certificate as today.** The workflow checks this: a different .p12 stops the run with "is not the repository's certificate.pem". Signing with another certificate would make every Mac refuse the update and lose its permissions.
+
+**The keychain password is not a secret you add.** The run makes a random one for its temporary keychain and never shows it.
+
+### Run a dry run
+
+- **On the website:** https://github.com/syedaliazzam/AI-Call-Assitant/actions › **mac-build** › **Run workflow**. Choose the branch (for a release: `mac-internal-release` or `main`). Leave **Publish** unticked. Click **Run workflow**.
+- **Or from the Windows laptop:**
+
+  ```
+  & "C:\Program Files\GitHub CLI\gh.exe" workflow run mac-build.yml -R syedaliazzam/AI-Call-Assitant --ref mac-internal-release
+  & "C:\Program Files\GitHub CLI\gh.exe" run list -R syedaliazzam/AI-Call-Assitant --workflow mac-build.yml --limit 1
+  & "C:\Program Files\GitHub CLI\gh.exe" run watch <run id> -R syedaliazzam/AI-Call-Assitant --exit-status
+  ```
+
+  The workflow file must already be on the branch you name with `--ref`.
+
+**Expected:** the step "Build and check" ends with **ALL CHECKS PASSED**. The run's summary lists the four files with their SHA-256.
+
+**Get the files:** the run's page › **Artifacts** › `paramount-ai-mac-<version>`. Or:
+
+```
+& "C:\Program Files\GitHub CLI\gh.exe" run download <run id> -R syedaliazzam/AI-Call-Assitant -D C:\paramount-mac-<version>
+```
+
+Use them for the real-Mac test (`docs/testing/mac-release-test.md`): install the dmg or the zip on a Mac, as with a teammate's build.
+
+### Publish (after the dry run and the real-Mac test pass)
+
+1. Raise the version in `apps/desktop/package.json` (for example 1.8.1) on the release branch, if you have not. The run refuses a version that is not newer than the published one.
+2. Run the workflow again on the same branch with **Publish** ticked. From the laptop:
+
+   ```
+   & "C:\Program Files\GitHub CLI\gh.exe" workflow run mac-build.yml -R syedaliazzam/AI-Call-Assitant --ref mac-internal-release -f publish=true
+   ```
+
+   It builds the same code again, runs every check again, and publishes this new build with `publish-mac.mjs`: zip, blockmap and dmg first, `latest-mac.yml` last.
+3. Check as in section (a) step 8: `…/releases/download/mac-latest/latest-mac.yml` shows the new version, and the release is still marked **Pre-release**.
+
+Macs pick it up at their next check (start, or every 6 hours) and ask to restart after the call.
+
+### Cost and time
+
+- **One build takes about 15–25 minutes**, measured on nothing yet; the first dry run will tell. Most of it is installing both Mac CPUs' packages, downloading the speech model (about 204 MB) and building the universal app.
+- **Free while the repository is public.** GitHub does not count standard runners' minutes for public repositories. On a private repository, macOS minutes count **10×**: about 150–250 minutes of the monthly allowance per build.
+- **Billing note (27 Nov 2026):** this account's Actions jobs stopped starting in November ("recent account payments have failed or your spending limit needs to be increased"; free minutes are back on 1 Dec 2026). Public repositories should not need minutes at all, but whether that account block also stops this public repository's jobs is not known: the first dry run will show it. If the run never starts, wait for 1 Dec 2026 or build on the Mac as before.
+
+### If a cloud build fails
+
+| What it says | What to do |
+|---|---|
+| "add the secrets MAC_SIGNING_P12_BASE64 and MAC_SIGNING_P12_PASSWORD" | Add them (above). |
+| "is not the repository's certificate.pem" | The wrong .p12, or its text was cut when pasting. Make the value again from the password manager's .p12. |
+| `security import` fails ("MAC verification failed") | The password does not match the .p12. Set `MAC_SIGNING_P12_PASSWORD` again. |
+| A FAIL line from verify-build.sh | The build is not right; nothing was published. Read which check failed and fix it on the branch. |
+| "publish only from main or mac-internal-release" / "is not newer than the published" | Run from the right branch, or raise the version. |
+| Publish step: "HTTP 403" or "Resource not accessible" | `KITE_RELEASES_TOKEN` is missing, expired or lacks Contents: Read and write on `kite-releases`. |
