@@ -14,8 +14,8 @@
  * hint, listening paused); its Answer key replaces the removed Answer button; Clear and Ctrl+Backspace
  * clear the answers on both pages; and Ctrl+Alt+Enter is the screenshot and voice question ("Listening…" on the
  * status bar, Escape or a second press cancels, the spoken question is never a "You" line). ADR-0123: Ctrl+Enter
- * answers only the other person on a call (they spoke in the last two minutes), the user's own newest question
- * on their own; Ctrl+Shift+Space and the chat bar always answer the user; nothing answers the user's speech by
+ * answers only the other person on a call (they spoke in the last two minutes), the user's own newest unanswered
+ * speech on their own (amended 27 Nov 2026: greetings included, lines since the last answer joined into one); Ctrl+Shift+Space and the chat bar always answer the user; nothing answers the user's speech by
  * itself.
  * All text is invented.
  */
@@ -907,7 +907,7 @@ test('ADR-0123: on a call Ctrl+Enter answers only them, even after you ask aloud
   expect(received.at(-1)!.mode).toBe('chat');
 });
 
-test('ADR-0123: on your own Ctrl+Enter answers your newest question once (not ordinary talk); the hint follows the 2-minute window', async () => {
+test('ADR-0123: on your own Ctrl+Enter answers your newest words once (two lines joined); the hint follows the 2-minute window', async () => {
   await openCall('desktop');
   const overlay = await context.newPage();
   await overlay.goto(`${origin}/compact-harness`);
@@ -919,7 +919,7 @@ test('ADR-0123: on your own Ctrl+Enter answers your newest question once (not or
   await expect(hint('them')).toBeVisible();
   await expect(hint('you')).toBeVisible({ timeout: 5_000 });
 
-  // My question, then ordinary talk (a separate turn): Ctrl+Enter answers the question, as mine.
+  // ADR-0123 amended: two lines in a row (a question, then ordinary talk) are one turn: one answer covering both.
   await page.evaluate(() =>
     window.kiteSim.say('you', 'EXPLAIN THE CAP THEOREM IN TWO SENTENCES.', 10),
   );
@@ -927,16 +927,23 @@ test('ADR-0123: on your own Ctrl+Enter answers your newest question once (not or
   await answerFromOverlay(overlay);
   await expect
     .poll(() => received.at(-1)?.question)
-    .toBe('EXPLAIN THE CAP THEOREM IN TWO SENTENCES.');
+    .toBe('EXPLAIN THE CAP THEOREM IN TWO SENTENCES. OKAY THAT MAKES SENSE.');
+  const joined = received.length;
   expect(received.at(-1)!.mode).toBe('chat');
   await expect(overlay.locator('[data-question-label="yours"]')).toHaveText('Your question:');
 
-  // Nothing new asked: the same card again, no second request (Ctrl+Enter or Ctrl+Shift+Space).
-  const count = received.length;
+  // Nothing new said: the same card again, no second request (Ctrl+Enter or Ctrl+Shift+Space).
   await answerFromOverlay(overlay);
   await overlay.keyboard.press('Control+Shift+Space');
   await overlay.waitForTimeout(800);
-  expect(received.length).toBe(count);
+  expect(received.length).toBe(joined);
+
+  // A greeting is answered too (on your own everything said is for the assistant), and only the new words go.
+  await page.evaluate(() => window.kiteSim.say('you', 'HEY THERE.', 1));
+  await answerFromOverlay(overlay);
+  await expect.poll(() => received.at(-1)?.question).toBe('HEY THERE.');
+  expect(received.length).toBe(joined + 1);
+  expect(received.at(-1)!.mode).toBe('chat');
 
   // They speak again: back on the call, and Ctrl+Enter answers them.
   await page.evaluate(() => window.kiteSim.speak('them', 'WHAT IS YOUR NOTICE PERIOD?', 1_500));
@@ -953,12 +960,18 @@ test('ADR-0123: with no other side at all, Ctrl+Enter answers you; with nothing 
   await expect(overlay.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
   await expect(overlay.locator('[data-press-hint="you"]')).toBeVisible();
   await answerFromOverlay(overlay);
-  await expect(page.getByText(/No question of yours yet/).first()).toBeVisible();
+  await expect(page.getByText(/Nothing of yours to answer yet/).first()).toBeVisible();
   expect(received.length).toBe(0);
   await page.evaluate(() => window.kiteSim.speak('you', 'WHAT IS A MONAD?', 1_200));
   await answerFromOverlay(overlay);
   await expect.poll(() => received.at(-1)?.question).toBe('WHAT IS A MONAD?');
   expect(received.at(-1)!.mode).toBe('chat');
+  // ADR-0123 amended: Ctrl+Shift+Space on your own answers what was said since, small talk included.
+  await page.evaluate(() => window.kiteSim.speak('you', 'GOOD MORNING.', 1_000));
+  await overlay.keyboard.press('Control+Shift+Space');
+  await expect.poll(() => received.at(-1)?.question).toBe('GOOD MORNING.');
+  expect(received.at(-1)!.mode).toBe('chat');
+  expect(received.length).toBe(2);
 });
 
 test('ADR-0123: nothing ever answers your own speech by itself, even with auto-answer on', async () => {

@@ -113,8 +113,10 @@ function spokenLines(lines: readonly Utterance[]): Utterance[] {
  *
  * @param line A readable line.
  * @returns The segments, oldest first.
+ * Called from: this file's rules; ownQuestion.ts chooseOwnQuestion() (ADR-0123: the user's words after the last
+ *              answered moment); tests
  */
-function segmentsOf(line: Utterance): Segment[] {
+export function segmentsOf(line: Utterance): Segment[] {
   return line.segments && line.segments.length > 1
     ? line.segments
     : [{ text: line.text, tStart: line.tStart, tEnd: line.tEnd }];

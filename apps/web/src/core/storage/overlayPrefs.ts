@@ -7,7 +7,9 @@
  *          data. ADR-0085: the transcript panel is open by default (applied once to existing devices too)
  *          and then follows the user's own choice; the answer panel is not remembered (it opens by itself on
  *          the first answer of each call); and the split between the side-by-side panels. ADR-0113: the panels'
- *          own width, as a share of the bars' width (the answer panel's corner grip sets it).
+ *          own width, as a share of the bars' width (the answer panel's corner grip sets it). ADR-0119 amended
+ *          (27 Nov 2026): the split's default is about a third (like ParakeetAI: transcript ≈ 1/3, answer ≈ 2/3), and
+ *          the overlay window's growth for the pair is remembered until it is undone (getPairGrowth()).
  * Used by: src/features/live/LiveAnswers.tsx, src/features/live/CompactLive.tsx,
  *          src/features/settings/OverlaySetting.tsx
  * Depends on: nothing (localStorage)
@@ -57,7 +59,7 @@ export const OVERLAY_SPLIT_KEY = 'kite.overlaySplit';
  * ADR-0085: the transcript's share of the panels' width side by side: 40 % by default (the answer gets the
  * rest); a drag of the divider stays between these limits (each panel's minimum width is kept in CSS too).
  */
-export const OVERLAY_SPLIT = { min: 0.2, max: 0.7, default: 0.4 } as const;
+export const OVERLAY_SPLIT = { min: 0.2, max: 0.7, default: 0.34 } as const;
 
 /** ADR-0113: the key for the panels' own width, as a share of the bars' width. */
 export const OVERLAY_PANELS_WIDTH_KEY = 'kite.overlayPanelsWidth';
@@ -388,4 +390,68 @@ export function setOverlayFadePref(on: boolean): void {
 export function paintedOpacity(opacity: number, fade: boolean, hovered: boolean): number {
   if (!fade || hovered) return opacity;
   return Math.max(0.2, Math.round(opacity * FADE_AWAY_FACTOR * 100) / 100);
+}
+
+/** ADR-0119 amended (27 Nov 2026): the key for the overlay window's growth for the pair (see getPairGrowth()). */
+export const OVERLAY_PAIR_GROWTH_KEY = 'kite.overlayPairGrowth';
+
+/** ADR-0119 amended: how the page widened the overlay window for the transcript and the answer side by side. */
+export interface PairGrowth {
+  /** The window's width before it grew, CSS px of the page (the shell scales the window with the zoom). */
+  base: number;
+  /** The width it grew to, CSS px of the page. */
+  grown: number;
+  /** The bars' column's width before it grew, CSS px: the bars are held at it while the window is grown. */
+  bars: number;
+}
+
+/**
+ * ADR-0119 amended: the overlay window's growth for the pair, while it is not undone. The page undoes it when the
+ * pair closes; an overlay closed while grown is saved wide by the shell, and the next overlay finds this record
+ * and narrows the window back (usePairWindow.ts).
+ *
+ * @returns The growth, or null when there is none (or it is unreadable).
+ * Called from: usePairWindow.ts; tests
+ */
+export function getPairGrowth(): PairGrowth | null {
+  const raw = read(OVERLAY_PAIR_GROWTH_KEY);
+  if (raw === null) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<PairGrowth> | null;
+    const base = Number(value?.base);
+    const grown = Number(value?.grown);
+    const bars = Number(value?.bars);
+    return Number.isFinite(base) &&
+      Number.isFinite(grown) &&
+      Number.isFinite(bars) &&
+      base > 0 &&
+      grown > base &&
+      bars > 0
+      ? { base, grown, bars }
+      : null;
+  } catch {
+    // A damaged value is no growth.
+    return null;
+  }
+}
+
+/**
+ * ADR-0119 amended: remembers the window's growth for the pair, or forgets it (null) once undone.
+ *
+ * @param growth The growth, or null.
+ * Called from: usePairWindow.ts; tests
+ */
+export function setPairGrowth(growth: PairGrowth | null): void {
+  if (growth === null) {
+    remove(OVERLAY_PAIR_GROWTH_KEY);
+    return;
+  }
+  write(
+    OVERLAY_PAIR_GROWTH_KEY,
+    JSON.stringify({
+      base: Math.round(growth.base),
+      grown: Math.round(growth.grown),
+      bars: Math.round(growth.bars),
+    }),
+  );
 }

@@ -6,8 +6,10 @@
  * and never makes the panel more solid than the chosen value (the v1.0.2 bug: solid under the
  * pointer); blocked storage leaves the defaults. ADR-0085: the transcript panel is open by default (once
  * on a device that stored a choice before), then follows the user's own choice; the answer panel is never
- * remembered; the side-by-side split defaults to 40 % and stays within its limits. ADR-0113: the panels' own
+ * remembered; the side-by-side split defaults to a third (34 %; 40 % before 27 Nov 2026) and stays within its limits. ADR-0113: the panels' own
  * width defaults to the bars' whole width (a share of 1) and stays within its limits.
+ * ADR-0119 amended (27 Nov 2026): the window growth for the pair (remembered until undone) and the split's
+ * default of about a third.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -17,6 +19,9 @@ import {
   getOverlayPanels,
   getOverlayPanelsWidth,
   getOverlaySplit,
+  getPairGrowth,
+  OVERLAY_PAIR_GROWTH_KEY,
+  setPairGrowth,
   OVERLAY_PANELS_DEFAULT_KEY,
   OVERLAY_PANELS_WIDTH,
   OVERLAY_PANELS_WIDTH_KEY,
@@ -204,5 +209,33 @@ describe('overlay panels and split (ADR-0085)', () => {
     expect(() => setOverlaySplit(0.5)).not.toThrow();
     expect(getOverlayPanelsWidth()).toBeNull();
     expect(() => setOverlayPanelsWidth(0.5)).not.toThrow();
+  });
+});
+
+describe('getPairGrowth / setPairGrowth (ADR-0119 amended, 27 Nov 2026)', () => {
+  it('remembers the window growth for the pair until it is undone', () => {
+    expect(getPairGrowth()).toBeNull();
+    setPairGrowth({ base: 640.4, grown: 826.2, bars: 590.3 });
+    expect(getPairGrowth()).toEqual({ base: 640, grown: 826, bars: 590 });
+    setPairGrowth(null);
+    expect(getPairGrowth()).toBeNull();
+  });
+
+  it('reads a damaged or impossible value as no growth', () => {
+    for (const raw of [
+      '{',
+      'null',
+      '{"base":800,"grown":700,"bars":600}',
+      '{"base":-1,"grown":5,"bars":4}',
+      '{"base":640,"grown":826}',
+      '"x"',
+    ]) {
+      localStorage.setItem(OVERLAY_PAIR_GROWTH_KEY, raw);
+      expect(getPairGrowth()).toBeNull();
+    }
+  });
+
+  it('defaults the split to about a third for the transcript (like ParakeetAI)', () => {
+    expect(OVERLAY_SPLIT.default).toBe(0.34);
   });
 });

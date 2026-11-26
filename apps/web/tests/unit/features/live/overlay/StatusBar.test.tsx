@@ -137,7 +137,7 @@ describe('StatusBar (ADR-0123: what Ctrl+Enter answers now)', () => {
     expect(them).toMatch(/>Them</);
     const you = bar({ ...QUIET, pressTarget: 'you' });
     expect(you).toContain('data-press-hint="you"');
-    expect(you).toContain('aria-label="Ctrl+Enter answers your own newest question"');
+    expect(you).toContain('aria-label="Ctrl+Enter answers what you said last"');
     expect(you).toMatch(/text-ui-you[^>]*>You</);
     // Never a tooltip window (a title is drawn outside the protected overlay).
     expect(them).not.toContain('title=');

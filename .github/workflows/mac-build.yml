@@ -1,0 +1,207 @@
+# File: .github/workflows/mac-build.yml
+# Purpose: Builds the signed universal Mac app on a GitHub-hosted macOS runner, so a Mac release no longer
+#          needs a teammate's Mac (docs/deploy/mac-release-runbook.md, "Cloud build"). Started by hand only
+#          (Actions → mac-build → Run workflow, or `gh workflow run mac-build.yml --ref <branch>`).
+#          Steps:
+#            1. checks out the chosen branch, sets up Node 24 and pnpm as ci.yml does;
+#            2. puts the company's signing certificate (.p12, from two repository secrets) into a TEMPORARY
+#               keychain at the path build.sh expects, refusing a certificate that is not the committed
+#               build/mac-signing/certificate.pem (the same checks as import-signing-cert.sh);
+#            3. runs the existing build.sh (which also runs verify-build.sh: every line must PASS);
+#            4. dry run (default): uploads the four release files as a run artifact for 7 days;
+#               publish (input "publish" ticked): publishes them to mac-latest in Zainpak123/kite-releases
+#               with publish-mac.mjs, only from main or mac-internal-release, and only a version newer
+#               than the one Macs have now;
+#            5. always deletes the temporary keychain, the .p12 copy and the trusted certificate.
+# Used by: the developer, at a Mac release (instead of build.sh on a teammate's Mac)
+# Depends on: apps/desktop/scripts/mac/build.sh, verify-build.sh, publish-mac.mjs, cert-tools.mjs;
+#             repository secrets MAC_SIGNING_P12_BASE64, MAC_SIGNING_P12_PASSWORD (both runs) and
+#             KITE_RELEASES_TOKEN (publish only), added by the developer in GitHub's settings
+# Architecture: docs/decisions/ADR-0109-macos-internal-release.md §1–§3
+#
+# Secrets: never printed. They reach only the steps that need them, as environment variables; no step
+# uses `set -x`. The temporary keychain's password is random, made on the runner and masked.
+# Cost: free while the repository is public (standard GitHub-hosted runners). On a private repository
+# macOS minutes count 10x against the allowance; one build takes about 15–25 minutes.
+# Actions are pinned to the same full commit SHAs as ci.yml.
+
+name: mac-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      # Off by default: a dry run builds and checks, and keeps the files as an artifact only.
+      publish:
+        description: Publish to mac-latest (Macs update to it). Leave off for a dry run.
+        type: boolean
+        default: false
+
+# The job only reads this repository; publishing goes to the releases repository with its own token.
+permissions:
+  contents: read
+
+# Never two Mac builds at once (two publishes could interleave their uploads). A second run waits.
+concurrency:
+  group: mac-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the Mac app (${{ inputs.publish && 'publish' || 'dry run' }})
+    # Apple silicon runner; electron-builder makes the universal app (arm64 + x64) from it, as build.sh does.
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      # The certificate's name, as build.sh, import-signing-cert.sh and electron-builder.yml (mac.identity) know it.
+      CERT_NAME: Paramount Intelligence Internal Code Signing
+    steps:
+      # Publishing is allowed only from the two release branches, checked before anything is built.
+      - name: Check the branch may publish
+        if: inputs.publish
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          case "$REF" in
+            refs/heads/main|refs/heads/mac-internal-release) echo "publishing from $REF" ;;
+            *) echo "STOPPED: publish only from main or mac-internal-release (this run: $REF)"; exit 1 ;;
+          esac
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # pnpm's version comes from package.json "packageManager".
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # Node 24, as build.sh requires; the pnpm store is cached between runs.
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # The same steps as import-signing-cert.sh, without its password prompts (no one is at the runner).
+      # The keychain goes where build.sh looks for it (~/Library/Keychains/paramount-signing.keychain-db).
+      - name: Import the signing certificate into a temporary keychain
+        env:
+          P12_BASE64: ${{ secrets.MAC_SIGNING_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MAC_SIGNING_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$P12_BASE64" ] || [ -z "$P12_PASSWORD" ]; then
+            echo "STOPPED: add the secrets MAC_SIGNING_P12_BASE64 and MAC_SIGNING_P12_PASSWORD (runbook, Cloud build)."
+            exit 1
+          fi
+          KC="$HOME/Library/Keychains/paramount-signing.keychain-db"
+          P12="$RUNNER_TEMP/paramount-signing.p12"
+          CERT="apps/desktop/build/mac-signing/certificate.pem"
+          # A random password for this run's keychain only; masked in case anything ever echoes it.
+          KC_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$KC_PASSWORD"
+          printf '%s' "$P12_BASE64" | base64 --decode > "$P12"
+          security create-keychain -p "$KC_PASSWORD" "$KC"
+          # No auto-lock during the build (6 hours, longer than the job's limit).
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PASSWORD" "$KC"
+          security import "$P12" -k "$KC" -f pkcs12 -P "$P12_PASSWORD" -T /usr/bin/codesign >/dev/null
+          rm -f "$P12"
+          # Only Apple's signing tools may use the key, with no prompt.
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PASSWORD" "$KC" >/dev/null
+          # In the search list, so codesign finds it.
+          EXISTING="$(security list-keychains -d user | sed -e 's/^ *"//' -e 's/" *$//')"
+          # shellcheck disable=SC2086 # one keychain path per line, no spaces on the runner
+          security list-keychains -d user -s "$KC" $EXISTING
+          # Trusted for code signing (admin trust settings: the user ones need a person to approve).
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$CERT"
+          # The same refusal as import-signing-cert.sh: never sign with another certificate.
+          EXPECTED="$(node apps/desktop/scripts/mac/cert-tools.mjs fingerprint "$CERT" | sed -n 's/^sha1: //p')"
+          FOUND="$(security find-certificate -c "$CERT_NAME" -Z "$KC" | sed -n 's/^SHA-1 hash: //p' | head -1)"
+          if [ "$FOUND" != "$EXPECTED" ]; then
+            echo "STOPPED: the .p12 in MAC_SIGNING_P12_BASE64 is not the repository's certificate.pem."
+            exit 1
+          fi
+          if ! security find-identity -v -p codesigning "$KC" | grep -q "\"$CERT_NAME\""; then
+            echo "STOPPED: macOS does not list the certificate as valid for code signing."
+            exit 1
+          fi
+          echo "PASS: signing certificate ready (SHA-1 $FOUND)"
+
+      # The existing build: installs both CPUs' packages, builds, signs and runs verify-build.sh. It stops on
+      # any failed check. KITE_KEYCHAIN_UNLOCKED: the keychain above is already unlocked (no prompt).
+      - name: Build and check (build.sh, verify-build.sh)
+        env:
+          KITE_KEYCHAIN_UNLOCKED: '1'
+        run: bash apps/desktop/scripts/mac/build.sh
+
+      # The release files and their SHA-256, for the run's summary.
+      - name: List the release files
+        id: files
+        working-directory: apps/desktop/release
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^version: //p' latest-mac.yml | tr -d "'\"")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Paramount AI $VERSION for Mac"
+            echo '```'
+            shasum -a 256 latest-mac.yml ./*.zip ./*.zip.blockmap ./*.dmg | sed 's#  \./#  #'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # publish-mac.mjs's own checks (zip named in latest-mac.yml, SHA-512, blockmap, dmg), changing nothing.
+      - name: Check the files for publishing (dry run)
+        run: node apps/desktop/scripts/mac/publish-mac.mjs apps/desktop/release --dry-run
+
+      # Dry run: keep the four files (Actions run page → Artifacts) for a week.
+      - name: Upload the release files (dry run)
+        if: ${{ !inputs.publish }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: paramount-ai-mac-${{ steps.files.outputs.version }}
+          path: |
+            apps/desktop/release/latest-mac.yml
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.zip.blockmap
+            apps/desktop/release/*.dmg
+          retention-days: 7
+          if-no-files-found: error
+
+      # Publish only a version newer than the one Macs have now: the updater never goes back, and replacing a
+      # published version's files would break the downloads of Macs mid-update.
+      - name: Check the version is new
+        if: inputs.publish
+        env:
+          BUILT: ${{ steps.files.outputs.version }}
+        run: |
+          set -euo pipefail
+          LIVE="$(curl -fsSL https://github.com/Zainpak123/kite-releases/releases/download/mac-latest/latest-mac.yml | sed -n 's/^version: //p' | tr -d "'\"" || true)"
+          echo "published now: ${LIVE:-none}; built: $BUILT"
+          [ -z "$LIVE" ] && exit 0
+          # Exit 0 only when BUILT (x.y.z) is strictly newer than LIVE.
+          if ! node -e 'const [a, b] = process.argv.slice(1).map((v) => v.split(".").map(Number)); for (let i = 0; i < 3; i++) if (a[i] !== b[i]) process.exit(b[i] > a[i] ? 0 : 1); process.exit(1);' "$LIVE" "$BUILT"; then
+            echo "STOPPED: $BUILT is not newer than the published $LIVE (raise apps/desktop/package.json's version)."
+            exit 1
+          fi
+
+      # Publish: zip, blockmap and dmg first, latest-mac.yml last (publish-mac.mjs). gh is on the runner; the
+      # token belongs to the releases repository's owner and can write only that repository's releases.
+      - name: Publish to mac-latest
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ secrets.KITE_RELEASES_TOKEN }}
+          GH: gh
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "STOPPED: add the secret KITE_RELEASES_TOKEN to publish (runbook, Cloud build)."
+            exit 1
+          fi
+          node apps/desktop/scripts/mac/publish-mac.mjs apps/desktop/release
+
+      # However the job ended: the temporary keychain, any .p12 copy and the trusted certificate go.
+      - name: Remove the temporary keychain
+        if: always()
+        run: |
+          security delete-keychain "$HOME/Library/Keychains/paramount-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/paramount-signing.p12"
+          sudo security delete-certificate -c "$CERT_NAME" /Library/Keychains/System.keychain >/dev/null 2>&1 || true

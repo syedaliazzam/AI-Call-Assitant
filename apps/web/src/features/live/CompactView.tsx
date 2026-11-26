@@ -78,10 +78,14 @@
  *
  * ADR-0124 (like ParakeetAI): with the transcript and the answer side by side they are always the same height:
  * the answer sizes itself and the transcript copies its height (--k-pair-height) and scrolls inside itself
- * ("Scroll to bottom" when scrolled up); the window follows the answer alone. The answer open alone is centred
- * under the bars on every position; opening the transcript puts it on the answer's left without changing the
- * height (the held height ignores the transcript side by side). ADR-0119's widths and the bottom-row mirroring
- * are unchanged.
+ * ("Scroll to bottom" when scrolled up); the window follows the answer alone. Opening the transcript puts it on
+ * the answer's left without changing the height (the held height ignores the transcript side by side).
+ *
+ * 27 Nov 2026 (ADR-0124 and ADR-0119 amended, like ParakeetAI): the answer, alone or with the transcript, lines up
+ * by the position's column again (left, centre, right). Opening the transcript opens the answer beside it. The
+ * pair is one row about 1.4 × bar 1's width (at least 720 CSS px, never wider than the window), and the window
+ * grows for it and narrows back afterwards through the shell's resize steps, with the bars held at their width
+ * (overlay/usePairWindow.ts). The pair stacks only in a window under 600 CSS px that cannot grow.
  *
  * An older desktop shell (1.1.0) has a fixed height for "no panels open" and cannot make an icon. So the
  * page tells every shell how tall its bars are (OverlayLayout.popupHeight, which any shell from 1.1.0
@@ -144,7 +148,7 @@ import {
   columnAlignClass,
   gripSide,
   overlayColumn,
-  panelsColumn,
+  pairWidthStyle,
   panelsShare,
   panelsWidthStyle,
   widthShareAfterDrag,
@@ -156,6 +160,7 @@ import { StatusBar } from './overlay/StatusBar';
 import { statusMessage } from './overlay/statusLine';
 import { TranscriptPanel } from './overlay/TranscriptPanel';
 import { BARS_ATTRIBUTE, GAP_ATTRIBUTE, useClickThrough } from './overlay/useClickThrough';
+import { usePairWindow } from './overlay/usePairWindow';
 import { usePopupDismiss } from './overlay/usePopupDismiss';
 import { WarningLine } from './overlay/WarningLine';
 
@@ -490,8 +495,6 @@ export function CompactView(props: CompactViewProps) {
   const up = props.position ? overlayRow(props.position) === 'bottom' : false;
   // ADR-0113: and its column lines the pieces up on the left, in the middle or on the right.
   const column = overlayColumn(props.position);
-  // ADR-0124: the panels' block: the answer alone centred under the bars; the pair by the position's column.
-  const blockColumn = panelsColumn(column, panels.transcript && panels.answer);
 
   /**
    * Collapses the overlay to bar 1, or opens it again.
@@ -595,6 +598,30 @@ export function CompactView(props: CompactViewProps) {
   useEffect(() => {
     onModeRef.current?.(mode);
   }, [mode]);
+
+  // ADR-0119 amended (27 Nov 2026, like ParakeetAI): while the transcript and the answer sit side by side, the window
+  // grows for their row (about 1.4 × bar 1) on the side its position allows, and narrows back when they close; the
+  // bars are held at their width meanwhile, so they never move. Only where the shell takes resize steps.
+  usePairWindow({
+    shown: panels.transcript && panels.answer && mode === 'full' && !state?.ended,
+    full: mode === 'full',
+    column,
+    onResize: props.onResize,
+    root,
+    bar1: barsBlock,
+  });
+
+  /**
+   * ADR-0119 amended: opens or closes the full transcript. Opening it opens the answer panel beside it too (like
+   * ParakeetAI: the transcript and the answer side by side); closing it leaves the answer as it is.
+   *
+   * @param open True to open.
+   */
+  const openTranscript = (open: boolean): void => {
+    onPanels(
+      open ? { ...panels, transcript: true, answer: true } : { ...panels, transcript: false },
+    );
+  };
 
   // ADR-0085: the zoom reaches <html> in CompactLive's effect (useAppearance), after this view's layout
   // effects have measured, and the window's new size arrives later still: measure again on the next
@@ -777,6 +804,11 @@ export function CompactView(props: CompactViewProps) {
    * @param clientX The pointer's x, in the page's client coordinates.
    */
   const widthDrag: WidthDrag = (phase, clientX) => {
+    // ADR-0119 amended: the pair's row has its own width (1.4 × bar 1); the dragged share is the answer alone's.
+    if (panels.transcript && panels.answer) {
+      widthDragFrom.current = null;
+      return;
+    }
     if (phase === 'start') {
       const bars = barsColumn.current?.getBoundingClientRect().width ?? 0;
       const block = panelsArea.current?.getBoundingClientRect().width ?? 0;
@@ -794,8 +826,8 @@ export function CompactView(props: CompactViewProps) {
     const share = widthShareAfterDrag({
       startWidth: from.width,
       dx: clientX - from.x,
-      // ADR-0124: the answer alone is centred (both edges move); beside the transcript, by the position.
-      column: blockColumn,
+      // ADR-0124 amended: by the position's column (centred, both edges move).
+      column,
       min: from.min,
       max: from.max,
     });
@@ -856,7 +888,7 @@ export function CompactView(props: CompactViewProps) {
   // never holds it, so other apps keep it).
   const transcriptKey = useRef<() => void>(() => undefined);
   useEffect(() => {
-    transcriptKey.current = () => onPanels({ ...panels, transcript: !panels.transcript });
+    transcriptKey.current = () => openTranscript(!panels.transcript);
   });
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1008,7 +1040,7 @@ export function CompactView(props: CompactViewProps) {
       state={state}
       chips={chips}
       transcriptOpen={panels.transcript}
-      onTranscript={(open) => onPanels({ ...panels, transcript: open })}
+      onTranscript={openTranscript}
       onClear={clearTranscript}
       mac={mac}
       levels={levels}
@@ -1286,29 +1318,29 @@ export function CompactView(props: CompactViewProps) {
               // ADR-0113: the panels are one block with its own width (with the answer open: its share of the
               // bars' width, never under the button strip; the transcript alone fills it), lined up by the
               // position's column. The block is a container, so side by side or stacked follows its own width.
-              // ADR-0124: the answer open alone is centred under the bars on every position (like ParakeetAI);
-              // with the transcript too, the pair still lines up by the position's column (ADR-0119).
+              // ADR-0124 amended (27 Nov 2026): the answer alone and the pair both line up by the position's
+              // column (left positions on bar 1's left edge, right ones on its right edge, centred in the middle).
               <div
                 {...{ [GAP_ATTRIBUTE]: '' }}
-                className={`flex min-h-0 flex-1 flex-col ${columnAlignClass(blockColumn)} ${UNDER_BAR}`}
+                className={`flex min-h-0 flex-1 flex-col ${columnAlignClass(column)} ${UNDER_BAR}`}
               >
                 <div
                   {...{ [GAP_ATTRIBUTE]: '' }}
                   data-panels-block=""
-                  // ADR-0119: with both panels open in a window of 600 CSS px or more, at least as wide as the
-                  // window or 720 px, whichever is less (100cqw: the root, the nearest container), with no 100 %
-                  // cap. So they sit side by side even where bar 1 is narrower (the 640 default: 13" Mac,
-                  // 1366/1536 Windows laptops), and keep the width they had beside the bars before ADR-0118 made
-                  // bar 1 narrower (715 px measured at the 768 and 960 defaults). A wider bar 1 still sets it. It
-                  // overflows bar 1's column on the side the position's column allows (centred: both sides), never
-                  // the window.
-                  className={`@container flex min-h-0 max-w-full flex-1 flex-col ${both ? '@min-[600px]/overlay:min-w-[min(720px,100cqw)] @min-[600px]/overlay:max-w-none' : ''}`}
+                  // ADR-0119 amended (27 Nov 2026, like ParakeetAI): with both open, one row about 1.4 × bar 1's
+                  // width (at least 720, never wider than the window: pairWidthStyle(); 100cqw is the root, the
+                  // nearest container), with no 100 % cap; the window grows for it (usePairWindow()). It overflows
+                  // bar 1's column on the side the position's column allows (centred: both sides), never the window.
+                  // Side by side from 600 CSS px of window; under that (a window that cannot grow) stacked.
+                  className={`@container flex min-h-0 flex-1 flex-col ${both ? 'max-w-none' : 'max-w-full'}`}
                   style={{
-                    // ADR-0115: the user's width, else 62 % for the answer alone and the bars' width beside
-                    // the transcript (panelsShare()); never under the button strip.
-                    width: panels.answer
-                      ? panelsWidthStyle(Math.max(panelsShare(panelsWidth, both), stripShare))
-                      : panelsWidthStyle(OVERLAY_PANELS_WIDTH.max),
+                    // ADR-0115: the user's width, else 62 % for the answer alone (panelsShare()); never under the
+                    // button strip. The transcript alone fills the bars' width.
+                    width: both
+                      ? pairWidthStyle()
+                      : panels.answer
+                        ? panelsWidthStyle(Math.max(panelsShare(panelsWidth, false), stripShare))
+                        : panelsWidthStyle(OVERLAY_PANELS_WIDTH.max),
                   }}
                 >
                   <div
@@ -1375,8 +1407,8 @@ export function CompactView(props: CompactViewProps) {
                           onResize={onResize}
                           copy={copy}
                           onWidthDrag={widthDrag}
-                          // ADR-0124: the answer alone is centred, so its grip moves both edges.
-                          gripSide={gripSide(blockColumn)}
+                          // ADR-0124 amended: the grip sits on the side that moves for the position's column.
+                          gripSide={gripSide(column)}
                         />
                       </div>
                     )}

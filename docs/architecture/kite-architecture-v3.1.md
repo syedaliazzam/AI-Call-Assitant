@@ -1,8 +1,8 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "4.64.0"
+version: "4.65.0"
 status: "Current: the single document the team builds from"
-date: "2026-11-26"
+date: "2026-11-27"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
 authoritative_source: "docs/architecture/kite-architecture-v3.1.md"
 doc_label: "ARCHITECTURE AND BUILD PLAN"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 4.64.0, **Current**: the only document to build from |
+| Version | 4.65.0, **Current**: the only document to build from |
+| Changes in 4.65.0 | **The overlay follows its position again; the transcript and the answer as one wide row; on your own, Ctrl+Enter answers whatever you said** (ADR-0124, ADR-0119 and ADR-0123 amended 27 Nov 2026; web only: Windows 1.7.4 and Mac 1.8.0 need only a restart). §5: the answer, alone or beside the transcript, lines up by the position's column (left / centre / right; ADR-0124 had centred the answer alone). Opening the transcript opens the answer beside it. The pair is one row `min(window, max(720 px, 1.4 × bar 1))` (`pairWidthStyle()`), transcript about a third (split default 0.34), side by side from 600 CSS px of window. While the pair shows, the page widens the overlay window for the row through the existing `resizeOverlay` steps (`'start'` and `'move'` only, on the edge the position allows: right on the left, left on the right, half each centred; capped at the work area less 16 DIP a side), holds the bars' column at its width so the bars never move, and narrows the window back when the pair closes (`overlay/usePairWindow.ts`; `kite.overlayPairGrowth` undoes a growth left by an overlay closed while grown). No shell: no growth, the row fits the window. The answer's footer keeps type / how / when together on the right. §6.1: on your own (and with Ctrl+Shift+Space always) the user's newest **unanswered** speech: every "You" stretch since the capture time of the last own answer (`answeredUntil`, so words joined to an answered line still count), back to the other person's words, as one turn; greetings and small talk included (no question filter). On a call Ctrl+Enter is unchanged. No prompt change (the contract's `smalltalk` type already answers a greeting). |
 | Changes in 4.64.0 | **Click-through covers the whole overlay; the Mac overlay is plainly see-through** (ADR-0055 amended 26 Nov 2026; ADR-0126). §5: with Click-through on, every click on the overlay (both bars, the chat bar, the script bar, the panels, W's spot) goes to the app behind it, sent to the shell at once; nothing reacts to the pointer (`.k-pass-all`). Only Ctrl+Alt+X (⌘ ⌥ X) turns it off from the overlay; bar 1 shows "Click-through on — press Ctrl+Alt+X to turn off"; the call window has **Turn click-through off**; it ends with the call; Settings › Hotkeys warns when another app holds the key, and while one does in a call the bars keep their clicks (`CompactState.clickThroughKeyTaken`). Web only (works with Windows 1.7.4); a newer shell adds a tray **Turn click-through off** during a call (Mac 1.8.0; next Windows release). §7.3 (desktop, macOS only): `overlayGlass()` drops `vibrancy`/`visualEffectState`: transparent with a clear background as on Windows, keeping macOS's content-shaped shadow. |
 | Changes in 4.63.0 | **The Mac download only once the Mac app is published** (ADR-0125; web only). §10.3: `src/server/macRelease.ts` reads `mac-latest/latest-mac.yml` (published = 200 with a version and a .zip; 404, errors and timeouts = not published; reused 1 min / 10 min); public `GET /api/mac-release` → `{ published }` (`proxy.ts` `PUBLIC_PAGE_PATHS`). Every "Get it for Mac" dialog shows **Mac version coming soon** (no command, no .dmg) until then; `install-mac.sh` says the same on a 404 and installs nothing. It turns on by itself when `publish-mac.mjs` publishes `mac-latest`. Windows download unchanged. |
 | Changes in 4.62.0 | **Transcript and answer the same height; the answer alone centred** (ADR-0124; web only; amends ADR-0113 §5, ADR-0119). §5: side by side the transcript panel is exactly as tall as the answer panel (`--k-pair-height`, copied from the answer by a ResizeObserver) and scrolls inside itself with **Scroll to bottom**; only the answer sets the window's height; with both open the answer keeps its default height even before the first answer. The answer open alone is centred under the bars on every position (`panelsColumn()`); opening the transcript keeps the held height (`answerHoldKey` uses the window width and dragged share). |
@@ -459,9 +460,9 @@ Default hotkeys (ADR-0029). The page's keys are in `platform/keymap.ts` and do n
 
 | Action | macOS | Windows | Works |
 |---|---|---|---|
-| Answer (4.61.0, ADR-0123: on a call the other person, on your own your own newest spoken question) | ⌘ Enter | Ctrl+Enter | Any app, during a call |
+| Answer (4.61.0, ADR-0123: on a call the other person, on your own what you said since your last answer; 4.65.0: greetings included) | ⌘ Enter | Ctrl+Enter | Any app, during a call |
 | Screenshot | ⌘ Shift Enter | Ctrl+Shift+Enter | Any app, during a call |
-| Your own last spoken question (4.61.0, ADR-0123; it was the voice question, 4.22.0) | ⌘ Shift Space | Ctrl+Shift+Space | Any app, during a call |
+| What you said since your last answer (4.61.0, ADR-0123, 4.65.0; it was the voice question, 4.22.0) | ⌘ Shift Space | Ctrl+Shift+Space | Any app, during a call |
 | Screenshot and voice question (4.22.0) | ⌘ Alt Enter | Ctrl+Alt+Enter | Any app, during a call |
 | Previous / next answer | ⌘ ← / ⌘ → | Ctrl+← / Ctrl+→ | Any app, during a call (desktop 1.6.4; before: Kite focused only) |
 | Clear answers (4.22.0: clears them from the screen) | ⌘ Backspace | Ctrl+Backspace | Any app, during a call (desktop 1.6.4) |

@@ -124,8 +124,8 @@ function WordsLine({
 
 /**
  * ADR-0123: what Ctrl+Enter (⌘↵ on a Mac) answers right now, small and muted beside the words: "Them" while the
- * other side has spoken in the last two minutes (their newest question), "You" otherwise (the user's own newest
- * spoken question). Text only, no tooltip (a title is an unprotected window); screen readers get the sentence.
+ * other side has spoken in the last two minutes (their newest question), "You" otherwise (what the user said last
+ * and has not had answered). Text only, no tooltip (a title is an unprotected window); screen readers get the sentence.
  *
  * @param props.target Who the key answers now.
  * @param props.mac    True on macOS (the key's name).
@@ -142,7 +142,7 @@ function PressHint({
   mac: boolean;
 }) {
   const key = tipShortcut(hotkeyAccelerator('answer', mac), mac);
-  const who = target === 'them' ? "the other person's newest question" : 'your own newest question';
+  const who = target === 'them' ? "the other person's newest question" : 'what you said last';
   return (
     <span
       role="note"

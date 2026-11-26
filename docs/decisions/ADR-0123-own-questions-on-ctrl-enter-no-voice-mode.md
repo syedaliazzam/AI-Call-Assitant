@@ -3,6 +3,7 @@
 - **Status:** Accepted (25 Nov 2026, the developer's WP3 brief, item 2)
 - **Date:** 2026-11-25
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5 (Overlay), §6.1 (Trigger), §7.3 (hotkeys) (version 4.61.0)
+- **Amended 27 Nov 2026:** §3 is replaced: the user's newest **unanswered** speech, any words (see "Amendment" at the end).
 - **Supersedes / superseded by:** amends ADR-0082 §4 (Ctrl+Shift+Space was the voice question: listen, then send after a pause) and ADR-0095 §1 (Voice mode on bar 1 and in the ⋮ menu). Keeps ADR-0070 / ADR-0076's rules for the other person's questions unchanged, ADR-0101's voice question for Ctrl+Alt+Enter, and ADR-0115's "Question:" label.
 
 ## Context
@@ -45,3 +46,21 @@ Web only. No change to the desktop shell, the bridge, the keys or the answer pro
 - Unit: `tests/unit/core/answer/ownQuestion.test.ts` (the two-minute window, no other source, questions and requests vs ordinary talk, turns, look-back, answered once, grey, long turns, other languages); `StatusBar.test.tsx` (the hint), `CompactView.test.tsx` ("Your question:"), `ModelChoice.test.tsx` (no Voice control), `liveChannel.test.ts`, `hotkeys.test.ts`.
 - Integration (`tests/integration/sim-calls.spec.ts`): on a call they ask → them; I ask aloud → Ctrl+Enter still answers them; Ctrl+Shift+Space and Chat answer me during a call; their last words 119 s ago → the hint flips to You within the window's end, and Ctrl+Enter answers my question once (not my ordinary talk); no other side → mine, or the notice with nothing sent; auto-answer on never answers my speech; Ctrl+Alt+Enter still listens and Esc cancels.
 - No answer prompt or server change (`git diff` of `apps/web/src/server` is empty for this item), so no eval group is affected.
+
+## Amendment (27 Nov 2026): on your own, Ctrl+Enter answers whatever you said last
+
+**Context.** On Mac 1.8.0 and Windows 1.7.4, on their own, the developer said "Hey there" and pressed Ctrl+Enter: nothing was answered ("No question of yours yet"), while "Tell me about myself" was. §3 looked only for a question or a request and skipped greetings and small talk. With no one else on the call, everything the user says is meant for the assistant.
+
+**Decision (web only, no prompt change).**
+1. **§3 is replaced.** A press for the user's own words (Ctrl+Enter on your own, Ctrl+Shift+Space in both modes) answers the user's **newest unanswered speech**: every "You" stretch said since the user's last own answer, back to the other person's words before them, joined into one turn. Greetings, small talk and ordinary remarks count. There is no question filter (`isOwnRequest()` and the 2.5 s turn gap are removed). At most the newest 200 words are sent, as before.
+2. **"Since the last answer" is by time.** The page remembers the capture time of the newest stretch it sent (`answeredUntil`). The transcript joins close lines of one speaker into one line (`merge.ts`), so a new "Hey there" said right after an answered line becomes part of that line: its stretches (`segments`, ADR-0076) tell the new words from the answered ones. A line answered while still grey keeps its start time when it finishes, so it is not asked again.
+3. **Nothing new since the last answer:** the earlier card shows again ("Showing the earlier answer"), no request.
+4. **On a call, Ctrl+Enter is unchanged:** it answers only the other person. Ctrl+Shift+Space answers the user's newest unanswered speech, skipping the other person's words said after it.
+5. **Still never automatic**, and auto-answer still reads only the other person's lines.
+6. **No prompt change.** The words go as the user's own question (mode `chat`), as typed Chat questions always have. The answer contract already has a `smalltalk` type ("one short, friendly reply of 12 words or fewer"), so a greeting gets a short friendly reply with no new prompt text.
+7. **Wording.** Bar 2's hint for screen readers says "Ctrl+Enter answers what you said last"; the notice with nothing to answer is "Nothing of yours to answer yet. Say it aloud, then press the key again, or type it in Chat."; the guide says so too.
+
+**Validation.**
+- Unit: `ownQuestion.test.ts` (a greeting is answered; two lines in a row are one turn however far apart; the turn starts after the last answered words; words joined to an answered line are new; the other person's words after mine are skipped and before mine end the turn; answered already shows the card, also after a grey line finishes; grey; 200 words; nothing said; other languages).
+- Integration: `sim-calls.spec.ts`: on your own, a question and a remark in a row → one request with both; nothing new → no request; "HEY THERE." → answered, only the new words; with no other side, Ctrl+Enter and then Ctrl+Shift+Space ("GOOD MORNING.") each answer; on a call, after I speak, Ctrl+Enter still answers them and Ctrl+Shift+Space answers me; auto-answer never answers my speech.
+- No change under `apps/web/src/server`, so no eval group is affected.

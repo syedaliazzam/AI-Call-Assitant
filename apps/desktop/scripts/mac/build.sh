@@ -11,7 +11,10 @@
 #          Usage (from the repository folder): bash apps/desktop/scripts/mac/build.sh [--version X.Y.Z]
 #          --version builds the same code under another version number (the stage-6 test's 1.7.98 and
 #          1.7.99); without it, the version in apps/desktop/package.json.
-# Used by: the teammate who builds the Mac app (docs/testing/mac-release-test.md; each Mac release)
+#          KITE_KEYCHAIN_UNLOCKED=1 (set only by the cloud build, mac-build.yml) skips step 3's password
+#          prompt: that workflow makes and unlocks its own temporary keychain at the same path.
+# Used by: the teammate who builds the Mac app (docs/testing/mac-release-test.md; each Mac release);
+#          .github/workflows/mac-build.yml (the cloud build on a GitHub macOS runner)
 # Depends on: macOS, Xcode Command Line Tools (codesign, lipo, ditto), Node 24, pnpm (corepack), the
 #             signing keychain from import-signing-cert.sh, scripts/mac/cert-tools.mjs, verify-build.sh
 # Architecture: docs/decisions/ADR-0109-macos-internal-release.md §2
@@ -70,8 +73,14 @@ FOUND_SHA1="$(security find-certificate -c "$NAME" -Z "$KEYCHAIN" 2>/dev/null | 
 echo "== Installing dependencies (both Mac CPUs' native packages)"
 pnpm install --frozen-lockfile --cpu=arm64,x64
 
-echo "== Unlocking the signing keychain (macOS asks for its password)"
-security unlock-keychain "$KEYCHAIN"
+if [ "${KITE_KEYCHAIN_UNLOCKED:-}" = "1" ]; then
+  # The cloud build (.github/workflows/mac-build.yml) made and unlocked a temporary keychain at this path
+  # itself; on a runner there is no terminal for macOS to ask for a password.
+  echo "== The signing keychain is already unlocked (cloud build)"
+else
+  echo "== Unlocking the signing keychain (macOS asks for its password)"
+  security unlock-keychain "$KEYCHAIN"
+fi
 trap 'security lock-keychain "$KEYCHAIN" >/dev/null 2>&1 || true' EXIT
 
 EXTRA=()
