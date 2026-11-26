@@ -9,6 +9,8 @@
  * and the pair beside the transcript the bars' whole width; the question carries a muted "Question:" label.
  * ADR-0118: bar 2 (the transcript bar) stays with the words when the full transcript opens under it, a warning
  * has its own line between them, and both are mirrored on the bottom row.
+ * 27 Nov 2026 (ADR-0124 and ADR-0119 amended): the answer alone and the pair line up by the position's column on
+ * all six positions, and the pair is one row of min(window, max(720 px, 1.4 × bar 1)) whatever share was dragged.
  */
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,6 +56,9 @@ const ANSWERED: CompactState = {
   notice: null,
   ended: false,
 };
+
+/** ADR-0119 amended: the pair's row in the markup (1.4 × bar 1, at least 720 px, at most the window). */
+const PAIR_ROW = /data-panels-block=""[^>]*style="width:min\(100cqw, max\(720px, 140%\)\)"/;
 
 /** The fake storage's contents. */
 let stored: Map<string, string>;
@@ -140,28 +145,24 @@ describe('CompactView (ADR-0113)', () => {
   });
 
   it('gives the answer its remembered share of the bars, a reading column by default', () => {
-    // ADR-0115: never dragged, the answer alone is 62 % of the bars (it was 100 %), and beside the transcript
-    // the pair keeps the bars' whole width (so the two still sit side by side).
+    // ADR-0115: never dragged, the answer alone is 62 % of the bars (it was 100 %). ADR-0119 amended: beside the
+    // transcript the pair is its own row, 1.4 × bar 1 (at least 720 px, never wider than the window).
     expect(overlay('top-left')).toMatch(/data-panels-block=""[^>]*style="width:62%"/);
-    expect(overlay('top-left', { transcript: true, answer: true })).toMatch(
-      /data-panels-block=""[^>]*style="width:100%"/,
-    );
+    expect(overlay('top-left', { transcript: true, answer: true })).toMatch(PAIR_ROW);
     stored.set(OVERLAY_PANELS_WIDTH_KEY, '0.5');
     const html = overlay('top-right');
     expect(html).toMatch(/data-panels-block=""[^>]*style="width:50%"/);
-    // ADR-0124: the answer alone is centred under the bars on every position (ADR-0113 lined it up on the
-    // bar's right edge here); the pair still lines up by the position's column. A container either way.
+    // ADR-0124 amended: the answer alone lines up on the bar's right edge here again (ADR-0124 had centred it),
+    // as the pair does. A container either way.
     expect(html).toMatch(
-      /class="[^"]*items-center[^"]*w-0 min-w-full[^"]*"><div data-gap="" data-panels-block/,
+      /class="[^"]*items-end[^"]*w-0 min-w-full[^"]*"><div data-gap="" data-panels-block/,
     );
     expect(overlay('top-right', { transcript: true, answer: true })).toMatch(
       /class="[^"]*items-end[^"]*w-0 min-w-full[^"]*"><div data-gap="" data-panels-block/,
     );
     expect(classOf(html, 'data-panels-block')).toContain('@container');
-    // The pair moves as one block: with the transcript open too, the same share.
-    expect(overlay('top-right', { transcript: true, answer: true })).toMatch(
-      /data-panels-block=""[^>]*style="width:50%"/,
-    );
+    // ADR-0119 amended: the dragged share is the answer alone's; the pair keeps its own row.
+    expect(overlay('top-right', { transcript: true, answer: true })).toMatch(PAIR_ROW);
     // The transcript alone still fills the bars' width.
     expect(overlay('top-right', { transcript: true, answer: false })).toMatch(
       /data-panels-block=""[^>]*style="width:100%"/,
@@ -210,12 +211,14 @@ describe('CompactView (ADR-0113)', () => {
     expect(overlay('top-center', both)).toContain('data-grip-side="right"');
     expect(overlay('top-right', both)).toContain('data-grip-side="left"');
     expect(overlay('bottom-right', both)).toContain('data-grip-side="left"');
-    // ADR-0124: the answer alone is centred, so both its edges move; the grip is on the right.
-    expect(overlay('top-right')).toContain('data-grip-side="right"');
+    // ADR-0124 amended: the answer alone lines up by the position too, so on a right position its left edge moves.
+    expect(overlay('top-right')).toContain('data-grip-side="left"');
+    expect(overlay('top-center')).toContain('data-grip-side="right"');
+    expect(overlay('bottom-left')).toContain('data-grip-side="right"');
   });
 });
 
-describe('CompactView (ADR-0124: transcript and answer the same height, the answer alone centred)', () => {
+describe('CompactView (ADR-0124: transcript and answer the same height; amended: aligned by the position)', () => {
   it('makes the transcript exactly as tall as the answer side by side, and only then', () => {
     const pair = classOf(
       overlay('top-center', { transcript: true, answer: true }),
@@ -242,14 +245,31 @@ describe('CompactView (ADR-0124: transcript and answer the same height, the answ
     );
   });
 
-  it('centres the answer alone under the bars on every position, mirrored rows included', () => {
-    for (const position of ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const) {
-      expect(overlay(position)).toMatch(
-        /class="[^"]*items-center[^"]*w-0 min-w-full[^"]*"><div data-gap="" data-panels-block/,
-      );
+  it('lines the answer and the pair up by the position on all six positions, transcript open and closed', () => {
+    const expected = {
+      'top-left': 'items-start',
+      'top-center': 'items-center',
+      'top-right': 'items-end',
+      'bottom-left': 'items-start',
+      'bottom-center': 'items-center',
+      'bottom-right': 'items-end',
+    } as const;
+    for (const [position, align] of Object.entries(expected) as [OverlayPreset, string][]) {
+      for (const transcript of [false, true]) {
+        const html = overlay(position, { transcript, answer: true });
+        expect(html).toMatch(
+          new RegExp(
+            `class="[^"]*${align}[^"]*w-0 min-w-full[^"]*"><div data-gap="" data-panels-block`,
+          ),
+        );
+        // The bars line up the same way (ADR-0113).
+        expect(rootClass(html)).toContain(align);
+      }
     }
-    // The bars themselves still line up by the position (ADR-0113).
-    expect(rootClass(overlay('top-left'))).toContain('items-start');
+    // With no position (a browser's picture-in-picture window) everything is centred, as before.
+    expect(overlay(undefined)).toMatch(
+      /class="[^"]*items-center[^"]*w-0 min-w-full[^"]*"><div data-gap="" data-panels-block/,
+    );
   });
 });
 
@@ -321,18 +341,19 @@ describe('CompactView (ADR-0119: side by side from the window width)', () => {
     expect(bottom).toContain('@min-[600px]/overlay:items-end');
   });
 
-  it('lets the pair be as wide as the window or 720 px (wider than bar 1) only with both panels open', () => {
-    const both = classOf(
-      overlay('top-center', { transcript: true, answer: true }),
-      'data-panels-block',
-    );
-    expect(both).toContain('@min-[600px]/overlay:min-w-[min(720px,100cqw)]');
-    expect(both).toContain('@min-[600px]/overlay:max-w-none');
+  it('makes the pair one row 1.4 × bar 1 wide (at least 720, at most the window), only with both open', () => {
+    const html = overlay('top-center', { transcript: true, answer: true });
+    expect(html).toMatch(PAIR_ROW);
+    // Not held to the bars' width (it may be wider than bar 1; the window grows for it).
+    expect(classOf(html, 'data-panels-block')).toContain('max-w-none');
     // One panel alone keeps ADR-0113 / ADR-0115's width (the answer's share, the transcript the bars' width).
-    expect(classOf(overlay('top-center'), 'data-panels-block')).not.toContain('min-w-[min(');
-    expect(
-      classOf(overlay('top-center', { transcript: true, answer: false }), 'data-panels-block'),
-    ).not.toContain('min-w-[min(');
+    expect(classOf(overlay('top-center'), 'data-panels-block')).toContain('max-w-full');
+    expect(overlay('top-center')).not.toMatch(/data-panels-block=""[^>]*140%/);
+    expect(overlay('top-center', { transcript: true, answer: false })).toMatch(
+      /data-panels-block=""[^>]*style="width:100%"/,
+    );
+    // No hold on the bars in the markup: the page writes it only while the window is grown (usePairWindow).
+    expect(html).not.toMatch(/data-bars-column=""[^>]*style=/);
   });
 
   it('keeps each panel’s minimum (transcript 240, answer 340) side by side, by the window', () => {

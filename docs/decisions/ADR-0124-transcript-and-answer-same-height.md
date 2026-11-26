@@ -3,6 +3,7 @@
 - **Status:** Accepted (25 Nov 2026, the developer's WP3 brief, item 3)
 - **Date:** 2026-11-25
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5 (Overlay, compact view) (version 4.62.0)
+- **Amended 27 Nov 2026:** §4 is reversed: the answer alone lines up by the position's column again (see "Amendment" at the end). The equal height stays.
 - **Supersedes / superseded by:** amends ADR-0113 §5 (the answer panel lined up by the position's column when open alone) and ADR-0119 (the pair's height: each panel was as tall as its own content, and the taller one set the window). Keeps ADR-0119's widths (side by side from 600 CSS px of the window; the pair at least `min(720 px, window)`), ADR-0115's default shares, ADR-0105's height rules for the answer, and ADR-0056 / ADR-0075's bottom-row mirroring.
 
 ## Context
@@ -38,3 +39,14 @@ Web only. No change to the desktop shell.
 - Unit: `tests/unit/features/live/CompactView.test.tsx` (the transcript's pair height only side by side, the pair's floor, the answer alone centred on every position, the grip side), `panelWidth.test.ts` (`panelsColumn`), `answerHeight.test.ts` (the share in the hold key).
 - Integration: `tests/integration/live.spec.ts` "ADR-0124" (same height and same top at 640 and 1280 px on top-center, bottom-center, top-left and bottom-right; the answer alone centred; a long transcript scrolls inside its panel, keeps the pair's height, and shows **Scroll to bottom**), S15, and the WP3 pictures.
 - Pictures, before and after, at 640 and 1280 px, top and bottom: `docs/testing/wp3-overlay-screenshots/`.
+
+## Amendment (27 Nov 2026): the answer follows the overlay's position again
+
+**Context.** On Mac 1.8.0 and Windows 1.7.4 the developer found that §4 (the answer alone centred under the bars on every position) was a regression: on a left or right position the answer floated in the middle while the bars sat on the screen's edge. ParakeetAI lines its answer up with its bar by where the bar is.
+
+**Decision (web only).**
+1. §4 is reversed. The answer alone, and the transcript and answer together, line up by the position's column (ADR-0113 §5): on a left position on bar 1's left edge, on a right position on its right edge, centred on a centre position; top and bottom rows alike. `panelsColumn()` is removed; CompactView uses `overlayColumn()` for the panels' block, the corner grip's side and the grip's drag.
+2. The corner grip is on the side that moves for that column (bottom left on a right position).
+3. Everything else in this ADR stays: the same height side by side, the transcript scrolling inside itself, the held height.
+
+**Validation.** Unit: `CompactView.test.tsx` (all six positions, transcript open and closed, and centred with no position; the grip's side). Integration: `live.spec.ts` "ADR-0124 … amended" (640 and 1280 px, four positions) and "ADR-0119 / ADR-0124 amended" (1280, 1440 and 1920 px screens, six positions, open and closed). Pictures: `docs/testing/overlay-fixes-2-screenshots/`.

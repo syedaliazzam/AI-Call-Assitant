@@ -318,35 +318,40 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
                 >
                   <FlagIcon />
                 </button>
-                <span className="min-w-2 flex-1" />
-                <AnswerTags
-                  compact
-                  meta={answer.meta}
-                  {...(state?.sessionType ? { sessionType: state.sessionType } : {})}
-                  {...(answer.status !== 'streaming'
-                    ? {
-                        onChangeType: (answerType: AnswerType) =>
-                          onCommand({ type: 'reanswer', id: answer.id, answerType }),
-                      }
-                    : {})}
-                />
-                {/* ADR-0107: the "·" wraps together with the label after it (a lone dot ended the line). */}
-                {/* The label keeps its own span, so its text still starts with how it was asked. */}
-                <span className="whitespace-nowrap">
-                  {answer.meta && <span aria-hidden="true">· </span>}
-                  <span>
-                    {answer.auto
-                      ? 'Auto'
-                      : answer.mode === 'answer'
-                        ? 'Answer'
-                        : answer.mode === 'chat'
-                          ? 'Chat'
-                          : 'Screenshot'}{' '}
-                    ·{' '}
-                    {new Date(answer.askedAt).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                {/* 27 Nov 2026 (ADR-0119 amended): type, how and when are one part, right-aligned. It stays beside
+                    the buttons when at least 240 px are left there (basis-60) and takes the rest of the line;
+                    otherwise the whole part moves under the buttons. Before, at some widths (about 550 px, the
+                    pair's default answer width since the row grew) "Answer · 12:01" fell alone to a second line. */}
+                <span className="flex min-w-0 flex-1 basis-60 flex-wrap items-center justify-end gap-x-1">
+                  <AnswerTags
+                    compact
+                    meta={answer.meta}
+                    {...(state?.sessionType ? { sessionType: state.sessionType } : {})}
+                    {...(answer.status !== 'streaming'
+                      ? {
+                          onChangeType: (answerType: AnswerType) =>
+                            onCommand({ type: 'reanswer', id: answer.id, answerType }),
+                        }
+                      : {})}
+                  />
+                  {/* ADR-0107: the "·" wraps together with the label after it (a lone dot ended the line). */}
+                  {/* The label keeps its own span, so its text still starts with how it was asked. */}
+                  <span className="whitespace-nowrap">
+                    {answer.meta && <span aria-hidden="true">· </span>}
+                    <span>
+                      {answer.auto
+                        ? 'Auto'
+                        : answer.mode === 'answer'
+                          ? 'Answer'
+                          : answer.mode === 'chat'
+                            ? 'Chat'
+                            : 'Screenshot'}{' '}
+                      ·{' '}
+                      {new Date(answer.askedAt).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
                   </span>
                 </span>
               </div>

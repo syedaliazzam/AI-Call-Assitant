@@ -24,8 +24,13 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
-import { CLAUDE_UNAVAILABLE_MESSAGES, type AnswerRequest } from '@kite/shared';
+import { chromium, expect, test, type Browser, type Frame, type Page } from '@playwright/test';
+import {
+  CLAUDE_UNAVAILABLE_MESSAGES,
+  OVERLAY_PRESETS,
+  type AnswerRequest,
+  type OverlayPreset,
+} from '@kite/shared';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
 import { SHOT_DIR, check, type Width, type WatchedPage } from '../ui/shots';
@@ -1165,21 +1170,22 @@ test('S15: the panels sit side by side when wide, stack when narrow; bubbles and
   await shot(watched, WIDE_SIZE, 'call-panels');
 
   // ADR-0085: the divider shares the width: a drag moves it (each panel keeps its minimum), a
-  // double-click puts it back to 40 %, and the split is remembered on this device.
+  // double-click puts it back to the default (34 % since ADR-0119 was amended; 40 % before), and the split is
+  // remembered on this device.
   const divider = page.getByRole('separator', { name: 'Resize the transcript and answer panels' });
   const splitBox = (await divider.boundingBox())!;
   const before = (await transcript.boundingBox())!.width;
   await page.mouse.move(splitBox.x + splitBox.width / 2, splitBox.y + 40);
   await page.mouse.down();
-  // ADR-0119: the pair is 720 px here (bar 1 is narrower since ADR-0118), so a 60 px drag stays clear of the
-  // answer's 340 px minimum (it was 120 px when the pair followed a wider bar 1).
+  // ADR-0119 amended: the pair is 1.4 × bar 1 here (about 850 px), so a 60 px drag stays clear of the answer's
+  // 340 px minimum and moves the split by about 7 %.
   await page.mouse.move(splitBox.x + splitBox.width / 2 + 60, splitBox.y + 40, { steps: 6 });
   await page.mouse.up();
   const dragged = (await transcript.boundingBox())!.width;
   expect(dragged).toBeGreaterThan(before + 50);
   expect(
     Number(await page.evaluate(() => localStorage.getItem('kite.overlaySplit'))),
-  ).toBeGreaterThan(0.45);
+  ).toBeGreaterThan(0.39);
   // As far as it goes: the answer keeps 340 px. The drag starts on the divider where it is now.
   const movedBox = (await divider.boundingBox())!;
   await page.mouse.move(movedBox.x + movedBox.width / 2, movedBox.y + 40);
@@ -2628,7 +2634,7 @@ test('ADR-0122: Chat on bar 1 opens the chat bar under it; it never takes the ke
   await watched.context.close();
 });
 
-test('ADR-0124: transcript and answer always the same height side by side; the answer alone centred under the bars', async () => {
+test('ADR-0124: transcript and answer always the same height side by side; amended: the answer alone lines up by the position', async () => {
   for (const width of [640, 1280]) {
     for (const position of ['top-center', 'bottom-center', 'top-left', 'bottom-right'] as const) {
       const watched = await openOverlayView(
@@ -2656,15 +2662,15 @@ test('ADR-0124: transcript and answer always the same height side by side; the a
         'auto',
       );
 
-      // The answer alone is centred under the bars on every position.
+      // ADR-0124 amended (27 Nov 2026): the answer alone lines up by the position's column (it was centred).
       await page.getByRole('button', { name: 'Close the full transcript', exact: true }).click();
       await expect(transcript).toHaveCount(0);
-      const bars = (await page.locator('[data-bars-column]').boundingBox())!;
-      const alone = (await answer.boundingBox())!;
-      expect(
-        Math.abs(alone.x + alone.width / 2 - (bars.x + bars.width / 2)),
-        `${width} ${position} centred`,
-      ).toBeLessThan(2);
+      await expect
+        .poll(async () => {
+          const bars = (await page.locator('[data-bars-column]').boundingBox())!;
+          return misalignment(POSITION_COLUMN[position], bars, (await answer.boundingBox())!);
+        }, `${width} ${position} aligned`)
+        .toBeLessThanOrEqual(1);
       await watched.context.close();
     }
   }
@@ -2702,4 +2708,378 @@ test('ADR-0124: a long transcript scrolls inside its panel with "Scroll to botto
   await pill.click();
   await expect(pill).toHaveCount(0);
   await watched.context.close();
+});
+
+/**
+ * ADR-0119 amended (27 Nov 2026): screens (DIPs, 100 % scaling) and the overlay window the desktop app opens on
+ * each (40 % of the work area, 640–960 DIP: apps/desktop/src/windows.ts overlayDefaultSize()), with the screen's
+ * height for the pictures.
+ */
+const PAIR_SCREENS = [
+  { screen: 1280, window: 640, height: 800 },
+  { screen: 1440, window: 640, height: 900 },
+  { screen: 1920, window: 768, height: 1080 },
+] as const;
+
+/** ADR-0113 / ADR-0124 amended: the column each position lines its pieces up by. */
+const POSITION_COLUMN: Readonly<Record<OverlayPreset, 'start' | 'center' | 'end'>> = {
+  'top-left': 'start',
+  'top-center': 'center',
+  'top-right': 'end',
+  'bottom-left': 'start',
+  'bottom-center': 'center',
+  'bottom-right': 'end',
+};
+
+/** A box on the page (Playwright's boundingBox()). */
+interface Box {
+  /** Left edge. */
+  x: number;
+  /** Top edge. */
+  y: number;
+  /** Width. */
+  width: number;
+  /** Height. */
+  height: number;
+}
+
+/**
+ * How far a piece is from lining up with the bars by a column: their left edges on a left position, their right
+ * edges on a right one, their centres in the middle.
+ *
+ * @param column The position's column.
+ * @param bars   The bars' column.
+ * @param piece  The piece (the answer, or the pair).
+ * @returns The distance, px.
+ */
+function misalignment(column: 'start' | 'center' | 'end', bars: Box, piece: Box): number {
+  if (column === 'start') return Math.abs(piece.x - bars.x);
+  if (column === 'end') return Math.abs(piece.x + piece.width - (bars.x + bars.width));
+  return Math.abs(piece.x + piece.width / 2 - (bars.x + bars.width / 2));
+}
+
+/** ADR-0119 amended: what the overlay asked the shell's resize steps to do (the harness logs each step). */
+interface LoggedResize {
+  /** How much wider the window gets, DIPs (negative: narrower). */
+  delta: number;
+  /** How far the left edge moves, DIPs (negative: to the left). */
+  left: number;
+  /** The edges moved, in order. */
+  edges: string[];
+  /** How many 'end' steps were sent (none: the shell must not remember the grown width). */
+  ends: number;
+}
+
+/**
+ * Reads the resize steps the overlay logged after a point, as the shell would apply them (resizeBounds() in
+ * apps/desktop/src/windows.ts): 'e' moves the right edge by dx, 'w' the left edge; each 'start' begins again
+ * from the window as it is.
+ *
+ * @param target The overlay's page or frame.
+ * @param from   How many log entries to skip (the log's length before the action).
+ * @returns The change.
+ */
+async function resizesSince(target: Page | Frame, from: number): Promise<LoggedResize> {
+  const steps = (await target.evaluate(
+    (skip) =>
+      (window as unknown as { overlayLog: unknown[] }).overlayLog
+        .slice(skip)
+        .filter((entry) => typeof entry === 'object' && !!entry && 'resize' in entry)
+        .map((entry) => (entry as { resize: unknown }).resize),
+    from,
+  )) as { phase: string; edge: string; dx: number }[];
+  let delta = 0;
+  let left = 0;
+  const edges: string[] = [];
+  for (const step of steps) {
+    if (step.phase !== 'move') continue;
+    edges.push(step.edge);
+    if (step.edge === 'e') delta += step.dx;
+    if (step.edge === 'w') {
+      delta -= step.dx;
+      left += step.dx;
+    }
+  }
+  return { delta, left, edges, ends: steps.filter((step) => step.phase === 'end').length };
+}
+
+/**
+ * The length of the overlay's log (to read only what an action adds).
+ *
+ * @param target The overlay's page or frame.
+ * @returns The number of entries.
+ */
+async function logLength(target: Page | Frame): Promise<number> {
+  return target.evaluate(() => (window as unknown as { overlayLog: unknown[] }).overlayLog.length);
+}
+
+test('ADR-0119 / ADR-0124 amended: the pair is one row 1.4 × bar 1, the window grows for it without moving the bars, and everything lines up by the position', async () => {
+  test.setTimeout(400_000);
+  // Every screen and position as the harness draws bar 1 (it fits a 640 window), and three positions with the
+  // Rec pill and the Click-through switch on bar 1, which squeeze it in a 640 window as in the real app.
+  const cases = [
+    ...PAIR_SCREENS.flatMap(({ screen, window }) =>
+      OVERLAY_PRESETS.map((position) => ({ screen, window, position, extra: '' })),
+    ),
+    ...(['top-left', 'top-center', 'bottom-right'] as const).map((position) => ({
+      screen: 1280,
+      window: 640,
+      position,
+      extra: '&rec=off&ct=off',
+    })),
+  ];
+  for (const { screen, window: base, position, extra } of cases) {
+    {
+      const label = `${screen} ${position}${extra ? ' squeezed' : ''}`;
+      const column = POSITION_COLUMN[position];
+      const context = await browser!.newContext({
+        viewport: { width: base, height: 620 },
+        screen: { width: screen, height: 900 },
+        userAgent: WINDOWS_UA,
+      });
+      const page = await context.newPage();
+      await page.goto(`${origin}/?view=gate`);
+      await page.goto(
+        `${origin}/?view=compact&glass=1&alpha=0.82&shell=1&position=${position}&panels=answer${extra}`,
+      );
+      await page.getByRole('toolbar', { name: 'Overlay controls' }).waitFor();
+      const bars = page.locator('[data-bars-column]');
+      // How far bar 1 gives way (ControlBar's fit step): it must not change when the window grows.
+      const fitStep = () => page.locator('[data-fit-step]').first().getAttribute('data-fit-step');
+      const stepBefore = await fitStep();
+      if (extra) expect(Number(stepBefore), `${label}: bar 1 squeezed`).toBeGreaterThan(0);
+      const answer = page.locator('[data-answer-panel]');
+      const transcript = page.locator('[data-transcript-panel]');
+      const block = page.locator('[data-panels-block]');
+      const barsBefore = (await bars.boundingBox())!;
+
+      // Fix 1: the answer alone lines up by the position (ADR-0124 had centred it everywhere).
+      expect(
+        misalignment(column, barsBefore, (await answer.boundingBox())!),
+        `${label}: answer alone`,
+      ).toBeLessThanOrEqual(1);
+
+      // Opening the transcript opens the pair and asks the shell for a wider window, on the side the position
+      // allows, with no 'end' step (nothing is remembered as the overlay's own width).
+      const beforeOpen = await logLength(page);
+      await page.getByRole('button', { name: 'Open the full transcript', exact: true }).click();
+      await expect(transcript).toBeVisible();
+      await expect(answer).toBeVisible();
+      const grow = await resizesSince(page, beforeOpen);
+      const wanted = Math.min(screen - 32, Math.max(720, Math.ceil(1.4 * barsBefore.width)));
+      expect(
+        Math.abs(grow.delta - Math.max(0, wanted - base)),
+        `${label}: growth`,
+      ).toBeLessThanOrEqual(1);
+      expect(grow.ends, `${label}: no end step`).toBe(0);
+      if (grow.delta > 0) {
+        const edges = column === 'start' ? ['e'] : column === 'end' ? ['w'] : ['w', 'e'];
+        expect(grow.edges, `${label}: edges`).toEqual(edges);
+        if (column === 'center')
+          expect(Math.abs(grow.delta / 2 + grow.left)).toBeLessThanOrEqual(1);
+      }
+      expect(
+        await page.evaluate(() => localStorage.getItem('kite.overlayPairGrowth') !== null),
+      ).toBe(grow.delta > 1);
+
+      // Play the shell: the window widens by what was asked.
+      const grown = base + grow.delta;
+      await page.setViewportSize({ width: grown, height: 620 });
+      await expect
+        .poll(async () => {
+          const b = (await bars.boundingBox())!;
+          const t = (await transcript.boundingBox())!;
+          const a = (await answer.boundingBox())!;
+          const row = (await block.boundingBox())!;
+          return {
+            // The bars keep their width (held), so they do not move or change.
+            barsSame: Math.abs(b.width - barsBefore.width) <= 1,
+            fitSame: (await fitStep()) === stepBefore,
+            sideBySide: t.x + t.width <= a.x + 1,
+            sameHeight: Math.abs(t.height - a.height) <= 1,
+            sameTop: Math.abs(t.y - a.y) <= 1,
+            // 1.4 × bar 1 (at least 720), never wider than the window.
+            rowWidth: Math.abs(row.width - Math.min(grown, Math.max(720, 1.4 * b.width))) <= 2,
+            inside: row.x >= -0.5 && row.x + row.width <= grown + 0.5,
+            aligned: misalignment(column, b, row) <= 1,
+            // About a third for the transcript by default (its 240 px minimum aside).
+            third: t.width <= Math.max(242, row.width * 0.36),
+          };
+        }, label)
+        .toEqual({
+          barsSame: true,
+          fitSame: true,
+          sideBySide: true,
+          sameHeight: true,
+          sameTop: true,
+          rowWidth: true,
+          inside: true,
+          aligned: true,
+          third: true,
+        });
+
+      // Closing the transcript narrows the window back by the same amount, and the answer lines up again.
+      const beforeClose = await logLength(page);
+      await page.getByRole('button', { name: 'Close the full transcript', exact: true }).click();
+      await expect(transcript).toHaveCount(0);
+      const shrink = await resizesSince(page, beforeClose);
+      expect(shrink.delta, `${label}: narrowed back`).toBe(-grow.delta);
+      expect(shrink.ends).toBe(0);
+      await page.setViewportSize({ width: base, height: 620 });
+      await expect
+        .poll(async () => {
+          const b = (await bars.boundingBox())!;
+          return {
+            barsSame: Math.abs(b.width - barsBefore.width) <= 1,
+            aligned: misalignment(column, b, (await answer.boundingBox())!) <= 1,
+            forgotten: await page.evaluate(
+              () => localStorage.getItem('kite.overlayPairGrowth') === null,
+            ),
+          };
+        }, `${label} closed`)
+        .toEqual({ barsSame: true, aligned: true, forgotten: true });
+      await context.close();
+    }
+  }
+});
+
+test('ADR-0119 amended: where the window cannot grow (no shell), the pair fills the window side by side from 600 px and stacks only below', async () => {
+  const context = await browser!.newContext({ viewport: { width: 640, height: 620 } });
+  const page = await context.newPage();
+  await page.goto(`${origin}/?view=gate`);
+  await page.goto(`${origin}/?view=compact&glass=1&alpha=0.82&panels=answer`);
+  await page.getByRole('toolbar', { name: 'Overlay controls' }).waitFor();
+  await page.getByRole('button', { name: 'Open the full transcript', exact: true }).click();
+  const transcript = page.locator('[data-transcript-panel]');
+  const answer = page.locator('[data-answer-panel]');
+  await expect(transcript).toBeVisible();
+  const t = (await transcript.boundingBox())!;
+  const a = (await answer.boundingBox())!;
+  expect(t.x + t.width).toBeLessThanOrEqual(a.x + 1);
+  expect(a.x + a.width).toBeLessThanOrEqual(640.5);
+  // Nothing asked of a shell that is not there.
+  expect(
+    (await page.evaluate(() => (window as unknown as { overlayLog: unknown[] }).overlayLog)).some(
+      (entry) => typeof entry === 'object' && !!entry && 'resize' in entry,
+    ),
+  ).toBe(false);
+  // A window under 600 px that cannot grow: stacked, nothing cut off sideways.
+  await page.setViewportSize({ width: 560, height: 620 });
+  await expect
+    .poll(async () => {
+      const top = (await transcript.boundingBox())!;
+      const bottom = (await answer.boundingBox())!;
+      return top.y + top.height <= bottom.y + 1;
+    })
+    .toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await context.close();
+});
+
+test('ADR-0119 / ADR-0124 amended pictures: 1280, 1440 and 1920 screens, six positions, transcript closed and open', async () => {
+  test.skip(!SHOT_DIR, 'pictures only (KITE_SCREENSHOT_DIR)');
+  test.setTimeout(900_000);
+  const measured: unknown[] = [];
+  for (const { screen, window: base, height } of PAIR_SCREENS) {
+    for (const position of OVERLAY_PRESETS) {
+      const column = POSITION_COLUMN[position];
+      const bottom = position.startsWith('bottom');
+      const context = await browser!.newContext({
+        viewport: { width: screen, height },
+        screen: { width: screen, height },
+        userAgent: WINDOWS_UA,
+      });
+      const page = await context.newPage();
+      await page.goto(`${origin}/?view=gate`);
+      // The screen: a busy light backdrop, and the overlay window as an iframe at its position (16 px from the
+      // edges, as the desktop app puts it), as tall as it is allowed (the panels end where their content ends).
+      const windowHeight = 560;
+      const placeFrame = async (width: number, x: number) =>
+        page.evaluate(
+          ([w, left, top, h]) => {
+            const frame = document.getElementById('overlay-window') as HTMLIFrameElement;
+            frame.style.width = `${w}px`;
+            frame.style.left = `${left}px`;
+            frame.style.top = `${top}px`;
+            frame.style.height = `${h}px`;
+          },
+          [width, x, bottom ? height - 16 - windowHeight : 16, windowHeight] as const,
+        );
+      const startX =
+        column === 'start'
+          ? 16
+          : column === 'end'
+            ? screen - 16 - base
+            : Math.round((screen - base) / 2);
+      await page.evaluate(
+        ([image, src]) => {
+          document.body.innerHTML = '';
+          document.documentElement.style.backgroundImage = image;
+          document.body.style.margin = '0';
+          document.body.style.background = 'transparent';
+          const frame = document.createElement('iframe');
+          frame.id = 'overlay-window';
+          frame.src = src;
+          frame.setAttribute('allowtransparency', 'true');
+          frame.style.position = 'fixed';
+          frame.style.border = '0';
+          frame.style.background = 'transparent';
+          frame.style.colorScheme = 'normal';
+          document.body.appendChild(frame);
+        },
+        [
+          BACKDROPS.light,
+          `${origin}/?view=compact&glass=1&alpha=0.82&shell=1&position=${position}&panels=answer&os=windows`,
+        ] as const,
+      );
+      await placeFrame(base, startX);
+      const frame = page.frameLocator('#overlay-window');
+      await frame.getByRole('toolbar', { name: 'Overlay controls' }).waitFor();
+      const inner = page.frames().find((candidate) => candidate.url().includes('view=compact'))!;
+      // The overlay's fonts load inside the frame: no picture before every face has loaded (text went missing at
+      // random; fonts.ready alone can resolve before a face starts loading).
+      await inner.evaluate(async () => {
+        await Promise.all([...document.fonts].map((face) => face.load().catch(() => face)));
+        await document.fonts.ready;
+      });
+      await page.waitForTimeout(600);
+      const measure = async (state: string, width: number, x: number) => {
+        const boxes = await inner.evaluate(() => {
+          const rect = (selector: string) => {
+            const element = document.querySelector(selector);
+            if (!element) return null;
+            const r = element.getBoundingClientRect();
+            return { x: Math.round(r.x), width: Math.round(r.width), height: Math.round(r.height) };
+          };
+          return {
+            bars: rect('[data-bars-column]'),
+            transcript: rect('[data-transcript-panel]'),
+            answer: rect('[data-answer-panel]'),
+            row: rect('[data-panels-block]'),
+          };
+        });
+        measured.push({ screen, position, state, window: { x, width }, ...boxes });
+      };
+      const name = `${screen}-${position}`;
+      await measure('transcript closed', base, startX);
+      await page.screenshot({ path: path.join(SHOT_DIR!, `${name}-closed.png`) });
+
+      const beforeOpen = await logLength(inner);
+      await frame.getByRole('button', { name: 'Open the full transcript', exact: true }).click();
+      await frame.locator('[data-transcript-panel]').waitFor();
+      const grow = await resizesSince(inner, beforeOpen);
+      // Play the shell: the window grows by the steps (its left edge moves by the 'w' steps).
+      await placeFrame(base + grow.delta, startX + grow.left);
+      await page.waitForTimeout(800);
+      await measure('transcript open', base + grow.delta, startX + grow.left);
+      await page.screenshot({ path: path.join(SHOT_DIR!, `${name}-open.png`) });
+      await context.close();
+    }
+  }
+  writeFileSync(
+    path.join(SHOT_DIR!, 'measurements.json'),
+    `${JSON.stringify(measured, null, 2)}\n`,
+  );
 });

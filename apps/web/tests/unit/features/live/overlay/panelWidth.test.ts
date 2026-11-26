@@ -5,6 +5,8 @@
  * left position, the left edge on a right position, both edges centred; never under the button strip, never
  * wider than the bars), the share stored from it, and the CSS width of a share. ADR-0115: the default share
  * before any drag (62 % for the answer alone, the bars' whole width beside the transcript); a stored share wins.
+ * ADR-0119 amended (27 Nov 2026): the pair's row (1.4 × bar 1, at least 720, at most the window), the window width
+ * it needs, and the resize steps that grow the window without moving the bars.
  */
 import { describe, expect, it } from 'vitest';
 import { OVERLAY_PRESETS } from '@kite/shared';
@@ -13,11 +15,17 @@ import {
   columnAlignClass,
   gripSide,
   overlayColumn,
-  panelsColumn,
+  PAIR_MIN_WIDTH,
+  PAIR_ROW_MIN,
+  PAIR_SCREEN_MARGIN,
+  PAIR_WIDTH_FACTOR,
+  pairWidthStyle,
+  pairWindowWidth,
   panelsShare,
   panelsWidthStyle,
   widthAfterDrag,
   widthShareAfterDrag,
+  widthSteps,
 } from '@/features/live/overlay/panelWidth';
 
 describe('panelWidth', () => {
@@ -97,11 +105,54 @@ describe('panelWidth', () => {
   });
 });
 
-describe('panelsColumn (ADR-0124)', () => {
-  it('centres the answer alone on every position, and lines the pair up by the position', () => {
+describe('the pair beside the transcript (ADR-0119 amended, 27 Nov 2026)', () => {
+  it('is one row 1.4 × bar 1, at least 720 px, never wider than the window (stacked only under 600)', () => {
+    expect(PAIR_WIDTH_FACTOR).toBe(1.4);
+    expect(PAIR_MIN_WIDTH).toBe(600);
+    expect(PAIR_ROW_MIN).toBe(720);
+    expect(pairWidthStyle()).toBe('min(100cqw, max(720px, 140%))');
+  });
+
+  it('asks for a window wide enough for that row at the page zoom, inside the screen less its margins', () => {
+    // Bar 1 is 590 CSS px in a 640 DIP window at zoom 1: the row is 826, so the window grows to 826.
+    expect(pairWindowWidth({ bar1: 590, root: 640, window: 640, screen: 1470 })).toBe(826);
+    // At zoom 1.25 (root 512 CSS px in the same window), the row is 1.4 × 560 = 784 CSS px = 980 DIP.
+    expect(pairWindowWidth({ bar1: 560, root: 512, window: 640, screen: 1470 })).toBe(980);
+    // A narrow bar 1 still gets the 720 px row (side by side, the answer's footer on one line).
+    expect(pairWindowWidth({ bar1: 400, root: 440, window: 440, screen: 1470 })).toBe(720);
+    // Never wider than the work area less 16 DIP each side (a small screen).
+    expect(pairWindowWidth({ bar1: 760, root: 800, window: 800, screen: 1000 })).toBe(
+      1000 - 2 * PAIR_SCREEN_MARGIN,
+    );
+    // A window already wide enough keeps its width (it never narrows for the pair).
+    expect(pairWindowWidth({ bar1: 600, root: 1200, window: 1200, screen: 1920 })).toBe(1200);
+    // Nothing laid out yet: unchanged.
+    expect(pairWindowWidth({ bar1: 0, root: 0, window: 640, screen: 1470 })).toBe(640);
+  });
+
+  it('moves only the edge the position allows, so the bars stay where they are (no end step)', () => {
+    expect(widthSteps('start', 186)).toEqual([
+      { phase: 'start', edge: 'e', dx: 0, dy: 0 },
+      { phase: 'move', edge: 'e', dx: 186, dy: 0 },
+    ]);
+    expect(widthSteps('end', 186)).toEqual([
+      { phase: 'start', edge: 'w', dx: 0, dy: 0 },
+      { phase: 'move', edge: 'w', dx: -186, dy: 0 },
+    ]);
+    // Centred: half each side (the right takes the odd pixel).
+    expect(widthSteps('center', 187)).toEqual([
+      { phase: 'start', edge: 'w', dx: 0, dy: 0 },
+      { phase: 'move', edge: 'w', dx: -94, dy: 0 },
+      { phase: 'start', edge: 'e', dx: 0, dy: 0 },
+      { phase: 'move', edge: 'e', dx: 93, dy: 0 },
+    ]);
+    // Narrowing back is the same steps the other way.
+    expect(widthSteps('end', -186)).toEqual([
+      { phase: 'start', edge: 'w', dx: 0, dy: 0 },
+      { phase: 'move', edge: 'w', dx: 186, dy: 0 },
+    ]);
     for (const column of ['start', 'center', 'end'] as const) {
-      expect(panelsColumn(column, false)).toBe('center');
-      expect(panelsColumn(column, true)).toBe(column);
+      expect(widthSteps(column, 100).some((step) => step.phase === 'end')).toBe(false);
     }
   });
 });

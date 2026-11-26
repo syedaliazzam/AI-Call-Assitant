@@ -1,0 +1,974 @@
+[
+  {
+    "screen": 1280,
+    "position": "top-center",
+    "state": "transcript closed",
+    "window": {
+      "x": 320,
+      "width": 640
+    },
+    "bars": {
+      "x": 17,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 132,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 132,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1280,
+    "position": "top-center",
+    "state": "transcript open",
+    "window": {
+      "x": 320,
+      "width": 640
+    },
+    "bars": {
+      "x": 17,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "width": 378,
+      "height": 409
+    },
+    "row": {
+      "x": 0,
+      "width": 640,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1280,
+    "position": "top-left",
+    "state": "transcript closed",
+    "window": {
+      "x": 16,
+      "width": 640
+    },
+    "bars": {
+      "x": 0,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 115,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 115,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1280,
+    "position": "top-left",
+    "state": "transcript open",
+    "window": {
+      "x": 16,
+      "width": 640
+    },
+    "bars": {
+      "x": 0,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "width": 378,
+      "height": 409
+    },
+    "row": {
+      "x": 0,
+      "width": 640,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1280,
+    "position": "top-right",
+    "state": "transcript closed",
+    "window": {
+      "x": 624,
+      "width": 640
+    },
+    "bars": {
+      "x": 35,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 150,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 150,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1280,
+    "position": "top-right",
+    "state": "transcript open",
+    "window": {
+      "x": 624,
+      "width": 640
+    },
+    "bars": {
+      "x": 35,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "width": 378,
+      "height": 409
+    },
+    "row": {
+      "x": 0,
+      "width": 640,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1280,
+    "position": "bottom-center",
+    "state": "transcript closed",
+    "window": {
+      "x": 320,
+      "width": 640
+    },
+    "bars": {
+      "x": 17,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 132,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 132,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1280,
+    "position": "bottom-center",
+    "state": "transcript open",
+    "window": {
+      "x": 320,
+      "width": 640
+    },
+    "bars": {
+      "x": 17,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "width": 378,
+      "height": 409
+    },
+    "row": {
+      "x": 0,
+      "width": 640,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1280,
+    "position": "bottom-left",
+    "state": "transcript closed",
+    "window": {
+      "x": 16,
+      "width": 640
+    },
+    "bars": {
+      "x": 0,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 115,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 115,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1280,
+    "position": "bottom-left",
+    "state": "transcript open",
+    "window": {
+      "x": 16,
+      "width": 640
+    },
+    "bars": {
+      "x": 0,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "width": 378,
+      "height": 409
+    },
+    "row": {
+      "x": 0,
+      "width": 640,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1280,
+    "position": "bottom-right",
+    "state": "transcript closed",
+    "window": {
+      "x": 624,
+      "width": 640
+    },
+    "bars": {
+      "x": 35,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 150,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 150,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1280,
+    "position": "bottom-right",
+    "state": "transcript open",
+    "window": {
+      "x": 624,
+      "width": 640
+    },
+    "bars": {
+      "x": 35,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "width": 378,
+      "height": 409
+    },
+    "row": {
+      "x": 0,
+      "width": 640,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1440,
+    "position": "top-center",
+    "state": "transcript closed",
+    "window": {
+      "x": 400,
+      "width": 640
+    },
+    "bars": {
+      "x": 17,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 132,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 132,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1440,
+    "position": "top-center",
+    "state": "transcript open",
+    "window": {
+      "x": 400,
+      "width": 640
+    },
+    "bars": {
+      "x": 17,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "width": 378,
+      "height": 409
+    },
+    "row": {
+      "x": 0,
+      "width": 640,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1440,
+    "position": "top-left",
+    "state": "transcript closed",
+    "window": {
+      "x": 16,
+      "width": 640
+    },
+    "bars": {
+      "x": 0,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 115,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 115,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1440,
+    "position": "top-left",
+    "state": "transcript open",
+    "window": {
+      "x": 16,
+      "width": 640
+    },
+    "bars": {
+      "x": 0,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "width": 378,
+      "height": 409
+    },
+    "row": {
+      "x": 0,
+      "width": 640,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1440,
+    "position": "top-right",
+    "state": "transcript closed",
+    "window": {
+      "x": 784,
+      "width": 640
+    },
+    "bars": {
+      "x": 35,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 150,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 150,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1440,
+    "position": "top-right",
+    "state": "transcript open",
+    "window": {
+      "x": 784,
+      "width": 640
+    },
+    "bars": {
+      "x": 35,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "width": 378,
+      "height": 409
+    },
+    "row": {
+      "x": 0,
+      "width": 640,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1440,
+    "position": "bottom-center",
+    "state": "transcript closed",
+    "window": {
+      "x": 400,
+      "width": 640
+    },
+    "bars": {
+      "x": 17,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 132,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 132,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1440,
+    "position": "bottom-center",
+    "state": "transcript open",
+    "window": {
+      "x": 400,
+      "width": 640
+    },
+    "bars": {
+      "x": 17,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "width": 378,
+      "height": 409
+    },
+    "row": {
+      "x": 0,
+      "width": 640,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1440,
+    "position": "bottom-left",
+    "state": "transcript closed",
+    "window": {
+      "x": 16,
+      "width": 640
+    },
+    "bars": {
+      "x": 0,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 115,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 115,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1440,
+    "position": "bottom-left",
+    "state": "transcript open",
+    "window": {
+      "x": 16,
+      "width": 640
+    },
+    "bars": {
+      "x": 0,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "width": 378,
+      "height": 409
+    },
+    "row": {
+      "x": 0,
+      "width": 640,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1440,
+    "position": "bottom-right",
+    "state": "transcript closed",
+    "window": {
+      "x": 784,
+      "width": 640
+    },
+    "bars": {
+      "x": 35,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 150,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 150,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1440,
+    "position": "bottom-right",
+    "state": "transcript open",
+    "window": {
+      "x": 784,
+      "width": 640
+    },
+    "bars": {
+      "x": 35,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 256,
+      "height": 409
+    },
+    "answer": {
+      "x": 262,
+      "width": 378,
+      "height": 409
+    },
+    "row": {
+      "x": 0,
+      "width": 640,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1920,
+    "position": "top-center",
+    "state": "transcript closed",
+    "window": {
+      "x": 576,
+      "width": 768
+    },
+    "bars": {
+      "x": 81,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 196,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 196,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1920,
+    "position": "top-center",
+    "state": "transcript open",
+    "window": {
+      "x": 576,
+      "width": 768
+    },
+    "bars": {
+      "x": 81,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 24,
+      "width": 288,
+      "height": 380
+    },
+    "answer": {
+      "x": 318,
+      "width": 426,
+      "height": 380
+    },
+    "row": {
+      "x": 24,
+      "width": 720,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1920,
+    "position": "top-left",
+    "state": "transcript closed",
+    "window": {
+      "x": 16,
+      "width": 768
+    },
+    "bars": {
+      "x": 0,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 115,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 115,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1920,
+    "position": "top-left",
+    "state": "transcript open",
+    "window": {
+      "x": 16,
+      "width": 768
+    },
+    "bars": {
+      "x": 0,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 288,
+      "height": 380
+    },
+    "answer": {
+      "x": 294,
+      "width": 426,
+      "height": 380
+    },
+    "row": {
+      "x": 0,
+      "width": 720,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1920,
+    "position": "top-right",
+    "state": "transcript closed",
+    "window": {
+      "x": 1136,
+      "width": 768
+    },
+    "bars": {
+      "x": 163,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 278,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 278,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1920,
+    "position": "top-right",
+    "state": "transcript open",
+    "window": {
+      "x": 1136,
+      "width": 768
+    },
+    "bars": {
+      "x": 163,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 48,
+      "width": 288,
+      "height": 380
+    },
+    "answer": {
+      "x": 342,
+      "width": 426,
+      "height": 380
+    },
+    "row": {
+      "x": 48,
+      "width": 720,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1920,
+    "position": "bottom-center",
+    "state": "transcript closed",
+    "window": {
+      "x": 576,
+      "width": 768
+    },
+    "bars": {
+      "x": 81,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 196,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 196,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1920,
+    "position": "bottom-center",
+    "state": "transcript open",
+    "window": {
+      "x": 576,
+      "width": 768
+    },
+    "bars": {
+      "x": 81,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 24,
+      "width": 288,
+      "height": 380
+    },
+    "answer": {
+      "x": 318,
+      "width": 426,
+      "height": 380
+    },
+    "row": {
+      "x": 24,
+      "width": 720,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1920,
+    "position": "bottom-left",
+    "state": "transcript closed",
+    "window": {
+      "x": 16,
+      "width": 768
+    },
+    "bars": {
+      "x": 0,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 115,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 115,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1920,
+    "position": "bottom-left",
+    "state": "transcript open",
+    "window": {
+      "x": 16,
+      "width": 768
+    },
+    "bars": {
+      "x": 0,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 0,
+      "width": 288,
+      "height": 380
+    },
+    "answer": {
+      "x": 294,
+      "width": 426,
+      "height": 380
+    },
+    "row": {
+      "x": 0,
+      "width": 720,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1920,
+    "position": "bottom-right",
+    "state": "transcript closed",
+    "window": {
+      "x": 1136,
+      "width": 768
+    },
+    "bars": {
+      "x": 163,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": null,
+    "answer": {
+      "x": 278,
+      "width": 375,
+      "height": 409
+    },
+    "row": {
+      "x": 278,
+      "width": 375,
+      "height": 456
+    }
+  },
+  {
+    "screen": 1920,
+    "position": "bottom-right",
+    "state": "transcript open",
+    "window": {
+      "x": 1136,
+      "width": 768
+    },
+    "bars": {
+      "x": 163,
+      "width": 605,
+      "height": 560
+    },
+    "transcript": {
+      "x": 48,
+      "width": 288,
+      "height": 380
+    },
+    "answer": {
+      "x": 342,
+      "width": 426,
+      "height": 380
+    },
+    "row": {
+      "x": 48,
+      "width": 720,
+      "height": 456
+    }
+  }
+]

@@ -25,7 +25,11 @@
  *               docs/design/kite-ui-theme.md §6
  */
 import { useEffect, useState } from 'react';
-import { CLAUDE_UNAVAILABLE_MESSAGES, type OverlayPreset } from '@kite/shared';
+import {
+  CLAUDE_UNAVAILABLE_MESSAGES,
+  type OverlayPreset,
+  type OverlayResizeStep,
+} from '@kite/shared';
 import { createRoot } from 'react-dom/client';
 import { callNoticeFor } from '@/core/live/callNotice';
 import type { CompactState } from '@/core/live/liveChannel';
@@ -454,7 +458,9 @@ function CompactHarness({
       {...(params.has('shell')
         ? {
             onMove: (dx: number, dy: number) => log.push({ move: [dx, dy] }),
-            onResize: () => undefined,
+            // ADR-0119 amended: the resize steps are logged, so a test can play the shell's part (it widens the
+            // viewport by what the steps ask) and check the edges that move.
+            onResize: (step: OverlayResizeStep) => log.push({ resize: step }),
             onPlace: () => log.push('reset-position'),
           }
         : {})}
