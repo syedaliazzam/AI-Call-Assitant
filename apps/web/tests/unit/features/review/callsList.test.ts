@@ -2,7 +2,8 @@
  * Tests for apps/web/src/features/review/CallsList.tsx callDriveText() (ADR-0077; ADR-0106): a recorded
  * call's unfinished upload says "Waiting for the desktop app to finish the upload", and after a day
  * without progress "Upload paused: open the desktop app on the computer used for this call"; a call
- * without a recording keeps the plain words; the other states are unchanged. Invented records only.
+ * without a recording keeps the plain words; ADR-0131: "Uploading…" and "Saved to Drive ✓", as on the
+ * session's status line. Invented records only.
  */
 import { describe, expect, it } from 'vitest';
 import type { CallView } from '@/core/review/calls';
@@ -51,7 +52,7 @@ describe('callDriveText', () => {
     expect(callDriveText(call({ state: 'waiting' }), NOW)).toBe(waiting);
     // Paused for a call keeps its own words while it is fresh.
     expect(callDriveText(call({ state: 'paused', movedAt: NOW }), NOW)).toBe(
-      'Drive upload paused for a call',
+      'Uploading… paused for a call',
     );
     expect(callDriveText(call({ state: 'uploading', movedAt: NOW - DAY }), NOW)).toBe(
       'Upload paused: open the desktop app on the computer used for this call',
@@ -62,9 +63,9 @@ describe('callDriveText', () => {
   });
 
   it('keeps the plain words for a call without a recording, and for the other states', () => {
-    expect(callDriveText(call({ state: 'queued' }, 'off'), NOW)).toBe('Waiting to upload to Drive');
-    expect(callDriveText(call({ state: 'uploading' }, 'off'), NOW)).toBe('Uploading to Drive');
-    expect(callDriveText(call({ state: 'done' }), NOW)).toBe('Saved to Drive');
+    expect(callDriveText(call({ state: 'queued' }, 'off'), NOW)).toBe('Uploading…');
+    expect(callDriveText(call({ state: 'uploading' }, 'off'), NOW)).toBe('Uploading…');
+    expect(callDriveText(call({ state: 'done' }), NOW)).toBe('Saved to Drive ✓');
     expect(callDriveText(call({ state: 'off' }), NOW)).toBe('Not uploaded to Drive');
     expect(callDriveText({ record: null, recordings: [] }, NOW)).toBeNull();
   });

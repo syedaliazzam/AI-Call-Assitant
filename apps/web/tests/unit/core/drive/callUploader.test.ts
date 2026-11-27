@@ -231,7 +231,6 @@ function world(options: WorldOptions = {}) {
     session: async () => SESSION,
     callFiles: async () => [],
     callActive: async () => false,
-    notice: () => undefined,
     now: () => END + 60_000,
     timeZone: () => 'UTC',
     expectedRecordings: async () => [

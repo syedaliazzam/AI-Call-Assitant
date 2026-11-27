@@ -9,7 +9,8 @@
  *          connection resumes, and a file already
  *          in Drive (by its id, or by its tag) is never uploaded again. Recordings are uploaded by the
  *          desktop shell straight from disk; the page uploads the files it makes. When every file is
- *          saved, the server is told once (one "saved" email per session) and a notice is shown.
+ *          saved, the server is told once (one "saved" email per session). ADR-0131: no notification;
+ *          the session's status line shows "Saved to Drive ✓" (features/drive/DriveSessionStatus.tsx).
  * Used by: src/features/drive/DriveUploader.tsx (runs it), tests
  * Depends on: @kite/shared (contract types, savedHeadline), src/core/drive/{names,google,callFiles,api}.ts,
  *             src/core/storage/types.ts
@@ -20,10 +21,8 @@
  */
 import {
   MAX_SAVED_FILES,
-  savedHeadline,
   type DriveExpectedRecording,
   type DriveFileKind,
-  type DesktopNotice,
   type DriveSavedFile,
   type DriveStatusResponse,
   type DriveUploadProgress,
@@ -166,11 +165,6 @@ export interface UploaderDeps {
   callFiles(session: Session, call: DriveCall, title: string): Promise<CallFile[]>;
   /** True while a call is live on this computer (uploads wait). */
   callActive(): Promise<boolean>;
-  /**
-   * Shows the native "saved" notification (desktop); the in-app notice comes from the job itself.
-   * @param notice The lines and the Drive link.
-   */
-  notice(notice: DesktopNotice): void;
   /** The clock (Unix ms). */
   now(): number;
   /** The person's time zone (for the email's date). */
@@ -370,7 +364,8 @@ export function jobPercent(job: Pick<DriveSessionJob, 'state' | 'files'>): numbe
 }
 
 /**
- * Runs one job's turn: folders, files, uploads, and the "saved" notification when everything is in.
+ * Runs one job's turn: folders, files and uploads (ADR-0131: no "saved" notification; the job's state is
+ * the session's status line).
  *
  * @param deps   The dependencies.
  * @param start  The job as read.
@@ -536,8 +531,6 @@ export async function processDriveJob(
     return stopWith('error', 'failed');
   }
 
-  // A recording kept on another computer is left to that computer; the rest is done here.
-  const pendingElsewhere = job.files.some((file) => !file.done);
   await save({
     state: 'done',
     reason: undefined,
@@ -545,14 +538,6 @@ export async function processDriveJob(
     noticeShown: false,
     notified: false,
   });
-  const saved = savedFiles(job);
-  if (saved.length > 0 && !pendingElsewhere) {
-    deps.notice({
-      title: `${savedHeadline(saved)} — ${title}`,
-      body: 'Open in Drive',
-      url: `https://drive.google.com/drive/folders/${encodeURIComponent(job.folderId!)}`,
-    });
-  }
   await reportToServer(deps, job, session, title, save);
   return 'done';
 }

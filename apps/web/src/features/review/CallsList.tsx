@@ -76,15 +76,16 @@ export function callDriveText(
     case 'off':
       return 'Not uploaded to Drive';
     case 'queued':
-      return 'Waiting to upload to Drive';
+      // ADR-0131: the same quiet words as the session's status line.
+      return 'Uploading…';
     case 'uploading':
-      return 'Uploading to Drive';
+      return 'Uploading…';
     case 'paused':
-      return 'Drive upload paused for a call';
+      return 'Uploading… paused for a call';
     case 'done':
-      return 'Saved to Drive';
+      return 'Saved to Drive ✓';
     case 'error':
-      return `Drive: ${driveReasonText(drive.reason)}`;
+      return `Upload failed — ${driveReasonText(drive.reason)}`;
   }
 }
 

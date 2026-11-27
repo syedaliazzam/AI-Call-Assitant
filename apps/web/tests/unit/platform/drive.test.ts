@@ -2,7 +2,8 @@
  * Tests for apps/web/src/platform/drive.ts (desktop 1.6.0, ADR-0072): the desktop Drive host passes only
  * its own upload's progress to its caller and stops listening afterwards, and is absent in a shell before
  * 1.6.0 (no Drive methods on the bridge). 1.7.2 (ADR-0106): the Drive queue report goes to a shell that has
- * it, and is absent on an older one. All values are invented.
+ * it, and is absent on an older one. ADR-0131: it never asks the shell for a native notification. All values
+ * are invented.
  */
 import type { KiteDesktopApi } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
@@ -39,6 +40,31 @@ describe('desktopDriveHost', () => {
     expect(seen).toEqual(['r1']);
     expect(listeners).toHaveLength(0);
     expect(desktopDriveHost({ version: '1.5.2', os: 'windows' })).toBeNull();
+  });
+
+  it('ADR-0131: never asks the shell for a native notification, even when the bridge offers one', async () => {
+    let shown = 0;
+    const bridge = {
+      driveUpload: async () => ({ status: 'done', fileId: 'F', bytes: 2 }),
+      onDriveUploadProgress: () => () => undefined,
+      showNotice: async () => {
+        shown += 1;
+        return true;
+      },
+    } as unknown as KiteDesktopApi;
+    const host = desktopDriveHost(bridge)!;
+    expect('notify' in host).toBe(false);
+    await host.upload(
+      { recordingId: 'r1', track: 'main', uploadUrl: 'u', accessToken: 't' },
+      () => undefined,
+    );
+    expect(shown).toBe(0);
+    // A shell without showNotice (Mac 1.8.2 / Windows 1.7.6 refuse it) still uploads.
+    const withoutNotice = {
+      driveUpload: bridge.driveUpload,
+      onDriveUploadProgress: bridge.onDriveUploadProgress,
+    } as unknown as KiteDesktopApi;
+    expect(desktopDriveHost(withoutNotice)).not.toBeNull();
   });
 
   it('1.7.2: passes the Drive queue report on, only when the shell has it', () => {

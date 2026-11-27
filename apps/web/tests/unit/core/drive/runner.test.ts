@@ -57,7 +57,8 @@ describe('runUploaderOnce', () => {
   it('has no shell host in a browser', () => {
     const deps = createUploaderDeps({ drive: null, recording: null }, null);
     expect(deps.host).toBeNull();
-    expect(() => deps.notice({ title: 't', body: 'b' })).not.toThrow();
+    // ADR-0131: no notification of any kind.
+    expect('notice' in deps).toBe(false);
   });
 
   it('ADR-0080: tells the server to expect each part without a stereo file (main video only)', async () => {

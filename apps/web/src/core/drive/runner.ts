@@ -2,7 +2,8 @@
  * File: apps/web/src/core/drive/runner.ts
  * Purpose: Puts the Google Drive uploader together for this page (ADR-0072) and runs it in one window of
  *          the profile at a time (a Web Lock), so two windows never upload the same file. The page's
- *          platform supplies the desktop shell's recording uploads and notifications (none in a browser).
+ *          platform supplies the desktop shell's recording uploads. ADR-0131: no system notification is ever
+ *          shown (a shared screen would show it); each session's status line says where its upload is.
  * Used by: src/features/drive/DriveUploader.tsx
  * Depends on: src/core/drive/{api,callFiles,queue,uploader}.ts, src/core/storage (sessions,
  *             driveUploads), src/platform/types.ts (types only)
@@ -26,7 +27,7 @@ export const UPLOADER_LOCK = 'kite.drive-uploader';
 /**
  * The uploader's dependencies for this page.
  *
- * @param platform    The page's platform (recordings and notifications on the desktop).
+ * @param platform    The page's platform (recordings on the desktop).
  * @param accountName The account's display name, on the user's transcript turns.
  * @returns The dependencies.
  * Called from: features/drive/DriveUploader.tsx
@@ -73,10 +74,6 @@ export function createUploaderDeps(
       },
     },
     callActive: callIsLive,
-    notice: (notice) => {
-      // The desktop's native notification; a browser shows the in-app notice only.
-      void drive?.notify(notice).catch(() => false);
-    },
     now: () => Date.now(),
     timeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     expectedRecordings: async (sessionId) => {

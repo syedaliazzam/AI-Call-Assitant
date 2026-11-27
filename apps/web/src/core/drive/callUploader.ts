@@ -17,8 +17,6 @@
  */
 import {
   MAX_SAVED_FILES,
-  savedHeadline,
-  type DesktopNotice,
   type DriveFileKind,
   type DriveSavedFile,
   type DriveStatusResponse,
@@ -362,7 +360,7 @@ async function reportCall(
 
 /**
  * Runs one call job's turn: the session folder, the files (Transcripts first, then recordings), each on its
- * own, the reports, and the "saved" notice when everything is in.
+ * own and the reports (ADR-0131: no "saved" notification; the job's state is the session's status line).
  *
  * @param deps   The dependencies.
  * @param start  The job as read.
@@ -581,18 +579,8 @@ export async function processCallJob(
     if (callReportDueFor(job)) await reportCall(deps, job, session, title, () => save());
     return 'error';
   }
-  // A recording kept on another computer is left to that computer; the rest is done here.
-  const pendingElsewhere = job.files.some((file) => !file.done);
   await save({ state: 'done', reason: undefined, autoRetry: undefined, noticeShown: false });
   await show('done');
-  const saved = callSavedFiles(job);
-  if (saved.length > 0 && !pendingElsewhere) {
-    deps.notice({
-      title: `${savedHeadline(saved)} — ${title}`,
-      body: 'Open in Drive',
-      url: `https://drive.google.com/drive/folders/${encodeURIComponent(job.folderId!)}`,
-    } satisfies DesktopNotice);
-  }
   if (callReportDueFor(job)) await reportCall(deps, job, session, title, () => save());
   return 'done';
 }
