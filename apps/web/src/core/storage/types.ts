@@ -167,6 +167,13 @@ export interface Session {
    * in Settings. Absent or empty: the Settings list. Lower-case addresses; synced with the session.
    */
   driveAlsoNotify?: string[];
+  /**
+   * ADR-0129: the session's own name on its card, the desktop app's list and its page, in place of the company
+   * (or the topic for a regular call). Set only by Duplicate ("Copy of <name>"); Rename clears it. Display only:
+   * never sent to Claude, never a speech hotword, never a Drive folder name (those keep the company and topic,
+   * so a copy answers exactly as the original does). Absent on every other session.
+   */
+  name?: string;
 }
 
 /** A session's documents summary (ADR-0067), as kept on the device. */

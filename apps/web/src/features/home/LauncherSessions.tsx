@@ -62,6 +62,8 @@ export interface LauncherSessionsProps {
   onTakeOver?: (session: Session) => void;
   /** Deletes a session after the user confirmed. */
   onDelete: (session: Session) => Promise<void>;
+  /** ADR-0129: copies a session's setup as "Copy of <name>". */
+  onDuplicate: (session: Session) => Promise<void>;
   /** Extra rows above the list (the accurate-transcription offer, the one-time upload). */
   notices?: ReactNode;
 }
@@ -137,6 +139,7 @@ export function LauncherSessions({
   liveElsewhere,
   onTakeOver,
   onDelete,
+  onDuplicate,
   notices,
 }: LauncherSessionsProps) {
   const [search, setSearch] = useState('');
@@ -234,6 +237,7 @@ export function LauncherSessions({
                   liveElsewhere={liveElsewhere?.has(session.id) ?? false}
                   onTakeOver={(chosen) => onTakeOver?.(chosen)}
                   onDelete={onDelete}
+                  onDuplicate={onDuplicate}
                 />
               ))}
             </ul>
@@ -273,6 +277,7 @@ export function LauncherSessions({
  * @param props.liveElsewhere ADR-0098: true while it is live on another device.
  * @param props.onTakeOver  ADR-0098: Take over was confirmed.
  * @param props.onDelete    Deletes it after the user confirmed.
+ * @param props.onDuplicate ADR-0129: copies its setup as "Copy of <name>".
  * @returns The card.
  * Rendered by: LauncherSessions
  */
@@ -285,6 +290,7 @@ function LauncherCard({
   liveElsewhere,
   onTakeOver,
   onDelete,
+  onDuplicate,
 }: {
   /** The session. */
   session: Session;
@@ -302,6 +308,8 @@ function LauncherCard({
   onTakeOver: (session: Session) => void;
   /** Deletes it after the user confirmed. */
   onDelete: (session: Session) => Promise<void>;
+  /** ADR-0129: copies its setup as "Copy of <name>". */
+  onDuplicate: (session: Session) => Promise<void>;
 }) {
   const status = shownStatus(session, now);
   const title = sessionCardTitle(session);
@@ -318,7 +326,14 @@ function LauncherCard({
       highlighted={fromBrowser}
       liveElsewhere={liveElsewhere}
       {...(fromBrowser ? { eyebrow: 'From your browser' } : {})}
-      menu={<LauncherSessionMenu session={session} title={title} onDelete={onDelete} />}
+      menu={
+        <LauncherSessionMenu
+          session={session}
+          title={title}
+          onDelete={onDelete}
+          onDuplicate={onDuplicate}
+        />
+      }
       action={
         liveElsewhere ? (
           // ADR-0098: live on another device: Start is disabled with the tooltip; Take over asks first.

@@ -4,7 +4,8 @@
  *          search box joined to a sort button, grid or list (remembered), collapsible Active and Past
  *          sections of session cards, and an empty state. Starting a session goes through Choose
  *          platform in the browser and straight to the live screen in the desktop app. ADR-0098: a session
- *          live on another device of the account shows so on its card, with Take over.
+ *          live on another device of the account shows so on its card, with Take over. ADR-0129: Duplicate makes
+ *          "Copy of <name>" with the setup only (./duplicate.ts); Rename clears a copy's name.
  * Used by: app/(app)/page.tsx
  * Depends on: lucide-react, src/core/storage (sessions.ts, answers.ts, dashboardPrefs.ts),
  *             src/features/sync/LegacyUploadCard.tsx and src/core/sync/events.ts (ADR-0049), src/platform
@@ -31,7 +32,6 @@ import {
 } from '@/core/storage/dashboardPrefs';
 import {
   deleteSession,
-  duplicateSession,
   filterSessions,
   listSessions,
   shownStatus,
@@ -39,6 +39,7 @@ import {
   updateSession,
   type SessionSort,
 } from '@/core/storage/sessions';
+import { duplicateAsCopy } from './duplicate';
 import type { Session, SessionType } from '@/core/storage/types';
 import { ChoosePlatformDialog } from '@/features/session-setup/ChoosePlatformDialog';
 import { SESSION_TYPE_LABELS } from '@/features/session-setup/labels';
@@ -230,17 +231,18 @@ export function Dashboard() {
    * @param role    The new role or topic.
    */
   async function rename(session: Session, company: string, role: string) {
-    await updateSession(session.id, { company, role });
+    // ADR-0129: the card then shows the new names, so a copy's "Copy of …" name goes.
+    await updateSession(session.id, { company, role, name: undefined });
     setVersion((n) => n + 1);
   }
 
   /**
-   * Copies a session, then reloads the list.
+   * Copies a session's setup as "Copy of <name>" (ADR-0129), then reloads the list.
    *
    * @param session The session to copy.
    */
   async function duplicate(session: Session) {
-    await duplicateSession(session.id);
+    await duplicateAsCopy(session);
     setVersion((n) => n + 1);
   }
 

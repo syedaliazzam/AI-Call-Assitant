@@ -19,6 +19,9 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Session review), §7.4;
  *               day-05-overlay-screenshots-notes.md Stage 6
  *
+ * ADR-0129: Duplicate in the header copies the session's setup as "Copy of <name>"
+ * (features/dashboard/duplicate.ts) and opens the copy's page; the title shows a copy's name.
+ *
  * Takes onDeleted instead of using the router, so the integration harness can render it
  * without Next.js; ReviewPage.tsx passes the router's "go to the dashboard".
  */
@@ -29,10 +32,12 @@ import { notesFailureText } from '@/core/answer/unavailable';
 import { notesUnavailableOf } from '@/core/live/afterCall';
 import { regenerateCallNotes } from '@/core/notes/regenerate';
 import type { CallView } from '@/core/review/calls';
+import type { Session } from '@/core/storage/types';
 import { loadReview, type ReviewData } from '@/core/review/load';
 import { refreshRenamedCall } from '@/core/drive/renamedCall';
 import { updateCall } from '@/core/storage/calls';
 import { deleteSession, updateSession } from '@/core/storage/sessions';
+import { duplicateAsCopy } from '@/features/dashboard/duplicate';
 import { pullAccountSync } from '@/core/sync/client';
 import { buildKeyterms } from '@/core/stt/sessionHotwords';
 import { onSyncApplied } from '@/core/sync/events';
@@ -73,6 +78,11 @@ export interface SessionReviewProps {
   sessionId: string;
   /** Called after the session was deleted (the page goes back to the dashboard). */
   onDeleted: () => void;
+  /**
+   * ADR-0129: called with the copy's id after Duplicate (the page opens the copy). Absent: the copy is made and
+   * the page stays (the integration harnesses).
+   */
+  onDuplicated?: (copyId: string) => void;
   /** Batch D (P1-F): the signed-in user's first name (one of the words listened for); default none. */
   accountFirstName?: string;
 }
@@ -154,7 +164,12 @@ interface NotesState {
  * @returns The page content: loading, "not found", or the review.
  * Rendered by: ReviewPage.tsx; the review harness
  */
-export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: SessionReviewProps) {
+export function SessionReview({
+  sessionId,
+  onDeleted,
+  onDuplicated,
+  accountFirstName = '',
+}: SessionReviewProps) {
   // undefined while loading, null when this device has no such session.
   const [review, setReview] = useState<ReviewData | null | undefined>(undefined);
   const [notesState, setNotesState] = useState<NotesState>({
@@ -169,6 +184,9 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
+  // ADR-0129: while Duplicate writes the copy, and whether it failed.
+  const [duplicating, setDuplicating] = useState(false);
+  const [duplicateFailed, setDuplicateFailed] = useState(false);
   // ADR-0093: what happened to the Drive files after the last rename of a call.
   const [renameStatus, setRenameStatus] = useState<string | null>(null);
   const accountName = useAccountName();
@@ -272,6 +290,24 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
     );
   }
 
+  /**
+   * ADR-0129: copies the session's setup as "Copy of <name>", then opens the copy.
+   *
+   * @param session The session shown.
+   */
+  async function duplicate(session: Session) {
+    setDuplicating(true);
+    setDuplicateFailed(false);
+    try {
+      const copy = await duplicateAsCopy(session);
+      onDuplicated?.(copy.id);
+    } catch {
+      setDuplicateFailed(true);
+    } finally {
+      setDuplicating(false);
+    }
+  }
+
   /** Deletes the session and everything saved with it, then leaves the page. */
   async function confirmDelete() {
     setDeleting(true);
@@ -310,7 +346,8 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
   }
 
   const { session } = review;
-  const title = session.company || 'Untitled session';
+  // ADR-0129: a copy shows its own name ("Copy of Acme").
+  const title = session.name?.trim() || session.company || 'Untitled session';
   const style = session.preferences.style;
   // ADR-0077: the shown call (the newest unless another was picked), and its own data.
   const call = review.calls.find((one) => one.id === selectedId) ?? review.calls[0] ?? null;
@@ -341,12 +378,25 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
           <LinkButton href="/" variant="ghost">
             Dashboard
           </LinkButton>
+          <Button
+            variant="secondary"
+            onClick={() => void duplicate(session)}
+            disabled={duplicating}
+          >
+            {duplicating ? 'Duplicating…' : 'Duplicate'}
+          </Button>
           <Button variant="danger" onClick={() => setConfirming(true)}>
             Delete session
           </Button>
         </>
       }
     >
+      {duplicateFailed && (
+        // ADR-0129: the copy is written in one transaction, so a failure leaves nothing half-made.
+        <p role="alert" className="mb-4 text-[13px] text-ui-danger">
+          The session could not be duplicated. Try again.
+        </p>
+      )}
       <div className="mb-4">
         <CallsList
           calls={review.calls}

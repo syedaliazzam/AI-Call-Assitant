@@ -135,6 +135,8 @@ const SessionSchema = z.object({
   contactName: z.string().optional(),
   lastCallMs: z.number().optional(),
   handoffAt: z.number().optional(),
+  // ADR-0129: a copy's own name ("Copy of Acme"); absent in older files and on other sessions.
+  name: z.string().optional(),
 });
 const DocumentSchema = z.object({
   id: z.string().min(1),
