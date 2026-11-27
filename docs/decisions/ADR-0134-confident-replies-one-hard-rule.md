@@ -1,9 +1,11 @@
 # ADR-0134: Confident replies; the unsupported-fact rule keeps the call moving
 
-- **Status:** Proposed (not released: the full suite was worse in 8 of 16 groups, 28 Nov 2026)
+- **Status:** Proposed (the prompt round; not released)
 - **Date:** 2026-11-28
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §6.1 (version bump when released)
 - **Supersedes / superseded by:** amends ADR-0088, ADR-0090, ADR-0103 (wording only)
+
+> **Not in the 28 Nov 2026 release.** The full suite on the version below was worse in 8 of 16 groups. A narrowed version (confident for conversation, opinion and general knowledge; never inventing facts about the user, their company or the deal, with production's explicit lists kept) is the second step of the separate prompt round.
 
 ## Context
 

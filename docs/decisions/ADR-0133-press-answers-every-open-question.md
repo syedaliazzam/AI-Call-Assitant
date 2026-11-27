@@ -1,9 +1,11 @@
 # ADR-0133: A press answers every open question in one natural reply
 
-- **Status:** Proposed (not released: the full suite was worse in 8 of 16 groups, 28 Nov 2026)
+- **Status:** Proposed (the prompt round; not released)
 - **Date:** 2026-11-28
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §6.1 (version bump when released)
 - **Supersedes / superseded by:** amends ADR-0076 rule 3 and rule 5 for presses
+
+> **Not in the 28 Nov 2026 release.** That release keeps production's request and prompt (the press window stays on the device for ADR-0132). This decision is the first step of the separate prompt round, released only if it passes the full gate.
 
 ## Context
 

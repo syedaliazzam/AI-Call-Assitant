@@ -1,8 +1,8 @@
 # ADR-0137: Call memory: a running summary of the whole call
 
-- **Status:** Proposed (not released: the full suite was worse in 8 of 16 groups, 28 Nov 2026)
+- **Status:** Accepted (released 28 Nov 2026)
 - **Date:** 2026-11-28
-- **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §6.1 (version bump when released)
+- **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` (4.70.0) §6.1
 - **Supersedes / superseded by:** none
 
 ## Context

@@ -1,8 +1,8 @@
 # ADR-0132: A press never waits; a press made mid-speech is updated once
 
-- **Status:** Proposed (not released: the full suite was worse in 8 of 16 groups, 28 Nov 2026)
+- **Status:** Accepted (released 28 Nov 2026)
 - **Date:** 2026-11-28
-- **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §6.1 (version bump when released)
+- **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` (4.70.0) §6.1
 - **Supersedes / superseded by:** amends ADR-0070 (the 8 s press wait) and ADR-0076 rule 2 (the 300 ms catch-up)
 
 ## Context
@@ -14,6 +14,7 @@ On a real Mac call (27 Nov 2026) the user pressed Ctrl+Enter while the other per
 - A press answers at once with the final and grey words there are (no catch-up wait, no 8 s wait; `pressQuestion.ts` no longer returns 'wait').
 - A press made while the other side was speaking (a grey line, or their newest words ended under 2 s ago) is watched (`newestQuestion.ts` `pressUpdateDue()`): when their new words started within 2 s of the press and their turn is over, the card is asked again once, in place, with no notice; it keeps its earlier answer until the new answer line is complete (no blank card). Nothing is updated once the user speaks, when the new words start later (a new question: press again), or after 8 s.
 - Rule 6 (ADR-0076) no longer re-asks a press on the cloud path; the watch does.
+- The request is production's: the question is the other side's words since the newest answered speech and the user's last reply, grey ones included; the watch's window (`pressWindow()`) stays on the device.
 
 ## Consequences
 
