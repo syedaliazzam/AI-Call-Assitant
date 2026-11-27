@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "4.65.0"
+version: "4.66.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-27"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 4.65.0, **Current**: the only document to build from |
+| Version | 4.66.0, **Current**: the only document to build from |
+| Changes in 4.66.0 | **Desktop Mac 1.8.1 and Windows 1.7.5** (ADR-0127; ADR-0110 amended 27 Nov 2026). §7.3: a Mac uses the Windows keys with Control (⌃) for Ctrl, never ⌘ (`macKeys()`; the page reads ⌃⌥ letters by place); show or hide is Ctrl+Alt+Y / ⌃⌥Y (Ctrl+Alt+H was Google Meet's raise hand); Settings → Hotkeys notes the macOS keys a row shares (`MAC_SYSTEM_CLASHES`: Mission Control's ⌃← / ⌃→, Teams' ⌃0, text keys, VoiceOver). Screenshots: the display under the mouse pointer, then the focused Paramount AI window's, then the overlay's (`screenshot.ts` `pickDisplay()`); the result names the screen (numbered from the left); "Wrong screen?" asks for the next one (`{ notDisplayId }`); the cards show a 240 px preview made after the request (`makePreview()`), "Screen 2" and Wrong screen? (`ScreenshotSource.tsx`); older shells send no screen and get the thumbnail only. §10: "Check for Updates…" in the Mac app menu and the Windows tray (`updater.ts` `checkNow()`); the Windows tray's "Turn click-through off" ships in 1.7.5; `windowsVersion` 1.7.5 beside the Mac's `version` 1.8.1 (`scripts/dist-win.mjs`). No prompt change. |
 | Changes in 4.65.0 | **The overlay follows its position again; the transcript and the answer as one wide row; on your own, Ctrl+Enter answers whatever you said** (ADR-0124, ADR-0119 and ADR-0123 amended 27 Nov 2026; web only: Windows 1.7.4 and Mac 1.8.0 need only a restart). §5: the answer, alone or beside the transcript, lines up by the position's column (left / centre / right; ADR-0124 had centred the answer alone). Opening the transcript opens the answer beside it. The pair is one row `min(window, max(720 px, 1.4 × bar 1))` (`pairWidthStyle()`), transcript about a third (split default 0.34), side by side from 600 CSS px of window. While the pair shows, the page widens the overlay window for the row through the existing `resizeOverlay` steps (`'start'` and `'move'` only, on the edge the position allows: right on the left, left on the right, half each centred; capped at the work area less 16 DIP a side), holds the bars' column at its width so the bars never move, and narrows the window back when the pair closes (`overlay/usePairWindow.ts`; `kite.overlayPairGrowth` undoes a growth left by an overlay closed while grown). No shell: no growth, the row fits the window. The answer's footer keeps type / how / when together on the right. §6.1: on your own (and with Ctrl+Shift+Space always) the user's newest **unanswered** speech: every "You" stretch since the capture time of the last own answer (`answeredUntil`, so words joined to an answered line still count), back to the other person's words, as one turn; greetings and small talk included (no question filter). On a call Ctrl+Enter is unchanged. No prompt change (the contract's `smalltalk` type already answers a greeting). |
 | Changes in 4.64.0 | **Click-through covers the whole overlay; the Mac overlay is plainly see-through** (ADR-0055 amended 26 Nov 2026; ADR-0126). §5: with Click-through on, every click on the overlay (both bars, the chat bar, the script bar, the panels, W's spot) goes to the app behind it, sent to the shell at once; nothing reacts to the pointer (`.k-pass-all`). Only Ctrl+Alt+X (⌘ ⌥ X) turns it off from the overlay; bar 1 shows "Click-through on — press Ctrl+Alt+X to turn off"; the call window has **Turn click-through off**; it ends with the call; Settings › Hotkeys warns when another app holds the key, and while one does in a call the bars keep their clicks (`CompactState.clickThroughKeyTaken`). Web only (works with Windows 1.7.4); a newer shell adds a tray **Turn click-through off** during a call (Mac 1.8.0; next Windows release). §7.3 (desktop, macOS only): `overlayGlass()` drops `vibrancy`/`visualEffectState`: transparent with a clear background as on Windows, keeping macOS's content-shaped shadow. |
 | Changes in 4.63.0 | **The Mac download only once the Mac app is published** (ADR-0125; web only). §10.3: `src/server/macRelease.ts` reads `mac-latest/latest-mac.yml` (published = 200 with a version and a .zip; 404, errors and timeouts = not published; reused 1 min / 10 min); public `GET /api/mac-release` → `{ published }` (`proxy.ts` `PUBLIC_PAGE_PATHS`). Every "Get it for Mac" dialog shows **Mac version coming soon** (no command, no .dmg) until then; `install-mac.sh` says the same on a 404 and installs nothing. It turns on by itself when `publish-mac.mjs` publishes `mac-latest`. Windows download unchanged. |
@@ -460,19 +461,23 @@ Default hotkeys (ADR-0029). The page's keys are in `platform/keymap.ts` and do n
 
 | Action | macOS | Windows | Works |
 |---|---|---|---|
-| Answer (4.61.0, ADR-0123: on a call the other person, on your own what you said since your last answer; 4.65.0: greetings included) | ⌘ Enter | Ctrl+Enter | Any app, during a call |
-| Screenshot | ⌘ Shift Enter | Ctrl+Shift+Enter | Any app, during a call |
-| What you said since your last answer (4.61.0, ADR-0123, 4.65.0; it was the voice question, 4.22.0) | ⌘ Shift Space | Ctrl+Shift+Space | Any app, during a call |
-| Screenshot and voice question (4.22.0) | ⌘ Alt Enter | Ctrl+Alt+Enter | Any app, during a call |
-| Previous / next answer | ⌘ ← / ⌘ → | Ctrl+← / Ctrl+→ | Any app, during a call (desktop 1.6.4; before: Kite focused only) |
-| Clear answers (4.22.0: clears them from the screen) | ⌘ Backspace | Ctrl+Backspace | Any app, during a call (desktop 1.6.4) |
-| Clear transcript | ⌘ Shift Backspace | Ctrl+Shift+Backspace | Any app, during a call (desktop 1.6.4) |
-| Zoom in / out / reset (4.22.0) | ⌘ = / ⌘ - / ⌘ 0 | Ctrl+= / Ctrl+- / Ctrl+0 | Any app, during a call (desktop 1.6.4) |
+4.66.0 (ADR-0127, ADR-0110 amended 27 Nov 2026): macOS uses the Windows keys with Control (⌃) for Ctrl and Option (⌥) for Alt; Mac 1.8.0's keys are in ADR-0110's amendment.
+
+| Action | macOS (1.8.1, and the web app on a Mac) | Windows | Works |
+|---|---|---|---|
+| Answer (4.61.0, ADR-0123: on a call the other person, on your own what you said since your last answer; 4.65.0: greetings included) | ⌃ Enter | Ctrl+Enter | Any app, during a call |
+| Screenshot (4.66.0: the screen under the mouse pointer) | ⌃ Shift Enter | Ctrl+Shift+Enter | Any app, during a call |
+| What you said since your last answer (4.61.0, ADR-0123, 4.65.0; it was the voice question, 4.22.0) | ⌃ Shift Space | Ctrl+Shift+Space | Any app, during a call |
+| Screenshot and voice question (4.22.0) | ⌃ ⌥ Enter | Ctrl+Alt+Enter | Any app, during a call |
+| Previous / next answer (Mac: Mission Control's ⌃← / ⌃→ take them unless turned off) | ⌃ ← / ⌃ → | Ctrl+← / Ctrl+→ | Any app, during a call (desktop 1.6.4; before: Kite focused only) |
+| Clear answers (4.22.0: clears them from the screen) | ⌃ Backspace | Ctrl+Backspace | Any app, during a call (desktop 1.6.4) |
+| Clear transcript | ⌃ Shift Backspace | Ctrl+Shift+Backspace | Any app, during a call (desktop 1.6.4) |
+| Zoom in / out / reset (4.22.0) | ⌃ = / ⌃ - / ⌃ 0 | Ctrl+= / Ctrl+- / Ctrl+0 | Any app, during a call (desktop 1.6.4) |
 | Escape: cancel a voice question (4.22.0) | Esc | Esc | Any app, only while it listens (desktop 1.6.4) |
-| Show or hide overlay | ⌘ Alt H | Ctrl+Alt+H | Any app, during a call |
-| Start or stop recording (asks first unless consent was ticked at Connect; ADR-0068, ADR-0082) | ⌘ Alt R | Ctrl+Alt+R | Any app, during a call (desktop 1.5.0) |
-| Click-through, Transcript, Script bar, Ask AI (4.60.0: during an overlay call Ask AI's key opens the chat bar) | ⌘ Alt X / T / S / K | Ctrl+Alt+X / T / S / K | As before (Transcript: while the bars have focus) |
-| Move overlay (Shift: nudge) | ⌘ Alt Arrows | Ctrl+Alt+Arrows | Any app, during a call |
+| Show or hide overlay (4.66.0, ADR-0127; Ctrl+Alt+H before Windows 1.7.5 / Mac 1.8.1) | ⌃ ⌥ Y | Ctrl+Alt+Y | Any app, during a call |
+| Start or stop recording (asks first unless consent was ticked at Connect; ADR-0068, ADR-0082) | ⌃ ⌥ R | Ctrl+Alt+R | Any app, during a call (desktop 1.5.0) |
+| Click-through, Transcript, Script bar, Ask AI (4.60.0: during an overlay call Ask AI's key opens the chat bar) | ⌃ ⌥ X / T / S / K | Ctrl+Alt+X / T / S / K | As before (Transcript: while the bars have focus) |
+| Jump between the six positions (ADR-0095) / nudge | ⌃ Shift Arrows / ⌃ ⌥ Shift Arrows | Ctrl+Shift+Arrows / Ctrl+Alt+Shift+Arrows | Any app, during a call |
 
 ### 7.4 Data model (IndexedDB, Dexie)
 

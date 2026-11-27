@@ -3,7 +3,7 @@
 - **Status:** Accepted (19 Nov 2026, the developer's brief: "Mac shortcut set that doesn't take over text-editing keys")
 - **Date:** 2026-11-19
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §7.3 (hotkeys) (version 4.48.0)
-- **Supersedes / superseded by:** updates ADR-0082 (ParakeetAI's call keys, held globally during a call) and ADR-0095 (the jumps on Ctrl+Shift+Arrows) for macOS only; Windows is unchanged. **Amended 25 Nov 2026** (see the end): the keys were reviewed and stay; Settings and the call say what a key another app holds still does.
+- **Supersedes / superseded by:** updates ADR-0082 (ParakeetAI's call keys, held globally during a call) and ADR-0095 (the jumps on Ctrl+Shift+Arrows) for macOS only; Windows is unchanged. **Amended 25 Nov 2026** (see the end): the keys were reviewed and stay; Settings and the call say what a key another app holds still does. **Amended 27 Nov 2026** (Mac 1.8.1, ADR-0127): the same keys as Windows with Control (⌃); this replaces the Mac key set below.
 
 ## Context
 
@@ -114,3 +114,66 @@ The labels show ⌃ for `Control` and ⌘ for `Command`.
 - Settings → Hotkeys says the same on each taken row.
 - In a browser, Settings marks the desktop-only shortcuts "Desktop app only". It said all of them work in a browser.
 - On a Mac, Settings adds a note: macOS may not tell Paramount AI that another app uses the same keys (unverified on a real Mac; the release test checks it with Rectangle), so it suggests checking window tools such as Rectangle or Magnet (⌃⌥ arrows) and VoiceOver.
+
+## Amendment (27 Nov 2026, Mac 1.8.1): the same keys as Windows, with Control (⌃)
+
+**Decision (the developer's brief, ParakeetAI parity; ADR-0127):**
+- A Mac now uses every Windows key with **Control (⌃) for Ctrl** and Option (⌥) for Alt.
+- No Paramount AI shortcut uses ⌘ any more, so every ⌘ key keeps its Mac meaning in every app.
+- Show or hide becomes **Ctrl+Alt+Y / ⌃⌥Y** on both systems (ADR-0127 §3; Ctrl+Alt+H is Google Meet's raise hand on Windows).
+- This replaces the 19 Nov 2026 decision above and the 25 Nov review.
+
+**Before and after.** "Mac 1.8.0" is the key set above; "Mac 1.8.1" is this amendment (and the web app on a Mac).
+
+| Action | Windows 1.7.4 | Windows 1.7.5 | Mac 1.8.0 | Mac 1.8.1 |
+|---|---|---|---|---|
+| Answer | Ctrl+Enter | Ctrl+Enter | ⌘↵ | ⌃↵ |
+| Answer from a screenshot | Ctrl+Shift+Enter | Ctrl+Shift+Enter | ⌘⇧↵ | ⌃⇧↵ |
+| Your own last spoken question | Ctrl+Shift+Space | Ctrl+Shift+Space | ⌘⇧Space | ⌃⇧Space |
+| Screenshot and voice question | Ctrl+Alt+Enter | Ctrl+Alt+Enter | ⌘⌥↵ | ⌃⌥↵ |
+| Previous / next answer | Ctrl+← / → | Ctrl+← / → | ⌃⌥← / → | ⌃← / → |
+| Clear answers | Ctrl+⌫ | Ctrl+⌫ | ⌃⌥⌫ | ⌃⌫ |
+| Clear transcript | Ctrl+Shift+⌫ | Ctrl+Shift+⌫ | ⌃⌥⇧⌫ | ⌃⇧⌫ |
+| Zoom in / out / 100 % | Ctrl+= / - / 0 | Ctrl+= / - / 0 | ⌃⌥= / - / 0 | ⌃= / - / 0 |
+| **Show or hide the overlay** | **Ctrl+Alt+H** | **Ctrl+Alt+Y** | **⌃⌥H** | **⌃⌥Y** |
+| Script bar | Ctrl+Alt+S | Ctrl+Alt+S | ⌘⌥S | ⌃⌥S |
+| Click-through | Ctrl+Alt+X | Ctrl+Alt+X | ⌘⌥X | ⌃⌥X |
+| Record | Ctrl+Alt+R | Ctrl+Alt+R | ⌘⌥R | ⌃⌥R |
+| Jump between the six positions | Ctrl+Shift+arrows | Ctrl+Shift+arrows | ⌃⌘ arrows | ⌃⇧ arrows |
+| Nudge | Ctrl+Alt+Shift+arrows | Ctrl+Alt+Shift+arrows | ⌘⌥⇧ arrows | ⌃⌥⇧ arrows |
+| Ask AI (always) | Ctrl+Alt+K | Ctrl+Alt+K | ⌘⌥K | ⌃⌥K |
+| Transcript (bars focused) | Ctrl+Alt+T | Ctrl+Alt+T | ⌘⌥T | ⌃⌥T |
+| Cancel a voice question | Esc | Esc | Esc | Esc |
+
+**Clashes on a Mac (1.8.1),** checked against Apple's lists and Zoom Workplace, Google Meet and Microsoft Teams (read 27 Nov 2026). Each one is pinned in `apps/web/tests/unit/shared/hotkeys.test.ts`.
+
+| Mac key | What else uses it | What happens during a call | How Settings → Hotkeys warns (`MAC_SYSTEM_CLASHES`) |
+|---|---|---|---|
+| ⌃← / ⌃→ (previous / next) | macOS Mission Control: move a space left / right (on by default) | macOS takes them first: they switch desktops and do not reach Paramount AI | Previous / next row: "macOS uses ⌃ ← and ⌃ → to move between desktops… turn off Move left / right a space in System Settings › Keyboard › Keyboard Shortcuts › Mission Control, or use the ← → buttons on the answer panel." |
+| ⌃0 (zoom 100 %) | Microsoft Teams on a Mac: reset zoom | Resets the overlay's zoom instead of Teams' | Zoom row: "Microsoft Teams on a Mac uses ⌃ 0 to reset its own zoom…" |
+| ⌃⌫ (Clear answers), ⌃⇧← / → (jumps) | macOS text editing: delete backward; select to the line's edge | In other apps' text boxes these edit nothing during a call | Clear and jump rows: "In text boxes of other apps, these keys also edit text…" |
+| Every ⌃⌥ key (screenshot and voice, script bar, Click-through, Record, show or hide, nudges, Ask AI, Transcript) | VoiceOver's VO key, only while VoiceOver is on | VoiceOver gets them first | Those rows: "⌃ ⌥ is VoiceOver's key… VoiceOver Utility › General can use Caps Lock instead." |
+| ⌃Space / ⌃⌥Space (input sources), ⌃↑ / ⌃↓ (Mission Control), ⌃⌘Space, ⌃⌘F, ⌃⌘Q | macOS | Not used by Paramount AI | — |
+| Zoom: ⌃\, ⌃P, ⌃N, ⌃⇧R, ⌃⇧G, ⌃⇧ letters, ⌃⌥⌘H, ⌃⌥⇧V | Zoom Workplace | Not used by Paramount AI | — |
+| Meet: ⌘D, ⌘E, ⌃⌘ letters | Google Meet in Chrome | Not used (Meet's Mac keys are ⌃⌘) | — |
+| Teams: ⌘⇧ letters, ⌃⌘ letters, ⌃L, ⌃1–9, ⌥Space | Microsoft Teams | Not used | — |
+
+- Window tools (Rectangle, Magnet) may use ⌃⌥ with arrows. Paramount AI no longer holds ⌃⌥ with arrows alone; the nudges are ⌃⌥⇧ arrows.
+- The general note stays: macOS may not report a key another app holds.
+
+**Until a Mac updates:**
+- Mac 1.8.0 keeps holding its old keys, which all still work.
+- Settings → Hotkeys shows the keys the app reports (`rowKeys()`).
+- The overlay's tooltips and the Help guide already show the 1.8.1 keys.
+
+**Validation:**
+- Unit:
+  - `hotkeys.test.ts`: the table and the clashes;
+  - `keymap.test.ts`: ⌃ keys in the page, ⌃⌥ letters by place, ⌘ keys left alone;
+  - `apps/desktop/tests/unit/hotkeys.test.ts`: the shell holds no ⌘ key, and Ask AI is ⌃⌥K;
+  - `HotkeyList.test.ts`: the notes, and a 1.8.0 app's own keys.
+- Real Mac (runbook "Desktop 1.8.1 / 1.7.5"):
+  - ⌃↵ answers;
+  - ⌃⌥Y hides;
+  - ⌘← still goes to the line's start in TextEdit during a call;
+  - ⌃← with Mission Control's shortcut turned off shows the previous answer.

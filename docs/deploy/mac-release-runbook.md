@@ -272,7 +272,7 @@ Both desktop apps are a thin window around the live website (`call.paramountinte
 - macOS permission texts and the app's identity (`apps/desktop/electron-builder.yml` `extendInfo`, `appId`, signing).
 - The bundled speech engine and model (`native/sherpa-onnx`, `native/stt-model`), recordings on disk, Drive uploads, the updater itself, the installer.
 
-**Check for Updates…:** the Mac app's **Paramount AI** menu has no **Check for Updates…** item in 1.8.0 (`apps/desktop/src/macMenu.ts`: About, Services, Hide, Hide Others, Show All, Quit). Adding it is a desktop change, listed for the next Mac release. Until then, quitting and reopening the app makes it check at once.
+**Check for Updates…:** from Mac 1.8.1 and Windows 1.7.5 (ADR-0127), the Mac app's **Paramount AI** menu and the Windows tray menu have **Check for Updates…**: it checks at once and says "You're up to date", or downloads and asks Restart now / Later (never during a call). On Mac 1.8.0 and Windows 1.7.4, quitting and reopening the app makes it check at once. The 1.8.1 / 1.7.5 release steps and the first-update test plan are in `docs/deploy/desktop-1.8.1-1.7.5-release.md`.
 
 **How auto-update works** (`apps/desktop/src/updater.ts`, both systems):
 - The installed app checks its channel when it starts and every 6 hours: Windows the newest release of `Zainpak123/kite-releases`, Mac the `mac-latest` pre-release.
