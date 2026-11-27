@@ -11,7 +11,6 @@
 import type {
   AccurateResult,
   AccurateStatus,
-  DesktopNotice,
   DriveQueueReport,
   DeviceIdentity,
   DriveUploadProgress,
@@ -745,14 +744,6 @@ export interface DriveHost {
    * @returns The size, or null when the file is not on this computer.
    */
   fileSize?(recordingId: string, track: RecordingTrack): Promise<number | null>;
-
-  /**
-   * Shows a native notification; a click opens its Drive link in the system browser.
-   *
-   * @param notice The lines and the link.
-   * @returns False when the system cannot show one.
-   */
-  notify(notice: DesktopNotice): Promise<boolean>;
 
   /**
    * Desktop 1.7.2 (ADR-0106): tells the shell how much Drive work this computer still has, so an exit with

@@ -5,7 +5,7 @@
  *   app older than 1.6.2 keeps its recordings waiting ("update") while transcripts and notes save;
  * - a desktop call saves its recording part's main file, transcript PDF and notes PDF (ADR-0080: no
  *   stereo file, no transcript TXT) into "<date> <title>/Recordings" and "/Transcripts", then tells the
- *   server once and shows one notice;
+ *   server once; ADR-0131: no notification (the uploader has no way to show one);
  * - ADR-0080: a job queued before drops its not-yet-sent TXT and stereo files and keeps the ones in Drive;
  *   a job that failed is queued again and finishes;
  * - idempotency: running again, or after this device lost its ids, never makes a folder or file twice;
@@ -240,7 +240,6 @@ function world(options: WorldOptions = {}) {
     updatedAt: CALL.endedAt,
   });
   const notified: unknown[] = [];
-  const notices: unknown[] = [];
   const hostCalls: DriveUploadRequest[] = [];
   const script = [...(options.hostScript ?? [])];
   // With a TXT, as an older builder made: ADR-0080 leaves it out.
@@ -294,7 +293,6 @@ function world(options: WorldOptions = {}) {
     session: async (id) => (id === SID ? SESSION : null),
     callFiles: async () => callFiles,
     callActive: async () => state.callLive,
-    notice: (notice) => notices.push(notice),
     now: () => Date.now(),
     timeZone: () => 'UTC',
     expectedRecordings: async () =>
@@ -305,7 +303,7 @@ function world(options: WorldOptions = {}) {
         startedAt: r.startedAt,
       })),
   };
-  return { deps, google, jobs, notified, notices, hostCalls, state, job: () => jobs.get(SID)! };
+  return { deps, google, jobs, notified, hostCalls, state, job: () => jobs.get(SID)! };
 }
 
 describe('a desktop call', () => {
@@ -334,13 +332,9 @@ describe('a desktop call', () => {
       folderUrl: `https://drive.google.com/drive/folders/${folder.id}`,
       alsoNotify: null,
     });
-    expect(w.notices).toEqual([
-      {
-        title: 'Recording and transcript saved — Acme – Backend Engineer',
-        body: 'Open in Drive',
-        url: `https://drive.google.com/drive/folders/${folder.id}`,
-      },
-    ]);
+    // ADR-0131: nothing pops up; the job's 'done' state is the session's "Saved to Drive ✓" line.
+    expect('notice' in w.deps).toBe(false);
+    expect(w.job().state).toBe('done');
     expect(jobPercent(job)).toBe(100);
   });
 });

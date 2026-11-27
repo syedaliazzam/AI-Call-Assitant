@@ -1,13 +1,13 @@
 /**
- * Tests for apps/desktop/src/drive/{upload,notice,host}.ts and the trackFileOf() lookup in
+ * Tests for apps/desktop/src/drive/{upload,host}.ts and the trackFileOf() lookup in
  * recordings/manager.ts (desktop 1.6.0, ADR-0072), on real files in a temporary folder and a fake Google:
  * - only a well-formed request to a Drive upload address is accepted; the file comes from the index only;
  * - an upload asks Google how far it got and RESUMES from there, in 256 KiB-multiple chunks, with the
  *   token, reporting progress, and ends with the file id;
  * - a call stops it between chunks, and a call starting mid-chunk cuts the chunk off ('paused');
  * - 401 is 'auth', 404 is 'expired', a lost connection is retried then reported as retryable;
- * - the notification opens only a Drive link; the IPC calls refuse another origin and send progress to
- *   the page that asked;
+ * - the IPC calls refuse another origin and send progress to the page that asked; ADR-0131: the old
+ *   "saved" notification channel shows nothing and answers false;
  * - 1.6.2 (ADR-0074): without a token no Authorization header is sent, the upload starts at the offset the
  *   server gave without asking, a finished one reports the file's MD5, a 401 is a gone session, and the
  *   page can ask a file's size (from the index only).
@@ -25,7 +25,6 @@ import {
   SHOW_NOTICE_CHANNEL,
 } from '../../src/channels';
 import { installDrive } from '../../src/drive/host';
-import { isNotice, showNotice } from '../../src/drive/notice';
 import {
   createDriveUploader,
   isUploadRequest,
@@ -304,35 +303,6 @@ describe('upload', () => {
   });
 });
 
-describe('notice', () => {
-  it('opens only a Drive link, and refuses other notices', () => {
-    const opened: string[] = [];
-    let click: (() => void) | null = null;
-    const deps = {
-      supported: () => true,
-      create: () => ({
-        on: (_event: 'click', listener: () => void) => {
-          click = listener;
-        },
-        show: () => undefined,
-      }),
-      openExternal: (url: string) => opened.push(url),
-    };
-    expect(
-      showNotice(deps, {
-        title: 'Saved',
-        body: 'Open in Drive',
-        url: 'https://drive.google.com/drive/folders/F',
-      }),
-    ).toBe(true);
-    click!();
-    expect(opened).toEqual(['https://drive.google.com/drive/folders/F']);
-    expect(isNotice({ title: 'x', body: 'y', url: 'https://evil.example/' })).toBe(false);
-    expect(showNotice(deps, { title: 'x', body: 'y', url: 'file:///C:/x' })).toBe(false);
-    expect(showNotice({ ...deps, supported: () => false }, { title: 'x', body: 'y' })).toBe(false);
-  });
-});
-
 describe('installDrive', () => {
   it('refuses another origin, sends progress to the page that asked, and pauses on a call', async () => {
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
@@ -353,16 +323,19 @@ describe('installDrive', () => {
       allowedOrigin: 'https://kite.example',
       recordings: { trackFileOf: (id) => (id === REC ? file : null) },
       fetch: google.fetch,
-      notices: {
-        supported: () => false,
-        create: () => ({ on: () => {}, show: () => {} }),
-        openExternal: () => {},
-      },
     });
     const kite = { senderFrame: { url: 'https://kite.example/home', parent: null }, sender };
     const other = { senderFrame: { url: 'https://evil.example/', parent: null }, sender };
     expect(() => handlers.get(DRIVE_UPLOAD_CHANNEL)!(other, REQUEST)).toThrow();
     expect(() => handlers.get(SHOW_NOTICE_CHANNEL)!(other, { title: 'x', body: 'y' })).toThrow();
+    // ADR-0131: even the Kite page gets no notification, only "false".
+    expect(
+      handlers.get(SHOW_NOTICE_CHANNEL)!(kite, {
+        title: 'Saved',
+        body: 'Open in Drive',
+        url: 'https://drive.google.com/drive/folders/F',
+      }),
+    ).toBe(false);
     expect(await handlers.get(DRIVE_UPLOAD_CHANNEL)!(kite, REQUEST)).toMatchObject({
       status: 'done',
     });
@@ -400,11 +373,6 @@ describe('installDrive', () => {
       allowedOrigin: 'https://kite.example',
       recordings: { trackFileOf: (id) => (id === REC ? file : null) },
       fetch,
-      notices: {
-        supported: () => false,
-        create: () => ({ on: () => {}, show: () => {} }),
-        openExternal: () => {},
-      },
       onQueueReport: (report) => reports.push(report),
       onUploadsChanged: () => {
         changes += 1;

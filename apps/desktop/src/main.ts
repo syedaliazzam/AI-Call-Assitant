@@ -50,7 +50,6 @@ import {
   Menu,
   nativeImage,
   net,
-  Notification,
   powerMonitor,
   protocol,
   screen,
@@ -110,12 +109,7 @@ import {
   type CompactWindows,
 } from './windows';
 import { allowSystemAudioLoopback } from './media';
-import {
-  allowOnlyOurPermissions,
-  lockNavigation,
-  openInSystemBrowser,
-  secureWebPreferences,
-} from './security';
+import { allowOnlyOurPermissions, lockNavigation, secureWebPreferences } from './security';
 
 /** The main window, or null before it is first needed and after it closes. */
 let mainWindow: BrowserWindow | null = null;
@@ -201,6 +195,8 @@ const PROTECTION_SETTLE_MS = 120;
  * Called from: the Mac menu's and the tray's "Check for Updates…" (start())
  */
 async function checkForUpdatesNow(): Promise<void> {
+  // ADR-0131: this box opens only because the user chose "Check for Updates…"; nothing else in the shell opens
+  // a message box or a system notification on its own.
   const outcome = updater ? await updater.checkNow() : 'unavailable';
   console.info(`[kite] manual update check: ${outcome}`);
   const reply = manualCheckReply(outcome, {
@@ -888,28 +884,16 @@ function start(): void {
       allowedOrigin: config.allowedOrigin,
       recordings: recordings.manager,
       fetch: (url, init) => net.fetch(url, init),
-      notices: {
-        supported: () => Notification.isSupported(),
-        create: (options) => new Notification({ ...options, icon: appIconPath(__dirname) }),
-        openExternal: (url) => {
-          openInSystemBrowser(url);
-        },
-      },
       // 1.7.2 (ADR-0106): the page's report of the work left, and the shell's own uploads.
       onQueueReport: (report) => exitControl?.report(report),
       onUploadsChanged: () => exitControl?.uploadsChanged(),
     });
     const driveHost = drive;
     // 1.7.2 (ADR-0106): exiting with Drive work left runs on, with the tray icon, until it is done.
-    let hadWork = false;
     const control = createBackgroundExit({
       now: () => Date.now(),
       activeUploads: () => driveHost.activeUploads(),
       enterBackground,
-      notify: (title, body) => {
-        if (!Notification.isSupported()) return;
-        new Notification({ title, body, icon: appIconPath(__dirname) }).show();
-      },
       quit: () => {
         quitAllowed = true;
         app.quit();
@@ -917,11 +901,7 @@ function start(): void {
       confirmQuitNow,
       showView: (view: BackgroundView) => {
         appTray?.update(view);
-        // The uploads are done: an update that waited for them may ask now (not while running on: the
-        // app then quits by itself and installs it).
-        const busy = control.hasWork();
-        if (hadWork && !busy && !view.background) updater?.uploadsIdle();
-        hadWork = busy;
+        // ADR-0131: the uploads being done asks nothing (no update question pops up on its own).
       },
       startTimer: (run, ms) => setInterval(run, ms),
       stopTimer: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),

@@ -2,8 +2,9 @@
  * File: apps/web/src/platform/drive.ts
  * Purpose: The desktop app's Google Drive host (1.6.0, ADR-0072): uploads of this computer's recording
  *          files through the shell (which reads them from its Recordings index and sends them only to
- *          Google's upload address), the progress of those uploads, and native notifications. Present
- *          only when the shell has all three methods; otherwise null. 1.6.2 (ADR-0074): the file size, which
+ *          Google's upload address), and the progress of those uploads. Present only when the shell has
+ *          both methods; otherwise null. ADR-0131: the page never asks the shell for a native notification
+ *          any more (the bridge's showNotice is left unused; a shared screen would show the toast). 1.6.2 (ADR-0074): the file size, which
  *          also says the shell uploads without a token. 1.7.2 (ADR-0106): the Drive queue report, for the
  *          uploads that finish after the user exits.
  * Used by: src/platform/desktop.ts
@@ -21,8 +22,8 @@ import type { DriveHost } from './types';
  * Called from: createDesktopPlatform() in desktop.ts; tests
  */
 export function desktopDriveHost(bridge: KiteDesktopApi): DriveHost | null {
-  const { driveUpload, onDriveUploadProgress, showNotice } = bridge;
-  if (!driveUpload || !onDriveUploadProgress || !showNotice) return null;
+  const { driveUpload, onDriveUploadProgress } = bridge;
+  if (!driveUpload || !onDriveUploadProgress) return null;
   return {
     async upload(request, onProgress) {
       // Only this upload's progress reaches its caller (several pages may listen).
@@ -37,7 +38,6 @@ export function desktopDriveHost(bridge: KiteDesktopApi): DriveHost | null {
         stop();
       }
     },
-    notify: (notice) => showNotice(notice),
     // 1.6.2 (ADR-0074): only a shell that uploads without a token has it.
     ...(bridge.driveFileSize
       ? { fileSize: (recordingId, track) => bridge.driveFileSize!(recordingId, track) }
