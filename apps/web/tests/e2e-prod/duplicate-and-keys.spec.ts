@@ -4,7 +4,8 @@
  * opened and no call is connected. Three "devices": two Chrome profiles and the desktop shell (apps/desktop as built
  * from this checkout) with a fresh temporary profile. Covers:
  *   keys: Settings → Hotkeys opens on this computer's set (Windows here) and its Mac / Windows switch shows the
- *         Mac's ⌃ keys; Help shows the same list; in the desktop app Settings shows the keys the app holds;
+ *         Mac's ⌃ keys; Help shows the same list; the desktop Connect card's Rec key and the shell's report
+ *         (Settings and Help open in the browser from a desktop app with account sync, ADR-0055);
  *   duplicate: the dashboard's Duplicate makes "Copy of <topic>" with the document; the copy reaches the other
  *         profile and the desktop app, whose Start opens Connect; the desktop menu's and the session page's
  *         Duplicate work; deleting the original leaves the copy's document in the account.
@@ -251,7 +252,7 @@ test('3. the copy reaches the other Chrome profile and the account', async () =>
   report('duplicate: copy in profile B and in the account', true);
 });
 
-test('4. desktop app: the copy is listed and opens Connect; its menu duplicates; Settings shows held keys', async () => {
+test('4. desktop app: the copy is listed and opens Connect; its menu duplicates; keys come from the shell', async () => {
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...env } = process.env;
   app = await electron.launch({
     executablePath: ELECTRON_PATH,
@@ -273,8 +274,10 @@ test('4. desktop app: the copy is listed and opens Connect; its menu duplicates;
     .filter({ hasText: COMPANY });
   await copyCard.getByRole('button', { name: new RegExp(`^Start session: ${COPY}`) }).click();
   await expect(panel.getByText('Connect Call Session')).toBeVisible({ timeout: 30_000 });
+  // ADR-0128: the Connect card's Rec key comes from the one source (the keys this shell holds, Windows here).
+  await expect(panel.getByText(/press Rec on the call bar \(or Ctrl\+Alt\+R\)/)).toBeVisible();
   await panel.getByRole('button', { name: 'Back', exact: true }).first().click();
-  report('desktop: copy listed, Start opens Connect', true);
+  report('desktop: copy listed, Start opens Connect (Rec key from the held keys)', true);
 
   await expect(list).toContainText(COPY, { timeout: 30_000 });
   await copyCard
@@ -285,18 +288,8 @@ test('4. desktop app: the copy is listed and opens Connect; its menu duplicates;
   await expect(list).toContainText(`Copy of ${COPY}`, { timeout: 30_000 });
   report('desktop: menu Duplicate', true);
 
-  // ADR-0128: in the desktop app the list shows what the app holds (this checkout's shell: the table's keys).
-  await panel.goto(`${PRODUCTION_URL}/settings`);
-  const keySet = panel.getByRole('radiogroup', { name: 'Keys for' });
-  await expect(keySet).toBeVisible({ timeout: 30_000 });
-  await expect(keySet.getByRole('radio', { name: 'Windows' })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
-  await expect(
-    panel.getByRole('row', { name: /^Show or hide overlay/ }).locator('kbd'),
-  ).toContainText('Y');
-  // The shell's own report (the list above reads it through getPlatform()); a test reads it directly.
+  // ADR-0128: the report the desktop windows' keys are read from (src/ui/shownKeys.ts asks the same). Settings and
+  // Help are not checked here: a desktop app with account sync opens them in the browser (ADR-0055).
   const held = await panel.evaluate(async () => {
     const bridge = (
       window as unknown as {
@@ -310,7 +303,7 @@ test('4. desktop app: the copy is listed and opens Connect; its menu duplicates;
     return (await bridge?.checkHotkeys?.())?.length ?? 0;
   });
   expect(held).toBeGreaterThan(10);
-  report('desktop: Settings shows the held keys', true, { reported: held });
+  report('desktop: the shell reports the keys it holds', true, { reported: held });
 });
 
 test('5. the session page’s Duplicate opens the copy’s page', async () => {
@@ -326,6 +319,12 @@ test('5. the session page’s Duplicate opens the copy’s page', async () => {
 });
 
 test('6. deleting the original leaves every copy’s document in the account', async () => {
+  // The session page's copy reaches the account with the next sync push (a few seconds): wait for all three.
+  await expect
+    .poll(async () => (await runSessions(pageA)).filter((s) => s.name !== undefined).length, {
+      timeout: 60_000,
+    })
+    .toBe(3);
   const sessions = await runSessions(pageA);
   const original = sessions.find((s) => s.name === undefined)!;
   const copies = sessions.filter((s) => s.name !== undefined);
