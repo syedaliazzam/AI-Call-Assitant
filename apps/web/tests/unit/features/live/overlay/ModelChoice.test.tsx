@@ -334,3 +334,48 @@ describe('ADR-0099: the new-models rollout in the overlay', () => {
     expect(modelName('gpt-luna')).toBe('Luna');
   });
 });
+
+describe('ADR-0130: the model chip is as bright as the other bar buttons', () => {
+  /**
+   * The chip's ✦ span, from the rendered chip.
+   * @param html The chip's HTML.
+   * @returns The span's opening tag.
+   */
+  const iconTag = (html: string): string =>
+    /<span[^>]*data-model-icon="[^"]*"[^>]*>/.exec(html)?.[0] ?? '';
+
+  it('draws the default model ✦ in the normal text colour, never muted', async () => {
+    const { ModelChip } = await import('@/features/live/overlay/ModelChoice');
+    for (const word of [false, true]) {
+      const html = renderToString(
+        <ModelChip
+          model="fast"
+          word={word}
+          open={false}
+          disabled={false}
+          onToggle={() => undefined}
+        />,
+      );
+      expect(iconTag(html)).toContain('data-model-icon="normal"');
+      expect(iconTag(html)).toContain('text-ui-text');
+      expect(html).not.toContain('text-ui-muted');
+      // Only `ended` dims the chip, with the bar's shared disabled style.
+      expect(html).not.toContain('disabled=""');
+    }
+  });
+
+  it('still marks another model with the accent ✦ and ring', async () => {
+    const { ModelChip } = await import('@/features/live/overlay/ModelChoice');
+    const html = renderToString(
+      <ModelChip
+        model="smart"
+        word={false}
+        open={false}
+        disabled={false}
+        onToggle={() => undefined}
+      />,
+    );
+    expect(iconTag(html)).toContain('text-ui-accent');
+    expect(html).toContain('ring-ui-accent-fill');
+  });
+});

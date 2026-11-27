@@ -278,9 +278,13 @@ export function ModelChip({
       onClick={onToggle}
       disabled={disabled}
     >
+      {/* ADR-0130: the default model's ✦ is the bar's normal text colour, as bright as the other buttons (it
+          was muted, which read as disabled). Another model still shows the accent ✦ and ring. Only `ended`
+          dims the chip, with the same disabled:opacity-50 as every bar button. */}
       <span
         aria-hidden="true"
-        className={`inline-flex ${model !== 'fast' ? 'text-ui-accent' : 'text-ui-muted'}`}
+        data-model-icon={model !== 'fast' ? 'accent' : 'normal'}
+        className={`inline-flex ${model !== 'fast' ? 'text-ui-accent' : 'text-ui-text'}`}
       >
         <Sparkles size={15} strokeWidth={1.75} />
       </span>
