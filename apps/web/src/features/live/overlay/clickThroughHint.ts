@@ -3,22 +3,23 @@
  * Purpose: The words that tell the user how to turn Click-through off (ADR-0055 amended 26 Nov 2026). While it
  *          is on, the whole overlay passes clicks to the app behind it, so bar 1 shows a hint that takes no
  *          clicks ("Click-through on — press Ctrl+Alt+X to turn off"; ⌃ ⌥ X on a Mac), and the call window
- *          shows the same shortcut beside its "Turn click-through off" button.
+ *          shows the same shortcut beside its "Turn click-through off" button. ADR-0128: the key comes from the
+ *          one source (src/ui/shownKeys.ts), so it is the key the desktop app really holds.
  * Used by: overlay/ControlBar.tsx (bar 1's hint), LiveAnswers.tsx (the call window's notice)
- * Depends on: @kite/shared (globalHotkeys, hotkeyLabel)
- * Architecture: docs/decisions/ADR-0055-desktop-flow-matches-the-reference.md (amendment, 26 Nov 2026)
+ * Depends on: src/ui/shownKeys.ts (shownKeyLabel)
+ * Architecture: docs/decisions/ADR-0055-desktop-flow-matches-the-reference.md (amendment, 26 Nov 2026); ADR-0128
  */
-import { globalHotkeys, hotkeyLabel } from '@kite/shared';
+import { shownKeyLabel } from '@/ui/shownKeys';
 
 /**
  * The Click-through shortcut for this computer, as the user reads it.
  *
  * @param mac True on macOS.
- * @returns "Ctrl+Alt+X", or "⌃ ⌥ X" on a Mac.
+ * @returns "Ctrl+Alt+X", or "⌃ ⌥ X" on a Mac (or the keys the desktop app reports holding).
  * Called from: clickThroughHint(), LiveAnswers.tsx; tests
  */
 export function clickThroughKeyLabel(mac: boolean): string {
-  return hotkeyLabel(globalHotkeys(mac)['click-through'], mac);
+  return shownKeyLabel('click-through', mac);
 }
 
 /**

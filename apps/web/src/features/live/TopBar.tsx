@@ -13,11 +13,12 @@
  */
 'use client';
 
-import { hotkeyAccelerator, hotkeyLabel, type TargetChoice } from '@kite/shared';
+import { type TargetChoice } from '@kite/shared';
 import { useEffect, useState } from 'react';
 import type { CompactCommand, CompactRecording } from '@/core/live/liveChannel';
 import { MenuIcon, MicIcon } from '@/ui/icons';
 import { Menu, type MenuItem } from '@/ui/Menu';
+import { shownKeyLabel, useHeldHotkeys } from '@/ui/shownKeys';
 import { callClock } from './callClock';
 import { KeyChip } from './overlay/parts';
 import { pressRecPill, RecordPopover, RecPill } from './overlay/RecordControls';
@@ -144,6 +145,8 @@ const BUTTON = `${BUTTON_BASE} border border-ui-border bg-ui-surface text-ui-tex
  * Rendered by: LiveAnswers.tsx
  */
 export function TopBar(props: TopBarProps) {
+  // ADR-0128: re-render once the desktop app reports the keys it holds (the buttons' titles read them).
+  useHeldHotkeys();
   // The timer ticks from a clock state the interval advances (no setState in the effect body).
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -200,7 +203,7 @@ export function TopBar(props: TopBarProps) {
         className={`${BUTTON_BASE} bg-ui-primary text-ui-on-primary hover:bg-ui-primary-hover`}
         onClick={props.onAnswer}
         disabled={props.answering || props.ending}
-        title={`Answer the latest question (${hotkeyLabel(hotkeyAccelerator('answer', mac), mac)})`}
+        title={`Answer the latest question (${shownKeyLabel('answer', mac)})`}
       >
         Answer <KeyChip hotkey="answer" onPrimary />
       </button>
@@ -209,7 +212,7 @@ export function TopBar(props: TopBarProps) {
         className={BUTTON}
         onClick={props.onScreenshot}
         disabled={props.capturing || props.ending}
-        title={`Answer from a screenshot (${hotkeyLabel(hotkeyAccelerator('screenshot', mac), mac)})`}
+        title={`Answer from a screenshot (${shownKeyLabel('screenshot', mac)})`}
       >
         {props.capturing ? 'Screenshot…' : 'Screenshot'} <KeyChip hotkey="screenshot" />
       </button>

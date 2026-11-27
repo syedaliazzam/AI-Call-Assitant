@@ -176,6 +176,10 @@ export async function updateSession(id: string, changes: SessionChanges): Promis
       id: current.id,
       createdAt: current.createdAt,
     };
+    // ADR-0129: a field changed to undefined is removed (Rename clears a copy's name), not stored as undefined.
+    for (const [field, value] of Object.entries(changes)) {
+      if (value === undefined) delete (next as unknown as Record<string, unknown>)[field];
+    }
     await db.sessions.put(next);
     return next;
   });
@@ -340,34 +344,105 @@ export async function updateSessionWithDocuments(
 }
 
 /**
- * Copies a session so it can be used again: its details, preferences and documents, but not its
- * transcript, answers or notes. The copy has not started.
- *
- * @param id  The session to copy.
- * @param now Creation time in Unix ms (tests pass a fixed time).
- * @returns The new session.
- * @throws Error('SESSION_NOT_FOUND') when there is no session with this id.
- * Called from: the dashboard's session menu; tests
+ * ADR-0129: what Duplicate does with each field of a session. 'copy': setup, copied as it is; 'new': the copy gets
+ * its own (id, creation time, not started, no activity, its name); 'drop': left out, because it belongs to the
+ * original's calls or this device (the last call's length, the hand-off time) or is worked out again from the
+ * documents (their summary). Every field of Session must be listed (the `satisfies` check), so a field added later
+ * cannot be copied, or left out, without a decision.
  */
-export async function duplicateSession(id: string, now = Date.now()): Promise<Session> {
+export const DUPLICATE_FIELDS = {
+  id: 'new',
+  type: 'copy',
+  company: 'copy',
+  companyDomain: 'copy',
+  role: 'copy',
+  description: 'copy',
+  preferences: 'copy',
+  instructions: 'copy',
+  saveTranscript: 'copy',
+  autoAnswer: 'copy',
+  createdAt: 'new',
+  status: 'new',
+  lastActiveAt: 'new',
+  contactName: 'copy',
+  lastCallMs: 'drop',
+  handoffAt: 'drop',
+  documentsSummary: 'drop',
+  driveAlsoNotify: 'copy',
+  name: 'new',
+} as const satisfies Record<keyof Session, 'copy' | 'new' | 'drop'>;
+
+/** The longest name a copy gets (the Rename dialog's fields hold 200 characters too). */
+export const COPY_NAME_MAX = 200;
+
+/** Options for duplicateSession(). */
+export interface DuplicateOptions {
+  /**
+   * ADR-0129: the copy's name on its card ("Copy of Acme"; the caller words it as the card does). Absent: no
+   * name, so the card shows the company or topic (a saved mock interview).
+   */
+  name?: string;
+}
+
+/**
+ * The setup a copy takes from a session (DUPLICATE_FIELDS 'copy'), as new objects, so changing the copy's
+ * preferences or Drive list never changes the original's in memory.
+ *
+ * @param source The session.
+ * @returns Its setup fields.
+ * Called from: duplicateSession(); tests
+ */
+export function sessionSetup(
+  source: Session,
+): Omit<NewSessionInput, 'lastCallMs' | 'handoffAt' | 'documentsSummary' | 'name'> {
+  const setup: Record<string, unknown> = {};
+  for (const [field, rule] of Object.entries(DUPLICATE_FIELDS)) {
+    const value = source[field as keyof Session];
+    if (rule === 'copy' && value !== undefined) setup[field] = structuredClone(value);
+  }
+  return setup as Omit<NewSessionInput, 'lastCallMs' | 'handoffAt' | 'documentsSummary' | 'name'>;
+}
+
+/**
+ * Copies a session so it can be used again (ADR-0129: the dashboard's, the desktop app's and the session page's
+ * Duplicate; and a saved mock interview). The copy takes the setup (DUPLICATE_FIELDS: details, instructions,
+ * language, model, answer style, key terms, contact name, Drive list), the documents as copied text (new rows of
+ * its own: deleting either session never touches the other's), and the question bank. It starts empty: no
+ * transcript, answers, notes, documents summary, calls, recordings or chats, and it has not started. All of it is
+ * written in one transaction and reaches the account through sync like any new session.
+ *
+ * @param id      The session to copy.
+ * @param now     Creation time in Unix ms (tests pass a fixed time).
+ * @param options The copy's name (see DuplicateOptions).
+ * @returns The new session.
+ * @throws Error('SESSION_NOT_FOUND') when there is no session with this id (nothing is written).
+ * Called from: features/dashboard/duplicate.ts (duplicateAsCopy), core/prepare/mockSession.ts; tests
+ */
+export async function duplicateSession(
+  id: string,
+  now = Date.now(),
+  options: DuplicateOptions = {},
+): Promise<Session> {
   const db = getDb();
-  return db.transaction('rw', db.sessions, db.documents, async () => {
+  return db.transaction('rw', db.sessions, db.documents, db.questionBanks, async () => {
     const source = await db.sessions.get(id);
     if (!source) throw new Error('SESSION_NOT_FOUND');
     const documents = joinDocumentParts(
       await db.documents.where('sessionId').equals(id).sortBy('addedAt'),
     );
-    const {
-      id: _id,
-      createdAt: _createdAt,
-      status: _status,
-      lastActiveAt: _active,
-      ...input
-    } = source;
-    const copy = await createSession(input, now);
+    const name = options.name?.trim().slice(0, COPY_NAME_MAX);
+    const copy = await createSession({ ...sessionSetup(source), ...(name ? { name } : {}) }, now);
+    // Copied text, never the original's rows: each session owns its documents (ADR-0129). A long document is
+    // split into parts again (ADR-0069), so the copy holds exactly the original's text and stays within the
+    // 500,000-character limit whenever the original is (ADR-0117).
     await db.documents.bulkAdd(
       documents.flatMap((document, i) => documentRows(document, copy.id, now + i)),
     );
+    const bank = await db.questionBanks.get(id);
+    if (bank) {
+      // The bank was written for the same setup, so the copy keeps it (and when it was written).
+      await db.questionBanks.add({ ...structuredClone(bank), sessionId: copy.id });
+    }
     return copy;
   });
 }

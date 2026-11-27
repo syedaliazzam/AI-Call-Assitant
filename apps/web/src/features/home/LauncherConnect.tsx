@@ -47,6 +47,8 @@ import { openDashboard } from '@/features/sync/dashboardLink';
 import { getPlatform } from '@/platform';
 import { ProgressBar } from '@/ui/ProgressBar';
 import { Select } from '@/ui/Select';
+import { shownKeyLabel, useHeldHotkeys } from '@/ui/shownKeys';
+import { useIsMac } from '@/ui/useIsMac';
 
 /** Props for LauncherConnect. */
 export interface LauncherConnectProps {
@@ -134,6 +136,9 @@ export function LauncherConnect({
   onBack,
   onConnected,
 }: LauncherConnectProps) {
+  // ADR-0128: the Rec key in this computer's words (⌃ ⌥ R on a Mac), from the one source.
+  const mac = useIsMac();
+  useHeldHotkeys();
   const [phase, setPhase] = useState<Phase>('idle');
   // ADR-0082: consent is ticked for every call (never remembered); it only lets the Rec pill start at once.
   const canRecord = useSyncExternalStore(subscribeNever, hasRecording, () => false);
@@ -265,8 +270,8 @@ export function LauncherConnect({
               <span>Everyone on the call has agreed to be recorded</span>
             </label>
             <p className="text-[13px] text-ui-muted">
-              To record, press Rec on the call bar (or Ctrl+Alt+R). Recordings are saved on this
-              computer only, in Documents › Paramount AI › Recordings.
+              To record, press Rec on the call bar (or {shownKeyLabel('record', mac)}). Recordings
+              are saved on this computer only, in Documents › Paramount AI › Recordings.
             </p>
             {!saveTranscript && <p className="text-[13px] text-ui-warning">{NO_STEREO_WARNING}</p>}
           </div>

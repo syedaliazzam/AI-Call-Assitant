@@ -17,10 +17,11 @@
  */
 'use client';
 
-import { focusedHotkeys, hotkeyLabel, hotkeyAccelerator } from '@kite/shared';
+import { hotkeyLabel } from '@kite/shared';
 import { useLayoutEffect, useRef } from 'react';
 import type { CompactChip, CompactState } from '@/core/live/liveChannel';
 import { CollapseIcon, ExpandIcon } from '@/ui/icons';
+import { shownAccelerator, useHeldHotkeys } from '@/ui/shownKeys';
 import { ICON_BUTTON, KeyChip, LevelButton, PILL, tipShortcut, type LevelStore } from './parts';
 
 /** Props for StatusBar. */
@@ -141,7 +142,7 @@ function PressHint({
   /** True on macOS (the key's name). */
   mac: boolean;
 }) {
-  const key = tipShortcut(hotkeyAccelerator('answer', mac), mac);
+  const key = tipShortcut(shownAccelerator('answer', mac), mac);
   const who = target === 'them' ? "the other person's newest question" : 'what you said last';
   return (
     <span
@@ -167,10 +168,12 @@ function PressHint({
  */
 export function StatusBar(props: StatusBarProps) {
   const { state, mac, transcriptOpen } = props;
+  // ADR-0128: re-render once the desktop app reports the keys it holds (the tooltips read them).
+  useHeldHotkeys();
   // ADR-0110: a Mac's keys on a Mac.
-  const clearKey = focusedHotkeys(mac)['clear-transcript'];
+  const clearKey = shownAccelerator('clear-transcript', mac);
   // ADR-0118: the expand button names the transcript's own key (Ctrl+Alt+T, ⌘⌥T on a Mac; while the bars have focus).
-  const transcriptKey = hotkeyAccelerator('transcript', mac);
+  const transcriptKey = shownAccelerator('transcript', mac);
   const toggle = () => props.onTranscript(!transcriptOpen);
   return (
     <div

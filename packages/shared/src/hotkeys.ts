@@ -518,7 +518,7 @@ export function hotkeyRows(mac: boolean): readonly HotkeyRow[] {
   ];
 }
 
-/** The list Settings shows on Windows (hotkeyRows(false)). */
+/** The list Settings and Help show on Windows (hotkeyRows(false)). */
 export const HOTKEY_ROWS: readonly HotkeyRow[] = hotkeyRows(false);
 
 /**
@@ -591,6 +591,80 @@ export function hotkeyAccelerator(hotkey: KeycapHotkey, mac = false): string {
   if (hotkey === 'transcript') return mac ? macKeys(TRANSCRIPT_HOTKEY) : TRANSCRIPT_HOTKEY;
   if (hotkey in FOCUSED_HOTKEYS) return focusedHotkeys(mac)[hotkey as FocusedHotkey];
   return globalHotkeys(mac)[hotkey as CallHotkey];
+}
+
+/**
+ * ADR-0128: the keys to show for a shortcut, from the one source every screen uses (Settings → Hotkeys, Help, the
+ * key-caps and the tooltips): the keys the desktop app reports holding when it reports them, otherwise this table's
+ * keys for the computer. A desktop app that has not updated yet (Mac 1.8.0, Windows 1.7.4) still holds its own
+ * release's keys, and those are the ones that work from other apps until it updates.
+ *
+ * @param hotkey   The shortcut.
+ * @param mac      True for the Mac's keys.
+ * @param statuses What the desktop app reported (checkHotkeys()); null in a browser or before it answers.
+ * @returns The accelerator to show.
+ * Called from: apps/web/src/ui/shownKeys.ts (shownAccelerator); tests
+ */
+export function heldAccelerator(
+  hotkey: KeycapHotkey,
+  mac: boolean,
+  statuses: readonly HotkeyStatus[] | null,
+): string {
+  const own = hotkeyAccelerator(hotkey, mac);
+  // The transcript key is never held (the page reads it, with this table's keys), and Escape and Enter are the
+  // same everywhere: what an app reports for them says nothing about the keys that work.
+  if (hotkey === 'transcript' || hotkey === 'voice-cancel' || hotkey === 'chat-send') return own;
+  return statuses?.find((status) => status.action === hotkey)?.accelerator || own;
+}
+
+/**
+ * ADR-0128: the modifiers of an accelerator, with the trailing plus ("Control+Alt+Left" → "Control+Alt+").
+ *
+ * @param accelerator An Electron accelerator.
+ * @returns Everything before its last key ('' for a single key).
+ * Called from: heldRowKeys()
+ */
+function modifiersOf(accelerator: string): string {
+  // The last key can itself be "-" or "=", never "+", so the last plus ends the modifiers.
+  const at = accelerator.lastIndexOf('+');
+  return at < 0 ? '' : accelerator.slice(0, at + 1);
+}
+
+/**
+ * ADR-0128 (ADR-0095 generalised): the keys a Settings or Help row shows. A row stands for one shortcut or for a
+ * group written in words ("Control+Left / Right", "CommandOrControl+Shift+Arrows"). When the desktop app reports
+ * holding different keys for one of the row's shortcuts, the row shows those: for a group, the reported modifiers
+ * in place of the table's ("Control+Alt+Left / Right" for a Mac 1.8.0 app, "CommandOrControl+Alt+Arrows" for a
+ * Windows app before 1.7.0).
+ *
+ * @param row      The row.
+ * @param statuses What the desktop app reported (null in a browser, before it answers, or for the other
+ *                 computer's set).
+ * @param mac      True for the Mac's keys (the row's own are then the Mac's).
+ * @returns The accelerator, or the group in words, to show.
+ * Called from: apps/web/src/features/settings/HotkeyList.tsx (rowKeys); tests
+ */
+export function heldRowKeys(
+  row: Pick<HotkeyRow, 'accelerator' | 'keysOverride' | 'actions'>,
+  statuses: readonly HotkeyStatus[] | null,
+  mac: boolean,
+): string {
+  const shown = row.keysOverride ?? row.accelerator;
+  // The first of the row's shortcuts that the app holds on other keys than the table's.
+  const status = (statuses ?? []).find(
+    (candidate) =>
+      row.actions.includes(candidate.action) &&
+      candidate.action !== 'transcript' &&
+      candidate.accelerator !== '' &&
+      candidate.accelerator !== hotkeyAccelerator(candidate.action, mac),
+  );
+  if (!status) return shown;
+  if (!row.keysOverride) return status.accelerator;
+  // A group shares its modifiers: put the held ones in place of the table's.
+  const own = modifiersOf(hotkeyAccelerator(status.action, mac));
+  return row.keysOverride.startsWith(own)
+    ? modifiersOf(status.accelerator) + row.keysOverride.slice(own.length)
+    : shown;
 }
 
 /** What each part of an accelerator looks like on a key-cap chip. */

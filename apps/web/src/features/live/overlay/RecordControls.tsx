@@ -15,10 +15,11 @@
  */
 'use client';
 
-import { hotkeyAccelerator, hotkeyLabel } from '@kite/shared';
+import { hotkeyLabel } from '@kite/shared';
 import { forwardRef, useEffect, useState, type CSSProperties, type Ref } from 'react';
 import type { CompactCommand, CompactRecording } from '@/core/live/liveChannel';
 import { callClock } from '@/features/live/callClock';
+import { shownAccelerator, useHeldHotkeys } from '@/ui/shownKeys';
 import { KeyChip, PILL, tipShortcut } from './parts';
 import { VISIBLE_IN_RECORDING_TEXT } from '../PrivateOffWarning';
 
@@ -122,6 +123,8 @@ export function RecPill({
   pageTip = false,
 }: RecPillProps) {
   const elapsed = useElapsed(recording.state === 'on' ? recording.startedAt : null);
+  // ADR-0128: re-render once the desktop app reports the keys it holds.
+  useHeldHotkeys();
   const on = recording.state === 'on';
   const busy = recording.state === 'starting' || recording.state === 'stopping';
   const label =
@@ -146,14 +149,14 @@ export function RecPill({
           ? `Recording, ${elapsed}${visibleInRecording ? `, ${VISIBLE_IN_RECORDING_TEXT}` : ''}. Stop recording`
           : 'Start recording'
       }
-      aria-keyshortcuts={hotkeyLabel(hotkeyAccelerator('record', mac), mac)}
+      aria-keyshortcuts={hotkeyLabel(shownAccelerator('record', mac), mac)}
       {...(pageTip
         ? // 1.6.3 (ADR-0075): bar 1's tooltip, "Stop recording · Ctrl+Alt+R".
           {
-            'data-tip': `${on ? 'Stop recording' : 'Start recording'} · ${tipShortcut(hotkeyAccelerator('record', mac), mac)}`,
+            'data-tip': `${on ? 'Stop recording' : 'Start recording'} · ${tipShortcut(shownAccelerator('record', mac), mac)}`,
           }
         : {
-            title: `${on ? 'Stop recording' : 'Start recording'} (${hotkeyLabel(hotkeyAccelerator('record', mac), mac)})`,
+            title: `${on ? 'Stop recording' : 'Start recording'} (${hotkeyLabel(shownAccelerator('record', mac), mac)})`,
           })}
     >
       <span

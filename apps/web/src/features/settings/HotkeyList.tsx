@@ -13,15 +13,20 @@
  *          Click-through key, a warning says it is the one way to turn Click-through off from the overlay.
  *          Mac 1.8.1 (ADR-0110 amended 27 Nov 2026): the Mac keys are the Windows keys with ⌃; on a Mac each row that
  *          shares a macOS shortcut (⌃ ← / → Mission Control, ⌃ ⌫ text, ⌃ ⌥ VoiceOver) says so (macSystemNotes()).
- * Used by: src/features/settings/Settings.tsx
- * Depends on: @kite/shared (hotkeyRows), src/platform, src/ui/KeyCap.tsx, src/ui/useIsMac.ts
- * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3; docs/design/parakeet-parity.md
+ *          ADR-0128: the list opens on this computer's set, with a Mac / Windows switch to see the other; in the
+ *          desktop app this computer's set shows the keys the app reports holding, for a group row too (a Mac
+ *          1.8.0 app's ⌃ ⌥ ← / →); Help shows this same list, and the key-caps and tooltips read the same report
+ *          (src/ui/shownKeys.ts).
+ * Used by: src/features/settings/Settings.tsx, src/features/help/HelpPage.tsx (the Hotkeys section)
+ * Depends on: @kite/shared (hotkeyRows, heldRowKeys), src/platform, src/ui/KeyCap.tsx, src/ui/useIsMac.ts,
+ *             src/ui/shownKeys.ts, src/ui/SegmentedControl.tsx
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3; docs/design/parakeet-parity.md; ADR-0128
  */
 'use client';
 
 import {
   desktopOnlyRow,
-  hotkeyAccelerator,
+  heldRowKeys,
   hotkeyLabel,
   hotkeyRows,
   macSystemNotes,
@@ -31,6 +36,8 @@ import {
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { getPlatform } from '@/platform';
 import { KeyCap } from '@/ui/KeyCap';
+import { SegmentedControl } from '@/ui/SegmentedControl';
+import { rememberHeldHotkeys } from '@/ui/shownKeys';
 import { useIsMac } from '@/ui/useIsMac';
 
 /**
@@ -72,11 +79,14 @@ export function hotkeyRowsFor(
 /**
  * The keys a row shows: its own, or (ADR-0095) the ones the desktop app reports it really holds when they
  * differ. A desktop app before 1.7.0 still moves the overlay with Ctrl+Alt+Arrows (1.7.0: Ctrl+Shift+Arrows),
- * and its list must say so until it updates.
+ * and its list must say so until it updates. ADR-0128: a group row ("Control+Left / Right", the zoom keys) shows
+ * the held modifiers too, so a Mac 1.8.0 app reads ⌃ ⌥ ← / → and ⌃ ⌥ = / - / 0 (until then it showed the new
+ * keys there); the rule is the shared heldRowKeys(), which Help uses through this list.
  *
  * @param row      The row.
- * @param statuses What the desktop app reported (null in a browser, or before it answers).
- * @param mac      True on a Mac (ADR-0110: the Mac's keys are the row's own).
+ * @param statuses What the desktop app reported (null in a browser, before it answers, or for the other
+ *                 computer's set).
+ * @param mac      True for the Mac's keys (ADR-0110: the Mac's keys are the row's own).
  * @returns The accelerator to show.
  * Called from: HotkeyList; tests
  */
@@ -85,17 +95,17 @@ export function rowKeys(
   statuses: readonly HotkeyStatus[] | null,
   mac = false,
 ): string {
-  const shown = row.keysOverride ?? row.accelerator;
-  // Any of the row's shortcuts the app reports, compared with that shortcut's own keys.
-  const status = statuses?.find((candidate) => row.actions.includes(candidate.action));
-  const held = status?.accelerator;
-  if (!status || !held || held === hotkeyAccelerator(status.action, mac)) return shown;
-  // "CommandOrControl+Alt+Up" stands for the row's four arrows: "CommandOrControl+Alt+Arrows".
-  if (row.keysOverride?.endsWith('+Arrows')) {
-    return held.replace(/\+(Up|Down|Left|Right)$/, '+Arrows');
-  }
-  return row.keysOverride ? shown : held;
+  return heldRowKeys(row, statuses, mac);
 }
+
+/** ADR-0128: which computer's keys the list shows. */
+export type KeySet = 'mac' | 'windows';
+
+/** ADR-0128: the switch's two choices. */
+const KEY_SETS = [
+  { value: 'mac', label: 'Mac' },
+  { value: 'windows', label: 'Windows' },
+] as const;
 
 /**
  * ADR-0110 (amended 25 Nov 2026): what the Works column says for a row.
@@ -167,19 +177,43 @@ export const MAC_CLASH_NOTE =
 const subscribeNever = () => () => undefined;
 
 /**
- * The shortcut list.
+ * ADR-0128: the desktop app's report as the list uses it for the set it shows. Only this computer's own set comes
+ * from the app: the other computer's keys are the table's, and this app's clashes say nothing about them.
+ *
+ * @param viewMac  True while the list shows the Mac's set.
+ * @param thisMac  True on a Mac.
+ * @param statuses What the desktop app reported (null in a browser, or before it answers).
+ * @returns The report for the shown set, or null.
+ * Called from: HotkeyList; tests
+ */
+export function statusesForView(
+  viewMac: boolean,
+  thisMac: boolean,
+  statuses: readonly HotkeyStatus[] | null,
+): readonly HotkeyStatus[] | null {
+  return viewMac === thisMac ? statuses : null;
+}
+
+/**
+ * The shortcut list, with the Mac / Windows switch (ADR-0128).
  *
  * @returns The list.
- * Rendered by: Settings.tsx
+ * Rendered by: Settings.tsx, HelpPage.tsx
  */
 export function HotkeyList() {
-  const [statuses, setStatuses] = useState<HotkeyStatus[] | null>(null);
+  const [reported, setReported] = useState<HotkeyStatus[] | null>(null);
   useEffect(() => {
     getPlatform()
       .checkHotkeys()
-      .then(setStatuses)
+      .then((found) => {
+        setReported(found);
+        // ADR-0128: the key-caps and tooltips of this page read the same, newer report.
+        rememberHeldHotkeys(found);
+      })
       .catch(() => undefined);
   }, []);
+  // ADR-0128: null until the user picks a set, so the list follows this computer (known after hydration).
+  const [picked, setPicked] = useState<KeySet | null>(null);
   const positions = useSyncExternalStore(
     subscribeNever,
     () => getPlatform().kind !== 'desktop' || getPlatform().overlayPositions(),
@@ -190,7 +224,10 @@ export function HotkeyList() {
     () => getPlatform().recording !== null,
     () => false,
   );
-  const mac = useIsMac();
+  const thisMac = useIsMac();
+  // ADR-0128: the set shown ("mac" shows ⌃ ⌥ ⇧, "windows" Ctrl Alt Shift), this computer's until picked.
+  const mac = picked === null ? thisMac : picked === 'mac';
+  const statuses = statusesForView(mac, thisMac, reported);
   // ADR-0110 (amended 25 Nov 2026): a browser has no global shortcuts, and none of the desktop-only ones.
   const desktop = useSyncExternalStore(
     subscribeNever,
@@ -209,7 +246,25 @@ export function HotkeyList() {
         never take keys from other apps. In a browser, they work while the Paramount AI tab has the
         keyboard, except the ones marked &ldquo;Desktop app only&rdquo;.
       </p>
-      {mac && desktop && <p className="mb-3 text-[13px] text-ui-muted">{MAC_CLASH_NOTE}</p>}
+      {/* ADR-0128: a small switch to see the other computer's keys; it opens on this computer's. */}
+      <div className="mb-3 w-56" data-key-set={mac ? 'mac' : 'windows'}>
+        <SegmentedControl
+          label="Keys for"
+          options={KEY_SETS}
+          value={mac ? 'mac' : 'windows'}
+          onChange={(value) => setPicked(value)}
+        />
+      </div>
+      {mac !== thisMac && (
+        <p className="mb-3 text-[13px] text-ui-muted">
+          {mac
+            ? 'These are the keys on a Mac (Mac desktop app 1.8.1 or later, or a browser on a Mac).'
+            : 'These are the keys on Windows (Windows desktop app 1.7.5 or later, or a browser on Windows).'}
+        </p>
+      )}
+      {mac && thisMac && desktop && (
+        <p className="mb-3 text-[13px] text-ui-muted">{MAC_CLASH_NOTE}</p>
+      )}
       <table className="w-full text-left text-[13px]">
         <thead>
           <tr className="border-b border-ui-border text-ui-muted">
@@ -231,7 +286,7 @@ export function HotkeyList() {
                 {row.label}
               </th>
               <td className="py-2 pr-4 text-ui-muted">
-                <KeyCap accelerator={rowKeys(row, statuses, mac)} />
+                <KeyCap accelerator={rowKeys(row, statuses, mac)} mac={mac} />
               </td>
               <td className="py-2 text-ui-muted">
                 {rowWhere(row, desktop)}

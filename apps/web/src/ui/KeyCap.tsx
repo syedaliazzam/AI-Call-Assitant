@@ -1,15 +1,17 @@
 /**
  * File: apps/web/src/ui/KeyCap.tsx
  * Purpose: The key-cap chip on a button, for example [Ctrl ⇧ ↵]. It reads the shortcut from the hotkey
- *          map, so no key is ever written into a screen, and shows ⌘ on macOS (spec §4).
- * Used by: the call bars, the chat bar, the transcript and answer panels
- * Depends on: @kite/shared (the hotkey map), src/platform (the macOS check), React
- * Architecture: docs/design/paramount-ai-ui-spec.md §1 (overlay key-cap), §4 (hotkeys)
+ *          map, so no key is ever written into a screen, and shows the Mac's symbols on a Mac (spec §4;
+ *          ADR-0110: ⌃ for Control). ADR-0128: the keys come from src/ui/shownKeys.ts (the keys the desktop app
+ *          holds, else the table's), and Settings → Hotkeys can ask for the other computer's set (`mac`).
+ * Used by: the call bars, the chat bar, the transcript and answer panels, Settings → Hotkeys and Help
+ * Depends on: @kite/shared (the hotkey map), src/platform (the macOS check), src/ui/shownKeys.ts, React
+ * Architecture: docs/design/paramount-ai-ui-spec.md §1 (overlay key-cap), §4 (hotkeys); ADR-0128
  * Theme: tokens from src/ui/tokens/theme.css
  */
 'use client';
 
-import { hotkeyAccelerator, keycapParts, type KeycapHotkey } from '@kite/shared';
+import { heldAccelerator, keycapParts, type KeycapHotkey } from '@kite/shared';
 import {
   ArrowBigUp,
   ArrowDown,
@@ -23,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { getPlatform } from '@/platform';
+import { useHeldHotkeys } from './shownKeys';
 
 /** The keys drawn as icons: at 12 px these characters are too small to read in Inter. */
 const KEY_ICONS: Readonly<Record<string, LucideIcon>> = {
@@ -46,6 +49,11 @@ export interface KeyCapProps {
   onPrimary?: boolean;
   /** Extra classes, appended. */
   className?: string;
+  /**
+   * ADR-0128: true or false to draw the Mac's or the Windows symbols whatever this computer is (Settings →
+   * Hotkeys' Mac / Windows switch). Absent: this computer's.
+   */
+  mac?: boolean;
 }
 
 /**
@@ -71,10 +79,20 @@ const isMac = () => getPlatform().hotkeyModifier() === '⌘';
  * @returns The chip, as a <kbd>.
  * Rendered by: the call bars, the chat bar, the panels
  */
-export function KeyCap({ hotkey, accelerator, onPrimary = false, className = '' }: KeyCapProps) {
-  const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
-  // ADR-0110: a Mac's own keys for Clear, previous / next, zoom and the overlay's jumps.
-  const keys = accelerator ?? (hotkey ? hotkeyAccelerator(hotkey, mac) : '');
+export function KeyCap({
+  hotkey,
+  accelerator,
+  onPrimary = false,
+  className = '',
+  mac: macView,
+}: KeyCapProps) {
+  const thisMac = useSyncExternalStore(subscribeNever, isMac, () => false);
+  const mac = macView ?? thisMac;
+  // ADR-0128: the keys the desktop app holds (subscribing re-draws the chip when it answers), but only for this
+  // computer's own set: the other computer's set is the table's.
+  const held = useHeldHotkeys();
+  const keys =
+    accelerator ?? (hotkey ? heldAccelerator(hotkey, mac, mac === thisMac ? held : null) : '');
   return (
     <kbd
       className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-[6px] ${onPrimary ? 'bg-ui-on-primary/15' : 'bg-ui-keycap'} px-1.5 text-chip whitespace-nowrap ${className}`}

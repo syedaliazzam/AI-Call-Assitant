@@ -63,7 +63,7 @@ During a call the desktop app is a set of slim bars over your screen, with panel
 **Bar 1:**
 
 - **Screen audio and microphone:** a red dot means it is capturing. Each **▾** shows that side's source; the microphone's chooses which one to use.
-- **Move:** the bars have six places: top left, top centre, top right, and the same along the bottom, 16 px from the screen's edges (never under the taskbar). **Ctrl+Shift+Left / Right** jumps one place along the row, **Ctrl+Shift+Up / Down** to the top or bottom row (desktop app 1.7.0; before it, Ctrl+Alt+Arrows), and **Ctrl+Alt+Shift+Arrows** nudges them a little. Dragging the bar shows the six places; let go and the bars go to the nearest one. **⋮ → Position** has the same six as a small grid. On the bottom row everything is mirrored: the bars sit at the bottom and the panels and menus open above them. **Ctrl+Alt+Y** (⌃ ⌥ Y on a Mac) shows or hides the bars (Ctrl+Alt+H until Windows desktop app 1.7.5 and Mac 1.8.1), and each screen remembers its own place.
+- **Move:** the bars have six places: top left, top centre, top right, and the same along the bottom, 16 px from the screen's edges (never under the taskbar). **Ctrl+Shift+Left / Right** jumps one place along the row, **Ctrl+Shift+Up / Down** to the top or bottom row (desktop app 1.7.0; before it, Ctrl+Alt+Arrows), and **Ctrl+Alt+Shift+Arrows** nudges them a little. Dragging the bar shows the six places; let go and the bars go to the nearest one. **⋮ → Position** has the same six as a small grid. On the bottom row everything is mirrored: the bars sit at the bottom and the panels and menus open above them. **Ctrl+Alt+Y** shows or hides the bars (Ctrl+Alt+H until Windows desktop app 1.7.5 and Mac 1.8.1), and each screen remembers its own place.
 - **Transcript:** bar 2's level button or its expand button (⤢), a click on the words, or **Ctrl+Alt+T** while the bars have focus, opens or closes the full transcript under bar 2. It is open when a call starts the first time, then stays as you last left it.
 - **Rec** (desktop app 1.5.0): records the meeting; see **Recording a meeting**.
 - **Auto answer** turns on or off answering finished questions by itself.
@@ -126,7 +126,7 @@ During a call the browser view fills the whole window; the sidebar comes back wh
 
 ### Click-through
 
-**Click-through** (the **W** switch on bar 1, **⋮**, or **Ctrl+Alt+X**) lets you work in the app behind the overlay with the panels open: every click, scroll and key on the whole overlay, the bars included, goes to that app. The panels keep updating, and the shortcuts keep working. Bar 1 says **Click-through on — press Ctrl+Alt+X to turn off**: press **Ctrl+Alt+X** again (**⌘ ⌥ X** on a Mac) from any app to turn it off. You can also press **Turn click-through off** in the Paramount AI call window (or, in a newer desktop app, in its tray or menu bar icon), and it turns off by itself when the call ends. If another app uses **Ctrl+Alt+X** (Settings › Hotkeys says so), the bars keep taking clicks while it is on, so you can turn it off with **W**.
+**Click-through** (the **W** switch on bar 1, **⋮**, or **Ctrl+Alt+X**) lets you work in the app behind the overlay with the panels open: every click, scroll and key on the whole overlay, the bars included, goes to that app. The panels keep updating, and the shortcuts keep working. Bar 1 says **Click-through on — press Ctrl+Alt+X to turn off**: press **Ctrl+Alt+X** again from any app to turn it off. You can also press **Turn click-through off** in the Paramount AI call window (or, in a newer desktop app, in its tray or menu bar icon), and it turns off by itself when the call ends. If another app uses **Ctrl+Alt+X** (Settings › Hotkeys says so), the bars keep taking clicks while it is on, so you can turn it off with **W**.
 
 ### Private
 
@@ -193,24 +193,9 @@ With Google Drive connected (**Settings → Google Drive**), each call's folder 
 
 ## Hotkeys
 
-| Action | Keys (Windows) | Keys (Mac) | Works |
-|---|---|---|---|
-| Answer (on a call: their newest question; on your own: yours) | Ctrl+Enter | ⌃ ↵ | Any app, during a call |
-| Answer from a screenshot (the screen under the mouse pointer) | Ctrl+Shift+Enter | ⌃ ⇧ ↵ | Any app, during a call |
-| Answer your own last spoken question (on a call too) | Ctrl+Shift+Space | ⌃ ⇧ Space | Any app, during a call (desktop app); the Paramount AI tab (browser) |
-| Screenshot and voice question (Esc cancels) | Ctrl+Alt+Enter | ⌃ ⌥ ↵ | Any app, during a call |
-| Previous or next answer | Ctrl+Left / Right | ⌃ ← / → | Any app, during a call (desktop app 1.6.4) |
-| Clear answers | Ctrl+Backspace | ⌃ ⌫ | Any app, during a call (desktop app 1.6.4) |
-| Clear transcript | Ctrl+Shift+Backspace | ⌃ ⇧ ⌫ | Any app, during a call (desktop app 1.6.4) |
-| Zoom the bars in, out, back to 100 % | Ctrl+= / Ctrl+- / Ctrl+0 | ⌃ = / - / 0 | Any app, during a call (desktop app 1.6.4) |
-| Script bar | Ctrl+Alt+S | ⌃ ⌥ S | Any app, during a call |
-| Click-through on or off | Ctrl+Alt+X | ⌃ ⌥ X | Any app, during a call |
-| Start or stop recording (asks first) | Ctrl+Alt+R | ⌃ ⌥ R | Any app, during a call (desktop app 1.5.0) |
-| Show or hide the bars | Ctrl+Alt+Y | ⌃ ⌥ Y | Any app, during a call (Windows 1.7.5, Mac 1.8.1; before them Ctrl+Alt+H / ⌃ ⌥ H) |
-| Move the bars to the next place (← → along the row, ↑ ↓ top or bottom row) | Ctrl+Shift+Arrows | ⌃ ⇧ arrows | Any app, during a call (desktop app 1.7.0; before it Ctrl+Alt+Arrows) |
-| Nudge the bars | Ctrl+Alt+Shift+Arrows | ⌃ ⌥ ⇧ arrows | Any app, during a call |
-| Transcript on or off | Ctrl+Alt+T | ⌃ ⌥ T | While the bars have focus |
-| Open Ask AI (during a call: the Chat bar under the bars) | Ctrl+Alt+K | ⌃ ⌥ K | Any app, while the desktop app runs (during a call it opens the overlay's chat bar; it does not take the keyboard until you click into the box) |
+The list below is the same as **Settings → Hotkeys**: it shows the keys for your computer (in the desktop app, the keys it really holds), and **Keys for: Mac / Windows** shows the other set. Keys in this guide are written for your computer too: Ctrl and Alt on Windows, ⌃ and ⌥ on a Mac.
+
+{{hotkeys}}
 
 On a Mac the keys are the Windows keys with **Control (⌃)** for Ctrl and **Option (⌥)** for Alt (Mac desktop app 1.8.1, as ParakeetAI does), so every ⌘ key keeps its usual meaning in every app. Mac 1.8.0 used ⌘ for some of them; until it updates, **Settings → Hotkeys** shows the keys it really holds. Some Mac keys are also macOS keys, and Settings → Hotkeys notes each one: **⌃ ← / ⌃ →** move between desktops (Mission Control; turn "Move left / right a space" off in System Settings → Keyboard → Keyboard Shortcuts → Mission Control, or use the ← → buttons on the answer panel); **⌃ 0** is Microsoft Teams' reset zoom; **⌃ ⌫** and **⌃ ⇧ ← / →** edit text in other apps; and **⌃ ⌥** is VoiceOver's key while VoiceOver is on. In a browser the keys work while the Paramount AI tab has the keyboard, except show or hide, moving the overlay, Click-through and recording, which need the desktop app. If another app already uses a key, Settings → Hotkeys says so, and whether the key still works with Paramount AI in front; on a Mac, macOS may not report it, so if a key does nothing during a call, check window tools such as Rectangle or Magnet and VoiceOver. While a call runs in the desktop app (1.6.4), the keys above belong to Paramount AI: for example **Ctrl+Backspace** does not delete a word in another app until the call ends. With an older desktop app, previous / next, the two Clears and zoom work only while Paramount AI is in front. **Ctrl+Shift+Arrows** selects text by word in other apps, so it too belongs to Paramount AI only while a call runs.
 

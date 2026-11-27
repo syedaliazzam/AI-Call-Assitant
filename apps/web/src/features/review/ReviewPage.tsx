@@ -1,7 +1,7 @@
 /**
  * File: apps/web/src/features/review/ReviewPage.tsx
  * Purpose: The review route's client part: renders SessionReview and, after Delete, goes back
- *          to the dashboard with the Next.js router.
+ *          to the dashboard with the Next.js router; after Duplicate (ADR-0129), to the copy's page.
  * Used by: app/(app)/sessions/[id]/page.tsx
  * Depends on: next/navigation, src/features/review/SessionReview.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Session review), §9.2 (thin routes)
@@ -33,6 +33,8 @@ export function ReviewPage({ sessionId, accountFirstName = '' }: ReviewPageProps
       sessionId={sessionId}
       accountFirstName={accountFirstName}
       onDeleted={() => router.push('/')}
+      // ADR-0129: after Duplicate, the copy's own page.
+      onDuplicated={(copyId) => router.push(`/sessions/${copyId}`)}
     />
   );
 }

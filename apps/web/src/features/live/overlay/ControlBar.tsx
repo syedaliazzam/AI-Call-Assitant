@@ -33,7 +33,7 @@
  */
 'use client';
 
-import { hotkeyAccelerator, hotkeyLabel } from '@kite/shared';
+import { hotkeyLabel } from '@kite/shared';
 import { Clock } from 'lucide-react';
 import {
   useEffect,
@@ -56,6 +56,7 @@ import {
   MonitorIcon,
   MoveIcon,
 } from '@/ui/icons';
+import { shownAccelerator, useHeldHotkeys } from '@/ui/shownKeys';
 import { BarTooltip } from './BarTooltip';
 import { clickThroughHint } from './clickThroughHint';
 import { ModelChip, modelOf } from './ModelChoice';
@@ -175,8 +176,17 @@ function tipText(name: string, hotkey: string | undefined, mac: boolean): string
   return hotkey ? `${name} · ${tipShortcut(hotkey, mac)}` : name;
 }
 
-/** Ctrl+Shift+Arrows: the six positions (ADR-0056; ADR-0095 moved them from Ctrl+Alt+Arrows). */
-const POSITION_ACCELERATOR = 'CommandOrControl+Shift+Arrows';
+/**
+ * Ctrl+Shift+Arrows: the six positions (ADR-0056; ADR-0095 moved them from Ctrl+Alt+Arrows). ADR-0128: from the one
+ * source, so a Mac reads ⌃ ⇧ Arrows (it read ⌘ ⇧ Arrows until then) and an older desktop app its own keys.
+ *
+ * @param mac True on macOS.
+ * @returns The keys, with "Arrows" for the four arrows.
+ * Called from: ControlBar (the drag handle's tooltip)
+ */
+function positionAccelerator(mac: boolean): string {
+  return shownAccelerator('overlay-spot-left', mac).replace(/\+Left$/, '+Arrows');
+}
 
 /**
  * ADR-0122: Chat on bar 1, with its shortcut (Ctrl+Alt+K; ⌘⌥K on a Mac) as a key-cap: opens or closes the chat
@@ -219,10 +229,10 @@ function ChatButton({
       type="button"
       aria-label="Chat"
       aria-expanded={open}
-      aria-keyshortcuts={hotkeyLabel(hotkeyAccelerator('ask-kite', mac), mac)}
+      aria-keyshortcuts={hotkeyLabel(shownAccelerator('ask-kite', mac), mac)}
       data-tip={tipText(
         open ? 'Close chat' : 'Chat: type a question',
-        hotkeyAccelerator('ask-kite', mac),
+        shownAccelerator('ask-kite', mac),
         mac,
       )}
       data-chat-button=""
@@ -297,12 +307,12 @@ function AutoAnswerToggle({
 }
 
 /**
- * Ctrl+Alt+X: Click-through on or off (v1.3.2); ⌃⌥X on a Mac since 1.8.1.
+ * Ctrl+Alt+X: Click-through on or off (v1.3.2); ⌃⌥X on a Mac since 1.8.1. ADR-0128: from the one source.
  *
  * @param mac True on a Mac.
  * @returns The accelerator.
  */
-const CLICK_THROUGH_ACCELERATOR = (mac: boolean) => hotkeyAccelerator('click-through', mac);
+const CLICK_THROUGH_ACCELERATOR = (mac: boolean) => shownAccelerator('click-through', mac);
 
 /** The short label the Click-through toggle shows in place of a pointer (its full name is in the tooltip). */
 const CLICK_THROUGH_LABEL = 'W';
@@ -617,6 +627,8 @@ function useFitStep(key: string): {
  * Rendered by: CompactView.tsx
  */
 export function ControlBar(props: ControlBarProps) {
+  // ADR-0128: re-render once the desktop app reports the keys it holds (the tooltips read them).
+  useHeldHotkeys();
   const { state, onCommand, mac, collapsed, menuButton, menuOpen, onMenu, onIcon } = props;
   // 1.5.2 (ADR-0070): a screen recording with Private off. 1.6.3: the Rec pill shows only an amber dot
   // for it; the words are on the warning bar.
@@ -758,7 +770,7 @@ export function ControlBar(props: ControlBarProps) {
           <span
             role="img"
             aria-label="Drag here to move"
-            data-tip={tipText('Drag to move', POSITION_ACCELERATOR, mac)}
+            data-tip={tipText('Drag to move', positionAccelerator(mac), mac)}
             className="inline-flex h-8 w-8 shrink-0 cursor-move items-center justify-center rounded-control bg-ui-overlay-button"
           >
             <MoveIcon />

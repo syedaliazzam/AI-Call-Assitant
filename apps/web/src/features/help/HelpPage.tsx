@@ -1,14 +1,23 @@
 /**
  * File: apps/web/src/features/help/HelpPage.tsx
  * Purpose: The /help page: the user guide, as readable text (spec S2). React renders the text as text,
- *          so nothing in the guide can become HTML.
+ *          so nothing in the guide can become HTML. ADR-0128: the Hotkeys section is Settings → Hotkeys' own
+ *          list (the same rows and keys, with its Mac / Windows switch), where the guide had a hand-written table
+ *          that this page could not draw; and on a Mac the keys in bold read as the Mac's (⌃ ⌥ K, not Ctrl+Alt+K).
+ *          A client component, because which computer it is is known only in the browser.
  * Used by: app/(app)/help/page.tsx
- * Depends on: src/core/answer/markdown.ts (the Markdown splitter), ./guideText.ts, ./SyncHelp.tsx
- *             (account sync, ADR-0049), src/ui/PageShell.tsx
- * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S2 Help)
+ * Depends on: src/core/answer/markdown.ts (the Markdown splitter), ./guideText.ts, ./guideKeys.ts, ./SyncHelp.tsx
+ *             (account sync, ADR-0049), src/features/settings/HotkeyList.tsx, src/ui/PageShell.tsx,
+ *             src/ui/useIsMac.ts
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S2 Help); ADR-0128
  */
+'use client';
+
 import { inlinePieces, linkPieces, markdownBlocks } from '@/core/answer/markdown';
+import { HotkeyList } from '@/features/settings/HotkeyList';
 import { PageShell } from '@/ui/PageShell';
+import { useIsMac } from '@/ui/useIsMac';
+import { guideKeysFor, HOTKEYS_MARKER } from './guideKeys';
 import { USER_GUIDE_MD } from './guideText';
 import { SyncHelp } from './SyncHelp';
 
@@ -62,20 +71,24 @@ function Linked({
  * One line with its bold and code marks, and its links.
  *
  * @param props.text The line.
+ * @param props.mac  True on a Mac (ADR-0128: keys in bold read as the Mac's).
  * @returns The pieces.
  * Rendered by: HelpPage
  */
 function Line({
   text,
+  mac,
 }: {
   /** The line. */
   text: string;
+  /** True on a Mac. */
+  mac: boolean;
 }) {
   return inlinePieces(text).map((piece, index) => {
     if (piece.style === 'bold') {
       return (
         <strong key={index} className="font-semibold text-ui-heading">
-          <Linked text={piece.text} />
+          <Linked text={guideKeysFor(piece.text, mac)} />
         </strong>
       );
     }
@@ -97,6 +110,8 @@ function Line({
  * Rendered by: app/(app)/help/page.tsx
  */
 export function HelpPage() {
+  // ADR-0128: false on the server and until hydration, then this computer's.
+  const mac = useIsMac();
   return (
     <PageShell title="Help">
       {/* ADR-0049: how the account's data is kept comes first. */}
@@ -124,7 +139,7 @@ export function HelpPage() {
               >
                 {block.items.map((item, at) => (
                   <li key={at}>
-                    <Line text={item} />
+                    <Line text={item} mac={mac} />
                   </li>
                 ))}
               </List>
@@ -140,9 +155,17 @@ export function HelpPage() {
               </pre>
             );
           }
+          if (block.text.trim() === HOTKEYS_MARKER) {
+            // ADR-0128: Settings → Hotkeys' own list, so Help and Settings never disagree.
+            return (
+              <section key={index} aria-label="Hotkeys list" data-help-hotkeys="">
+                <HotkeyList />
+              </section>
+            );
+          }
           return (
             <p key={index}>
-              <Line text={block.text} />
+              <Line text={block.text} mac={mac} />
             </p>
           );
         })}

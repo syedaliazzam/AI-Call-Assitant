@@ -27,7 +27,8 @@
  */
 'use client';
 
-import { focusedHotkeys, hotkeyLabel, type AnswerType, type OverlayResizeStep } from '@kite/shared';
+import { hotkeyLabel, type AnswerType, type OverlayResizeStep } from '@kite/shared';
+import { shownAccelerator, shownKeyLabel, useHeldHotkeys } from '@/ui/shownKeys';
 import { useEffect, useRef, useState } from 'react';
 import { answerText, cardQuestion } from '@/core/answer/format';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
@@ -69,6 +70,8 @@ export interface OverlayAnswerProps {
  */
 export function OverlayAnswer(props: OverlayAnswerProps) {
   const { state, onCommand, mac } = props;
+  // ADR-0128: re-render once the desktop app reports the keys it holds (the labels read them).
+  useHeldHotkeys();
   const answer = state?.answer ?? null;
   const total = state?.total ?? 0;
   const index = state?.index ?? -1;
@@ -106,11 +109,11 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           aria-label="Previous question"
           disabled={index <= 0}
           onClick={() => onCommand({ type: 'prev' })}
-          aria-keyshortcuts={hotkeyLabel(focusedHotkeys(mac).prev, mac)}
+          aria-keyshortcuts={hotkeyLabel(shownAccelerator('prev', mac), mac)}
           // ADR-0085: words for screen readers (no title: its tooltip is an unprotected window). A spread,
           // as jsx-a11y's role list predates ARIA 1.3's aria-description (Chromium reads it).
           {...{
-            'aria-description': `Previous answer (${tipShortcut(focusedHotkeys(mac).prev, mac)})`,
+            'aria-description': `Previous answer (${tipShortcut(shownAccelerator('prev', mac), mac)})`,
           }}
         >
           {/* ADR-0082: the arrow only (no Ctrl on the chip). */}
@@ -124,10 +127,12 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           aria-label="Next question"
           disabled={index < 0 || index >= total - 1}
           onClick={() => onCommand({ type: 'next' })}
-          aria-keyshortcuts={hotkeyLabel(focusedHotkeys(mac).next, mac)}
+          aria-keyshortcuts={hotkeyLabel(shownAccelerator('next', mac), mac)}
           // ADR-0085: words for screen readers (no title: its tooltip is an unprotected window). A spread,
           // as jsx-a11y's role list predates ARIA 1.3's aria-description (Chromium reads it).
-          {...{ 'aria-description': `Next answer (${tipShortcut(focusedHotkeys(mac).next, mac)})` }}
+          {...{
+            'aria-description': `Next answer (${tipShortcut(shownAccelerator('next', mac), mac)})`,
+          }}
         >
           <span aria-hidden="true" className="px-0.5 text-[15px] leading-none">
             →
@@ -150,11 +155,11 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           onClick={() => onCommand({ type: 'clear' })}
           disabled={!state}
           aria-label="Clear answers"
-          aria-keyshortcuts={hotkeyLabel(focusedHotkeys(mac).clear, mac)}
+          aria-keyshortcuts={hotkeyLabel(shownAccelerator('clear', mac), mac)}
           // ADR-0085: words for screen readers (no title: its tooltip is an unprotected window). A spread,
           // as jsx-a11y's role list predates ARIA 1.3's aria-description (Chromium reads it).
           {...{
-            'aria-description': `Clear answers (${tipShortcut(focusedHotkeys(mac).clear, mac)})`,
+            'aria-description': `Clear answers (${tipShortcut(shownAccelerator('clear', mac), mac)})`,
           }}
         >
           {/* ADR-0113: the key always shows: the strip never changes with the panel's width. */}
@@ -393,7 +398,7 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           ) : (
             <p className="text-ui-muted">
               {/* ADR-0082: the overlay has no Answer button any more: the key. */}
-              {state?.notice ?? `Press ${mac ? '⌘ Enter' : 'Ctrl+Enter'} when they ask something.`}
+              {state?.notice ?? `Press ${shownKeyLabel('answer', mac)} when they ask something.`}
             </p>
           )}
         </div>

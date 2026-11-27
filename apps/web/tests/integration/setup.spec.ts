@@ -392,17 +392,22 @@ test('session card: chips, status, Start or Review, and its menu', async () => {
   await rename.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('heading', { name: 'Lantern Group (invented)' })).toBeVisible();
 
-  // Duplicate: a new session that has not started.
+  // Duplicate (ADR-0129): "Copy of <name>", a new session that has not started.
   await card('Zephyr Labs (invented)')
     .getByRole('button', { name: /^More for / })
     .click();
   await page.getByRole('menuitem', { name: 'Duplicate' }).click();
-  await expect(page.getByRole('heading', { name: 'Zephyr Labs (invented)' })).toHaveCount(2);
+  await expect(
+    page.getByRole('heading', { name: 'Copy of Zephyr Labs (invented)', exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole('heading', { name: 'Zephyr Labs (invented)', exact: true }),
+  ).toHaveCount(1);
   await expect(page.getByText('4 Sessions')).toBeVisible();
   await expect(
     page
       .getByRole('listitem')
-      .filter({ has: page.getByRole('heading', { name: 'Zephyr Labs (invented)' }) })
+      .filter({ has: page.getByRole('heading', { name: 'Copy of Zephyr Labs (invented)' }) })
       .filter({ hasText: 'Ready to start' }),
   ).toHaveCount(1);
 

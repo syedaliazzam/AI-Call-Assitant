@@ -3,7 +3,9 @@
  * Purpose: The words and the letter tile a session card shows (spec S3), as plain functions. The tile is
  *          a letter with a colour worked out from the name: no logo service, so company names never
  *          leave this device.
- * Used by: src/features/dashboard/SessionCard.tsx, src/features/dashboard/Dashboard.tsx
+ *          ADR-0129: a copy's own name is its title (sessionCardTitle), and copyName() words it.
+ * Used by: src/features/dashboard/SessionCard.tsx, src/features/dashboard/Dashboard.tsx,
+ *          src/features/dashboard/duplicate.ts, src/features/home/LauncherSessions.tsx
  * Depends on: src/core/session/callLength.ts, src/core/storage/types.ts,
  *             src/features/session-setup/labels.ts
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S3)
@@ -16,15 +18,31 @@ import { SESSION_TYPE_LABELS } from '@/features/session-setup/labels';
 export const TILE_COLOURS = 8;
 
 /**
- * A card's title. A regular call shows its title (the topic), and the others the company.
+ * A card's title. A regular call shows its title (the topic), and the others the company. ADR-0129: a session
+ * with its own name (a copy: "Copy of Acme") shows that name.
  *
  * @param session The session.
  * @returns The title, or "<Type> call" when it has none.
- * Called from: SessionCard.tsx; tests
+ * Called from: SessionCard.tsx, home/LauncherSessions.tsx, review/SessionReview.tsx, copyName(); tests
  */
-export function sessionCardTitle(session: Pick<Session, 'type' | 'company' | 'role'>): string {
+export function sessionCardTitle(
+  session: Pick<Session, 'type' | 'company' | 'role' | 'name'>,
+): string {
+  const own = session.name?.trim();
+  if (own) return own;
   const main = session.type === 'regular' ? session.role : session.company;
   return main.trim() || session.company.trim() || `${SESSION_TYPE_LABELS[session.type]} call`;
+}
+
+/**
+ * ADR-0129: the name Duplicate gives a copy: "Copy of" and the title the original's card shows.
+ *
+ * @param session The original.
+ * @returns For example "Copy of Acme" ("Copy of Pilot review" for a regular call).
+ * Called from: features/dashboard/duplicate.ts; tests
+ */
+export function copyName(session: Pick<Session, 'type' | 'company' | 'role' | 'name'>): string {
+  return `Copy of ${sessionCardTitle(session)}`;
 }
 
 /**
@@ -35,7 +53,9 @@ export function sessionCardTitle(session: Pick<Session, 'type' | 'company' | 'ro
  *          only repeat the title).
  * Called from: SessionCard.tsx; tests
  */
-export function sessionCardLine(session: Pick<Session, 'type' | 'company' | 'role'>): string {
+export function sessionCardLine(
+  session: Pick<Session, 'type' | 'company' | 'role' | 'name'>,
+): string {
   const line = (session.type === 'regular' ? session.company : session.role).trim();
   return line === sessionCardTitle(session) ? '' : line;
 }

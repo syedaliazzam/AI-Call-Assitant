@@ -35,6 +35,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { leaveTakeOver, watchCallMoved } from '@/core/live/liveLock';
 import { countAnswersBySession } from '@/core/storage/answers';
 import { deleteSession, shownStatus, watchSessions } from '@/core/storage/sessions';
+import { duplicateAsCopy } from '@/features/dashboard/duplicate';
 import { speechModelPrefetch } from '@/core/stt/prefetch';
 import type { Session } from '@/core/storage/types';
 import { pullAccountSync } from '@/core/sync/client';
@@ -286,6 +287,10 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
           // Through account sync the delete reaches the account; the list updates by itself.
           onDelete={async (session) => {
             await deleteSession(session.id);
+          }}
+          // ADR-0129: "Copy of <name>" with the setup only; it reaches the account through sync.
+          onDuplicate={async (session) => {
+            await duplicateAsCopy(session);
           }}
           // ADR-0082: Start / Start again go straight to Connect (the audio source).
           onOpen={(session) => setView({ kind: 'connect', sessionId: session.id })}

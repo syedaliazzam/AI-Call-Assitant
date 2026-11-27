@@ -1,8 +1,9 @@
 /**
  * File: apps/web/src/features/home/LauncherSessionMenu.tsx
  * Purpose: The ⋮ menu of a session card in the desktop app's "Your sessions" (ADR-0071): View in
- *          dashboard ↗ (the session's page in the browser) and Delete, which asks first. Editing,
- *          renaming and copying stay in the dashboard.
+ *          dashboard ↗ (the session's page in the browser), Duplicate (ADR-0129: "Copy of <name>" with the
+ *          setup only, the same as the dashboard's) and Delete, which asks first. Editing and renaming stay in
+ *          the dashboard.
  * Used by: src/features/home/LauncherSessions.tsx
  * Depends on: src/core/storage/types.ts, src/features/sync/dashboardLink.ts, src/ui (Button, Dialog,
  *             Menu, icons)
@@ -28,6 +29,8 @@ export interface LauncherSessionMenuProps {
   title: string;
   /** Deletes it, after the user has confirmed (the account copy goes too, through account sync). */
   onDelete: (session: Session) => Promise<void>;
+  /** ADR-0129: copies its setup as "Copy of <name>" (the copy appears in the list by itself). */
+  onDuplicate: (session: Session) => Promise<void>;
 }
 
 /**
@@ -37,7 +40,12 @@ export interface LauncherSessionMenuProps {
  * @returns The ⋮ button, with its menu and dialog.
  * Rendered by: LauncherSessions.tsx (one per card)
  */
-export function LauncherSessionMenu({ session, title, onDelete }: LauncherSessionMenuProps) {
+export function LauncherSessionMenu({
+  session,
+  title,
+  onDelete,
+  onDuplicate,
+}: LauncherSessionMenuProps) {
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -66,6 +74,7 @@ export function LauncherSessionMenu({ session, title, onDelete }: LauncherSessio
             detail: '↗',
             onSelect: () => openDashboard(`/sessions/${session.id}`),
           },
+          { label: 'Duplicate', onSelect: () => void onDuplicate(session) },
           { label: 'Delete', danger: true, onSelect: () => setConfirming(true) },
         ]}
       />
