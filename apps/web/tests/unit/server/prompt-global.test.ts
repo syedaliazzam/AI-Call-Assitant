@@ -152,8 +152,10 @@ describe('the order and who wins', () => {
 
   it('keeps ADR-0088 word for word in the end reminder, not in a rollback', () => {
     expect(liveEndReminder(SESSION)).toContain(UNSUPPORTED_FACT_RULE);
-    expect(UNSUPPORTED_FACT_RULE).toContain('never answer yes or no to it and never guess it');
-    expect(UNSUPPORTED_FACT_RULE).toContain('then what you can stand behind');
+    expect(UNSUPPORTED_FACT_RULE).toContain(
+      'never answer yes or no, never agree to one they suggest',
+    );
+    expect(UNSUPPORTED_FACT_RULE).toContain('then one line with what you can stand behind');
     expect(parts({ ...REQUEST, styleVersion: 'previous' }).tail).not.toContain(
       UNSUPPORTED_FACT_RULE,
     );

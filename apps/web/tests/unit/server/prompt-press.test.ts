@@ -4,7 +4,8 @@
  * (apps/web/src/server/validate.ts). Covered: the press keeps production's tail line "Question to answer: …",
  * with a short note when the other side was still speaking or for questions an earlier answer left open, and
  * no other block or instruction at the end (measured: those broke the hidden lines); a request without a press
- * keeps its tail byte for byte; the rules for several questions, "Still open:" and never "none" live in the
+ * keeps its tail byte for byte; the rules for several questions (one natural reply), "Also asked:" and never
+ * "none" live in the
  * locked contract; the call memory goes in the tail before the newest lines, escaped; the server accepts a
  * press only with mode answer and the memory within its limit. All words are invented.
  */
@@ -15,7 +16,7 @@ import {
   MEMORY_HEADING,
   memoryLines,
   questionLine,
-  STILL_OPEN_LABEL,
+  ALSO_ASKED_LABEL,
   STILL_SPEAKING_LABEL,
 } from '@/server/prompt';
 import { LIVE_CONTRACT } from '@/server/prompts/contract';
@@ -64,10 +65,10 @@ describe('the question line of a press (ADR-0132, ADR-0133)', () => {
     const request: AnswerRequest = {
       ...PRESS,
       question: 'Data hosting; SSO',
-      press: { speaking: false, stillOpen: 'Data hosting; SSO' },
+      press: { speaking: false, alsoAsked: 'Data hosting; SSO' },
     };
     expect(questionLine(request, 'Data hosting; SSO')).toBe(
-      `Question to answer (${STILL_OPEN_LABEL}): Data hosting; SSO`,
+      `Question to answer (${ALSO_ASKED_LABEL}): Data hosting; SSO`,
     );
   });
 
@@ -95,13 +96,21 @@ describe('the question line of a press (ADR-0132, ADR-0133)', () => {
 });
 
 describe('the key-press rules in the locked contract (ADR-0133)', () => {
-  it('answers every open question in one of three shapes, never none, with "Still open:" styled', () => {
+  it('answers every open question in one natural reply, never none, with "Also asked:" styled', () => {
     expect(LIVE_CONTRACT).toContain('none is only for talk about the call itself');
     expect(LIVE_CONTRACT).toContain('has not already answered out loud');
-    expect(LIVE_CONTRACT).toContain('a short label of one to four words and a colon');
-    expect(LIVE_CONTRACT).toContain('one last line starting "Still open:"');
-    expect(LIVE_CONTRACT).toContain('"Still open:" (after a key press');
-    expect(LIVE_CONTRACT).toContain('No question at all: reply to what "Them" most needs');
+    // 28 Nov 2026 (developer): one spoken reply, in the order asked, never a block per item. Worded without
+    // "question" and with the hidden question line unchanged (measured: changing it broke the hidden lines).
+    expect(LIVE_CONTRACT).toContain(
+      'in one natural reply the user can say, in the order they were asked',
+    );
+    expect(LIVE_CONTRACT).toContain('never labels, numbering or a separate block per item');
+    expect(LIVE_CONTRACT).toContain('gets its yes or no in its first words');
+    expect(LIVE_CONTRACT).toContain('those put to the user first, then the newest');
+    expect(LIVE_CONTRACT).toContain('end with one line starting "Also asked:"');
+    expect(LIVE_CONTRACT).toContain('"Also asked:" (the things left for the next press; not said)');
+    expect(LIVE_CONTRACT).toContain('When they asked nothing, reply to what they most need');
+    expect(LIVE_CONTRACT).toContain('at most 15 words');
   });
 });
 

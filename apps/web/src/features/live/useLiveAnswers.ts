@@ -955,8 +955,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         coveredLines?: readonly string[];
         /** ADR-0133: a key press's window (what both sides said since the last answer). */
         press?: PressWindow;
-        /** ADR-0133: the questions an earlier card left on its "Still open:" line, answered now. */
-        stillOpen?: string;
+        /** ADR-0133: the questions an earlier card left on its "Also asked:" line, answered now. */
+        alsoAsked?: string;
         /**
          * ADR-0132: an in-place update of a press's card: the card keeps its answer until the new answer's
          * first line is complete (no blank card, no notice).
@@ -1135,7 +1135,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ...(memoryRef.current.text ? { memory: memoryRef.current.text } : {}),
         // ADR-0133: a key press's window, and the questions an earlier card left open.
         ...(mode === 'answer' && pressFor && !auto ? { press: pressFor } : {}),
-        ...(mode === 'answer' && options.stillOpen ? { stillOpen: options.stillOpen } : {}),
+        ...(mode === 'answer' && options.alsoAsked ? { alsoAsked: options.alsoAsked } : {}),
         // Found by looking back past a greeting or an instruction: asked as it is.
         ...(picked?.kind === 'question' && (picked.lookedBack || partOfLines)
           ? { question: picked.selected.text }
@@ -1832,22 +1832,22 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       }
       if (choice.kind === 'show-existing') {
         const streaming = runner.busy() && lastAnsweredRef.current?.answerId === choice.answerId;
-        // ADR-0133: nothing new was said, and that card left questions on its "Still open:" line: this press
+        // ADR-0133: nothing new was said, and that card left questions on its "Also asked:" line: this press
         // answers them, on a new card (which becomes the card a later press looks at).
         const earlier = streaming
           ? undefined
           : finishedRef.current.find((answer) => answer.id === choice.answerId);
-        const stillOpen = earlier ? splitAnswer(earlier.text, true).stillOpen : '';
-        if (stillOpen) {
+        const alsoAsked = earlier ? splitAnswer(earlier.text, true).alsoAsked : '';
+        if (alsoAsked) {
           const sent = ask('answer', {
             pressedAt: keyPressAt,
             trigger,
-            question: stillOpen,
-            stillOpen,
+            question: alsoAsked,
+            alsoAsked,
             press: pressWindow(lines, ownEndRef.current, Date.now()),
           });
           if (sent) speechCardRef.current = lastAskedIdRef.current;
-          decided(sent ? 'still-open' : 'not-sent');
+          decided(sent ? 'also-asked' : 'not-sent');
           return;
         }
         setShownId(choice.answerId);

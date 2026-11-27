@@ -627,8 +627,8 @@ export function memoryLines(request: AnswerRequest): string[] {
  */
 export const STILL_SPEAKING_LABEL = 'they were still speaking, so its end may be cut off';
 
-/** ADR-0133: how the questions an earlier answer left on its "Still open:" line are introduced. */
-export const STILL_OPEN_LABEL = 'left open by an earlier answer';
+/** ADR-0133: how the questions an earlier answer left on its "Also asked:" line are introduced. */
+export const ALSO_ASKED_LABEL = 'left open by an earlier answer';
 
 /**
  * ADR-0133: the tail's question line for a request: production's "Question to answer: …", with a short note
@@ -640,8 +640,8 @@ export const STILL_OPEN_LABEL = 'left open by an earlier answer';
  * Called from: tailText(); tests
  */
 export function questionLine(request: AnswerRequest, question: string): string {
-  const note = request.press?.stillOpen
-    ? STILL_OPEN_LABEL
+  const note = request.press?.alsoAsked
+    ? ALSO_ASKED_LABEL
     : request.press?.speaking
       ? STILL_SPEAKING_LABEL
       : '';

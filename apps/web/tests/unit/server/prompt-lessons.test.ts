@@ -36,7 +36,7 @@ import { parseAnswerRequest } from '@/server/validate';
  * ADR-0032, v1.0.1–v1.4, ADR-0084 (unchanged), ADR-0086, ADR-0088, ADR-0089 (see git history of this
  * file). Changing it needs a re-run of the answers group.
  */
-const RULES_SHA256 = '7cc44c9376acdac0f5f09da24b43de4c87208cc7bd641f1894f594e3e78a9ac1';
+const RULES_SHA256 = '926c45f2604df2db18f4dd657cc1604badc3e86fc9687499dcae71da79ae8b89';
 
 /**
  * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte

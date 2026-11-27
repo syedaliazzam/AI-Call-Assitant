@@ -124,8 +124,8 @@ export interface AnswerContextInput {
    * pressWindow()), sent as the request's press context.
    */
   press?: PressWindow;
-  /** ADR-0133: the questions an earlier card left on its "Still open:" line, answered by this press. */
-  stillOpen?: string;
+  /** ADR-0133: the questions an earlier card left on its "Also asked:" line, answered by this press. */
+  alsoAsked?: string;
   /** ADR-0137: the call memory (core/answer/callMemory.ts), sent with the answer when there is one. */
   memory?: string;
 }
@@ -136,14 +136,14 @@ export interface AnswerContextInput {
  * are in the conversation.)
  *
  * @param window    The window (newestQuestion.ts pressWindow()).
- * @param stillOpen Questions an earlier card left open, if this press answers them.
+ * @param alsoAsked Questions an earlier card left open, if this press answers them.
  * @returns The press context.
  * Called from: buildAnswerRequest(); tests
  */
-export function toPressContext(window: PressWindow, stillOpen?: string): PressContext {
+export function toPressContext(window: PressWindow, alsoAsked?: string): PressContext {
   return {
     speaking: window.speaking,
-    ...(stillOpen?.trim() ? { stillOpen: stillOpen.trim().slice(0, MAX_LINE_CHARS) } : {}),
+    ...(alsoAsked?.trim() ? { alsoAsked: alsoAsked.trim().slice(0, MAX_LINE_CHARS) } : {}),
   };
 }
 
@@ -329,7 +329,7 @@ export function buildAnswerRequest(input: AnswerContextInput): BuiltAnswerReques
       ? { memory: input.memory.trim().slice(0, MAX_CALL_MEMORY_CHARS) }
       : {}),
     ...(input.mode === 'answer' && input.press
-      ? { press: toPressContext(input.press, input.stillOpen) }
+      ? { press: toPressContext(input.press, input.alsoAsked) }
       : {}),
     ...(input.mode === 'screenshot' && input.image ? { image: input.image } : {}),
     ...(documentChunks.length > 0 ? { documentChunks } : {}),

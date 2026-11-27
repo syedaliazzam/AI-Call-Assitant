@@ -237,7 +237,7 @@ export const answerRequestSchema = z
     press: z
       .object({
         speaking: z.boolean(),
-        stillOpen: z.string().min(1).max(MAX_LINE_CHARS).optional(),
+        alsoAsked: z.string().min(1).max(MAX_LINE_CHARS).optional(),
       })
       .strict()
       .optional(),

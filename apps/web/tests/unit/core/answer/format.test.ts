@@ -26,7 +26,7 @@ describe('splitAnswer', () => {
       say: '',
       tip: '',
       note: '',
-      stillOpen: '',
+      alsoAsked: '',
       labelled: false,
     });
   });
@@ -41,7 +41,7 @@ describe('splitAnswer', () => {
       say: '',
       tip: '',
       note: '',
-      stillOpen: '',
+      alsoAsked: '',
       labelled: false,
     });
     expect(splitAnswer('Forty seats')).toEqual({
@@ -53,7 +53,7 @@ describe('splitAnswer', () => {
       say: '',
       tip: '',
       note: '',
-      stillOpen: '',
+      alsoAsked: '',
       labelled: false,
     });
     expect(splitAnswer('# Forty seats\n- 52')).toEqual({
@@ -65,7 +65,7 @@ describe('splitAnswer', () => {
       say: '',
       tip: '',
       note: '',
-      stillOpen: '',
+      alsoAsked: '',
       labelled: false,
     });
   });
@@ -82,7 +82,7 @@ describe('splitAnswer', () => {
       say: '',
       tip: 'mention the Lahore rollout.',
       note: 'check the date with finance.',
-      stillOpen: '',
+      alsoAsked: '',
       labelled: false,
     });
     // Copy is what the user says: the tip is in, the private note is not.
@@ -138,7 +138,7 @@ describe('the coding shape (ADR-0030)', () => {
       say: 'I count, then scan.',
       tip: '',
       note: 'check the version.',
-      stillOpen: '',
+      alsoAsked: '',
       labelled: false,
     });
   });
@@ -195,18 +195,16 @@ describe('v1.0.2 fail-safes and the card question (ADR-0037)', () => {
     expect(cardQuestion('Raw words?', 'Is this clean? Yes.')).toBe('Is this clean? Yes.');
   });
 
-  it('cardQuestion: a long raw question shows only its newest sentences, at most 20 words (ADR-0133)', () => {
+  it('cardQuestion: a long raw question shows only its newest sentences, at most 12 words (ADR-0133)', () => {
     // About 45 seconds of talk (invented): the card shows the question, not the block.
     const talk =
       'We are putting more teams on the new planner next month. We will gather data from the depots and the drivers. Then we look at what we learn together. Is that part of the next phase? Okay.';
-    expect(cardQuestion(talk, undefined)).toBe(
-      'Then we look at what we learn together. Is that part of the next phase?',
-    );
-    // One sentence longer than the limit: its last 20 words.
+    expect(cardQuestion(talk, undefined)).toBe('Is that part of the next phase?');
+    // One sentence longer than the limit: its last 12 words.
     const long = `${'very '.repeat(30)}long question about the rollout?`;
     const shown = cardQuestion(long, undefined);
     expect(shown.startsWith('…')).toBe(true);
-    expect(shown.slice(1).split(' ')).toHaveLength(20);
+    expect(shown.slice(1).split(' ')).toHaveLength(12);
     expect(shown.endsWith('rollout?')).toBe(true);
   });
 });
@@ -392,9 +390,9 @@ describe('a sentence is never split across lines (ADR-0135, streamed edge cases)
 
 describe('several questions in one answer (ADR-0133)', () => {
   const THREE =
-    'Timeline: We start the pilot next week.\nData hosting: I will confirm the region after the call.\nTeam size: Two engineers join from day one.\nStill open: pricing tiers and SSO.';
+    'Timeline: We start the pilot next week.\nData hosting: I will confirm the region after the call.\nTeam size: Two engineers join from day one.\nAlso asked: pricing tiers and SSO.';
 
-  it('reads labelled lines, never cuts them, and takes out the "Still open" line', () => {
+  it('reads labelled lines, never cuts them, and takes out the "Also asked" line', () => {
     const parts = splitAnswer(THREE, true);
     expect(parts.labelled).toBe(true);
     expect(parts.headline).toBe('Timeline: We start the pilot next week.');
@@ -402,8 +400,8 @@ describe('several questions in one answer (ADR-0133)', () => {
       'Data hosting: I will confirm the region after the call.',
       'Team size: Two engineers join from day one.',
     ]);
-    expect(parts.stillOpen).toBe('pricing tiers and SSO.');
-    // Copy is what the user says: the "Still open" line is not.
+    expect(parts.alsoAsked).toBe('pricing tiers and SSO.');
+    // Copy is what the user says: the "Also asked" line is not.
     expect(answerText(THREE)).not.toContain('pricing tiers');
   });
 

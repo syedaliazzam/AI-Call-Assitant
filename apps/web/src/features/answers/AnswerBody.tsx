@@ -129,8 +129,8 @@ function LabelledText({
   );
 }
 
-/** ADR-0133: what the "Still open" line says after the questions, so the user knows to press again. */
-export const STILL_OPEN_HINT = 'press Answer again for these.';
+/** ADR-0133: what the "Also asked" line says after the questions, so the user knows to press again. */
+export const ALSO_ASKED_HINT = 'press Answer again for these.';
 
 /**
  * A code block with its own Copy button.
@@ -318,7 +318,7 @@ export function AnswerBody(props: AnswerBodyProps) {
       <p className={`text-ui-muted ${sizes.body}`}>…</p>
     );
   }
-  const { headline, bullets, keySteps, code, complexity, say, tip, note, stillOpen, labelled } =
+  const { headline, bullets, keySteps, code, complexity, say, tip, note, alsoAsked, labelled } =
     splitAnswer(text, props.finished ?? false);
   // ADR-0133: several questions, one labelled line each: the labels in bold.
   const Line = labelled ? LabelledText : ClaimText;
@@ -369,11 +369,11 @@ export function AnswerBody(props: AnswerBodyProps) {
           <ClaimText text={tip} claims={claims} />
         </p>
       )}
-      {stillOpen && (
+      {alsoAsked && (
         // ADR-0133: the questions left for the next press: not words to say, so muted like the Tip.
-        <p aria-label="Still open" className={`mt-2.5 leading-relaxed text-ui-muted ${sizes.body}`}>
-          <span className="mr-1 font-medium">Still open:</span>
-          {stillOpen} <span className="text-ui-muted">({STILL_OPEN_HINT})</span>
+        <p aria-label="Also asked" className={`mt-2.5 leading-relaxed text-ui-muted ${sizes.body}`}>
+          <span className="mr-1 font-medium">Also asked:</span>
+          {alsoAsked} <span className="text-ui-muted">({ALSO_ASKED_HINT})</span>
         </p>
       )}
       {note && (

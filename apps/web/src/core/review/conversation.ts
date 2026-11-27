@@ -374,7 +374,7 @@ function paragraphs(
       continue;
     }
     const { answer } = entry;
-    const { headline, bullets, code, complexity, say, tip, stillOpen } = splitAnswer(
+    const { headline, bullets, code, complexity, say, tip, alsoAsked } = splitAnswer(
       answer.text,
       true,
     );
@@ -398,7 +398,7 @@ function paragraphs(
     if (say) block.push({ text: `Say: ${say}` });
     if (tip) block.push({ text: `Tip: ${tip}` });
     // ADR-0133: the questions the answer left for the next press.
-    if (stillOpen) block.push({ text: `Still open: ${stillOpen}` });
+    if (alsoAsked) block.push({ text: `Also asked: ${alsoAsked}` });
     blocks.push(block);
   }
   return blocks.flatMap((block, index) => (index === 0 ? block : [{ text: '' }, ...block]));

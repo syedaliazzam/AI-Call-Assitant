@@ -117,7 +117,7 @@ describe('pressWindow (ADR-0133)', () => {
     expect(toPressContext(pressWindow(lines, null, at(23.5)))).toEqual({ speaking: true });
     expect(toPressContext(pressWindow([], null, at(30)), ' Pricing and SSO ')).toEqual({
       speaking: false,
-      stillOpen: 'Pricing and SSO',
+      alsoAsked: 'Pricing and SSO',
     });
   });
 });

@@ -93,7 +93,7 @@ interface Scenario {
     question: string[];
     /** Patterns (regular expressions, case-insensitive) that must not appear in the spoken part. */
     forbidden?: string[];
-    /** True when four or more questions were asked: a "Still open:" line also counts as covering. */
+    /** True when four or more questions were asked: a "Also asked:" line also counts as covering. */
     many?: boolean;
   };
 }
@@ -106,7 +106,7 @@ interface Scored {
   category: Scenario['category'];
   /** The card's question names the newest open question. */
   rightQuestion: boolean;
-  /** Every open question answered (or listed as still open, for four or more). */
+  /** Every open question answered (or listed as also asked, for four or more). */
   covered: boolean;
   /** No empty card and no hedge. */
   answered: boolean;
@@ -128,6 +128,8 @@ interface Scored {
   raw?: string;
   /** The card can be said as it is: not empty, no hedge, not a bare promise, no thinking aloud. */
   usable: boolean;
+  /** One natural reply: no labelled line per question, no numbering, no "Q1". */
+  oneReply: boolean;
 }
 
 /**
@@ -242,6 +244,7 @@ async function runScenario(
       shownQuestion: `(no answer: ${choice.kind})`,
       text: '',
       usable: false,
+      oneReply: false,
     };
   }
   // The conversation as the page sends it: stable lines in one chunk, the rest in the tail.
@@ -354,6 +357,32 @@ async function seen(raw: string): Promise<{ text: string; question: string | und
   return { text: text.trim(), question };
 }
 
+/** The labels the app itself styles: allowed at a line's start. */
+const APP_LABELS = /^(?:tip|note|also asked|say|key steps|complexity)\s*:/i;
+
+/** A short label of one to four words at a line's start ("Timeline: …", "**Pricing:** …"). */
+const LINE_LABEL = /^(?:[-*•–—]\s+)?\**[A-Z][\w'’/&-]*(?:\s+[\w'’/&-]+){0,3}\**:\**\s/;
+
+/**
+ * Whether a card reads as one natural reply (28 Nov 2026): no line starts with a label of its own (other than
+ * the app's Tip, Note, Also asked…), no numbered lines, and no "Q1"-style marks.
+ *
+ * @param text The card's text.
+ * @returns True when it reads as one reply.
+ */
+function readsAsOneReply(text: string): boolean {
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !/^```/.test(line));
+  if (/\bQ\d\b/.test(text)) return false;
+  return lines.every(
+    (line) =>
+      !/^\d+[.)]\s/.test(line) &&
+      (APP_LABELS.test(line.replace(/^[-*•–—]\s+|\*\*/g, '')) || !LINE_LABEL.test(line)),
+  );
+}
+
 /**
  * Text the user could never say as it is: the model thinking aloud about the task, the user or the format
  * (seen in replies that lost their hidden first line).
@@ -375,9 +404,12 @@ function checks(
   text: string,
   shownQuestion: string,
   format: typeof import('../src/core/answer/format'),
-): Pick<Scored, 'rightQuestion' | 'covered' | 'answered' | 'noInvented' | 'formatOk' | 'usable'> {
+): Pick<
+  Scored,
+  'rightQuestion' | 'covered' | 'answered' | 'noInvented' | 'formatOk' | 'usable' | 'oneReply'
+> {
   const parts = format.splitAnswer(text, true) as ReturnType<typeof format.splitAnswer> & {
-    stillOpen?: string;
+    alsoAsked?: string;
   };
   const spoken = [parts.headline, ...parts.bullets, parts.tip, parts.say]
     .filter(Boolean)
@@ -386,7 +418,7 @@ function checks(
   const formatOk = [parts.headline, ...parts.bullets].every((shown) =>
     rawNormal.includes(normal(shown)),
   );
-  const stillOpen = parts.stillOpen ?? (/^\s*still open\s*:/im.test(text) ? 'yes' : '');
+  const alsoAsked = parts.alsoAsked ?? (/^\s*also asked\s*:/im.test(text) ? 'yes' : '');
   const coveredGroups = scenario.expect.open.filter((group) => hasAny(spoken, group)).length;
   const forbidden = (scenario.expect.forbidden ?? []).map((pattern) => new RegExp(pattern, 'i'));
   const answered = text.trim() !== '' && !NON_ANSWER.test(spoken);
@@ -399,11 +431,12 @@ function checks(
     rightQuestion: hasAny(shownQuestion, scenario.expect.question),
     covered:
       coveredGroups === scenario.expect.open.length ||
-      (scenario.expect.many === true && coveredGroups >= 2 && stillOpen !== ''),
+      (scenario.expect.many === true && coveredGroups >= 2 && alsoAsked !== ''),
     answered,
     noInvented: !forbidden.some((pattern) => pattern.test(spoken)),
     formatOk,
     usable: answered && !promiseOnly && !THINKING_ALOUD.test(text),
+    oneReply: answered && readsAsOneReply(text),
   };
 }
 
@@ -424,7 +457,7 @@ async function rescore(label: string): Promise<void> {
     const scenario = scenarios.get(score.id);
     // A press that sent nothing keeps its all-failed score.
     if (!scenario || score.shownQuestion.startsWith('(no answer'))
-      return { ...score, usable: false };
+      return { ...score, usable: false, oneReply: false };
     return { ...score, ...checks(scenario, score.text, score.shownQuestion, format) };
   });
   writeFileSync(file, JSON.stringify(rescored, null, 2));
@@ -463,6 +496,7 @@ function report(labels: readonly string[]): void {
     ['No invented specific facts', 'noInvented'],
     ['Formatting OK', 'formatOk'],
     ['Answer usable as-is (no hedging or refusal)', 'usable'],
+    ['Reads as one natural reply (no labels, numbering or blocks)', 'oneReply'],
     ['Hidden question line arrived', 'questionLine'],
   ];
   console.log(`| Check | ${labels.join(' | ')} |`);
@@ -490,7 +524,14 @@ function report(labels: readonly string[]): void {
     const cells = runs.map((scores) => {
       const mine = scores.filter((s) => s.category === category);
       const ok = mine.filter(
-        (s) => s.rightQuestion && s.covered && s.answered && s.noInvented && s.formatOk && s.usable,
+        (s) =>
+          s.rightQuestion &&
+          s.covered &&
+          s.answered &&
+          s.noInvented &&
+          s.formatOk &&
+          s.usable &&
+          s.oneReply,
       ).length;
       return `${ok}/${mine.length}`;
     });

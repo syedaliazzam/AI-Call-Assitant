@@ -46,10 +46,10 @@ export interface AnswerParts {
   /** A private note for the user, not to be said ("Note: …", without its label), or ''. */
   note: string;
   /**
-   * ADR-0133: the questions a press left for the next press ("Still open: …", without its label), or ''.
+   * ADR-0133: the questions a press left for the next press ("Also asked: …", without its label), or ''.
    * Not said, not copied; the next press with nothing new answers them.
    */
-  stillOpen: string;
+  alsoAsked: string;
   /**
    * ADR-0133: true when the answer gives several questions one labelled line each ("Timeline: …"): the
    * answer line and the bullets then show their labels in bold (labelOf()), and no line is cut.
@@ -73,7 +73,7 @@ const SAY_LABEL = /^(?:how to )?say(?: it)?\s*:\s*/i;
 const NOTE_LABEL = /^(?:private\s+)?note\s*:\s*/i;
 
 /** ADR-0133: the label of the line naming the questions left for the next press. */
-const STILL_OPEN_LABEL = /^still open\s*:\s*/i;
+const ALSO_ASKED_LABEL = /^also asked\s*:\s*/i;
 
 /**
  * ADR-0133: a short label at the start of a line ("Timeline: …", "Data hosting: …"): one to four words,
@@ -253,7 +253,7 @@ export function splitAnswer(text: string, finished = false): AnswerParts {
   let say = '';
   let tip = '';
   let note = '';
-  let stillOpen = '';
+  let alsoAsked = '';
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i]!;
     const fence = CODE_FENCE.exec(line);
@@ -291,7 +291,7 @@ export function splitAnswer(text: string, finished = false): AnswerParts {
     else if (TIP_LABEL.test(clean)) tip = clean.replace(TIP_LABEL, '');
     else if (SAY_LABEL.test(clean)) say = clean.replace(SAY_LABEL, '');
     else if (NOTE_LABEL.test(clean)) note = clean.replace(NOTE_LABEL, '');
-    else if (STILL_OPEN_LABEL.test(clean)) stillOpen = clean.replace(STILL_OPEN_LABEL, '');
+    else if (ALSO_ASKED_LABEL.test(clean)) alsoAsked = clean.replace(ALSO_ASKED_LABEL, '');
     // A depth offer is the Tip when there is none; a second one adds nothing to say.
     else if (DEPTH_OFFER.test(clean)) tip ||= clean;
     else bullets.push(clean);
@@ -307,7 +307,7 @@ export function splitAnswer(text: string, finished = false): AnswerParts {
     headline = line;
     if (rest) bullets.unshift(rest);
   }
-  return { headline, bullets, keySteps, code, complexity, say, tip, note, stillOpen, labelled };
+  return { headline, bullets, keySteps, code, complexity, say, tip, note, alsoAsked, labelled };
 }
 
 /**
@@ -375,7 +375,7 @@ export function cardQuestion(
  * everything said since the last answer (up to MAX_NEWEST_WORDS of the other side), and the 27 Nov 2026
  * card showed about 45 seconds of talk as its "Question" when the hidden question line did not arrive.
  */
-export const MAX_SHOWN_QUESTION_WORDS = 20;
+export const MAX_SHOWN_QUESTION_WORDS = 12;
 
 /**
  * ADR-0133: a raw question kept short for the card: the newest whole sentences that fit in

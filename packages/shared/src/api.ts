@@ -404,10 +404,10 @@ export interface PressContext {
   /** ADR-0132: true when the other side was still speaking at the press (the question's end may be cut off). */
   speaking: boolean;
   /**
-   * ADR-0133: the questions an earlier answer listed on its "Still open:" line, when the press came with
+   * ADR-0133: the questions an earlier answer listed on its "Also asked:" line, when the press came with
    * nothing new said since: they are answered now. Never logged.
    */
-  stillOpen?: string;
+  alsoAsked?: string;
 }
 
 /**
