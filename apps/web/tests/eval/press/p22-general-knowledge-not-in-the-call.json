@@ -1,0 +1,34 @@
+{
+  "id": "p22-general-knowledge-not-in-the-call",
+  "category": "nodocs",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "Different topic. What's a sensible way to roll out a new model to customers without breaking things for everyone at once?",
+      "start": 2700,
+      "end": 2707
+    }
+  ],
+  "press": 2708,
+  "expect": {
+    "open": [
+      ["stage", "staged", "canary", "gradual", "small group", "pilot", "percent", "subset", "phase"]
+    ],
+    "question": ["roll out", "rollout", "model"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

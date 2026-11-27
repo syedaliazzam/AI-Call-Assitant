@@ -1,0 +1,40 @@
+{
+  "id": "p25-price-and-date-with-no-source",
+  "category": "nodocs",
+  "session": {
+    "type": "sales",
+    "company": "Brightline Analytics (invented)",
+    "role": "Solutions engineer",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "Two practical things. What would the yearly price be for our team, and could you have it live by the fifteenth of January?",
+      "start": 2900,
+      "end": 2908
+    }
+  ],
+  "press": 2909,
+  "expect": {
+    "open": [
+      ["price", "pricing", "cost", "figure", "quote", "number"],
+      ["January", "date", "live", "timeline", "fifteenth", "go-live"]
+    ],
+    "question": ["price", "January", "live"],
+    "forbidden": [
+      "\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d",
+      "^\\s*yes\\b",
+      "\\byes\\b[^.]*\\b(?:January|fifteenth|15th)",
+      "\\bwe can (?:have it live|go live) (?:by|on)\\b"
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "id": "p01-single-question",
+  "category": "single",
+  "session": {
+    "type": "sales",
+    "company": "Brightline Analytics (invented)",
+    "role": "Solutions engineer",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "Thanks for the overview so far.",
+      "start": 600,
+      "end": 602
+    },
+    {
+      "speaker": "you",
+      "text": "Of course, happy to go deeper on anything.",
+      "start": 603,
+      "end": 606
+    },
+    {
+      "speaker": "them",
+      "text": "We've got data sitting in two different warehouses right now, one for finance and one for operations. How would your dashboards pull from both of them at the same time?",
+      "start": 607,
+      "end": 619
+    }
+  ],
+  "press": 620,
+  "expect": {
+    "open": [["warehouse", "both", "sources", "two", "connect", "combine"]],
+    "question": ["warehouse", "both", "data", "sources"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

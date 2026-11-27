@@ -1,0 +1,41 @@
+{
+  "id": "p04-three-questions-no-facts",
+  "category": "multi",
+  "session": {
+    "type": "sales",
+    "company": "Brightline Analytics (invented)",
+    "role": "Solutions engineer",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "A few practical questions. How long does setup usually take, do you support single sign-on with Okta, and can we export the reports to Excel?",
+      "start": 900,
+      "end": 912
+    }
+  ],
+  "press": 913,
+  "expect": {
+    "open": [
+      ["setup", "set up", "set-up"],
+      ["sign-on", "SSO", "Okta"],
+      ["Excel", "export"]
+    ],
+    "question": ["setup", "sign-on", "SSO", "Excel", "export", "Okta"],
+    "forbidden": [
+      "\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d",
+      "\\b\\d+\\s*(?:days?|weeks?|hours?)\\b",
+      "(?<!whether |if )\\bwe (?:do |fully )?support (?:SSO|single sign|Okta)",
+      "\\byes,? (?:we|you) can export"
+    ]
+  }
+}

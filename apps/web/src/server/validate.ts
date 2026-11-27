@@ -38,6 +38,9 @@ import {
   MAX_NOTES_CHARS,
   MAX_NOTES_LINES,
   MAX_TAIL_LINES,
+  MAX_CALL_MEMORY_CHARS,
+  MAX_CALL_MEMORY_LINES,
+  type CallMemoryRequest,
   estimateItemTokens,
   type AnswerRequest,
   type NotesRequest,
@@ -228,6 +231,16 @@ export const answerRequestSchema = z
     session: sessionSchema.optional(),
     conversation: conversationSchema.optional(),
     tail: z.array(callLineSchema).max(MAX_TAIL_LINES).optional(),
+    // ADR-0137: the call memory (a running summary of the whole call; uncached).
+    memory: z.string().max(MAX_CALL_MEMORY_CHARS).optional(),
+    // ADR-0133: a key press on the call: still speaking, or questions left open (uncached).
+    press: z
+      .object({
+        speaking: z.boolean(),
+        alsoAsked: z.string().min(1).max(MAX_LINE_CHARS).optional(),
+      })
+      .strict()
+      .optional(),
     // MAX_KITE_QUESTION_CHARS is the larger limit; every other mode is held to MAX_LINE_CHARS below.
     question: z.string().max(MAX_KITE_QUESTION_CHARS).optional(),
     // The screenshot (Day 5): a JPEG data URL whose bytes really start as a JPEG.
@@ -324,6 +337,10 @@ export const answerRequestSchema = z
     }
     if (request.mode !== 'screenshot' && request.image) {
       context.addIssue({ code: 'custom', path: ['image'], message: 'only for mode screenshot' });
+    }
+    // ADR-0133: the press window goes only with an answer to the call.
+    if (request.press && request.mode !== 'answer') {
+      context.addIssue({ code: 'custom', path: ['press'], message: 'only for mode answer' });
     }
     // A chat question is typed by the user; there is nothing to fall back on.
     if (request.mode === 'chat' && !request.question?.trim()) {
@@ -581,6 +598,38 @@ const summaryRequestSchema = z
 export function parseSummaryRequest(body: unknown): SmallParseResult<DocumentsSummaryRequest> {
   return parseSmall<DocumentsSummaryRequest>(
     summaryRequestSchema as unknown as z.ZodType<DocumentsSummaryRequest>,
+    body,
+  );
+}
+
+/**
+ * ADR-0137: the body of POST /api/memory: what the call is, the memory so far and the new lines (at most
+ * MAX_CALL_MEMORY_LINES, at least one). Unknown fields are rejected.
+ */
+const callMemoryRequestSchema = z
+  .object({
+    session: z
+      .object({
+        type: z.string().max(40),
+        company: z.string().max(200),
+        role: z.string().max(200),
+      })
+      .strict(),
+    previous: z.string().max(MAX_CALL_MEMORY_CHARS),
+    lines: z.array(callLineSchema).min(1).max(MAX_CALL_MEMORY_LINES),
+  })
+  .strict();
+
+/**
+ * ADR-0137: validates a call-memory update request.
+ *
+ * @param body The JSON value from the request.
+ * @returns The validated request, or a message (field paths only).
+ * Called from: POST handler in app/api/memory/route.ts; tests
+ */
+export function parseCallMemoryRequest(body: unknown): SmallParseResult<CallMemoryRequest> {
+  return parseSmall<CallMemoryRequest>(
+    callMemoryRequestSchema as unknown as z.ZodType<CallMemoryRequest>,
     body,
   );
 }

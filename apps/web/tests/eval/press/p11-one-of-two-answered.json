@@ -1,0 +1,38 @@
+{
+  "id": "p11-one-of-two-answered",
+  "category": "answered",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "Two questions. Do you work remotely or on site? And what time zone is your team in?",
+      "start": 1600,
+      "end": 1606
+    },
+    {
+      "speaker": "you",
+      "text": "We're fully remote, so that part is easy.",
+      "start": 1607,
+      "end": 1610
+    }
+  ],
+  "press": 1611,
+  "expect": {
+    "open": [["time zone", "timezone", "hours", "overlap"]],
+    "question": ["time zone", "timezone"],
+    "forbidden": ["\\b(?:GMT|UTC|PST|EST|CET|PKT|IST)\\b"]
+  }
+}

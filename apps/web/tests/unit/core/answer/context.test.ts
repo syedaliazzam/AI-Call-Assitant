@@ -104,7 +104,11 @@ describe('buildAnswerRequest', () => {
     expect(built.request).toMatchObject({
       mode: 'answer',
       model: 'fast',
-      session: { company: 'Northwind Logistics', keyTerms: ['Bluefin Route'] },
+      // ADR-0136: the key terms Deepgram listens for: the user's list, then the company and the role.
+      session: {
+        company: 'Northwind Logistics',
+        keyTerms: ['Bluefin Route', 'Northwind Logistics', 'Account review'],
+      },
       conversation: [
         [
           { kind: 'line', speaker: 'you', text: 'THANKS FOR JOINING TODAY', at: 1 },

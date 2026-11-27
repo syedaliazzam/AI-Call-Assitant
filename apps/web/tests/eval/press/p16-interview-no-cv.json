@@ -1,0 +1,35 @@
+{
+  "id": "p16-interview-no-cv",
+  "category": "nodocs",
+  "session": {
+    "type": "interview",
+    "company": "Northwind Freight (invented)",
+    "role": "Data analyst",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "Tell me about a time you had to handle a difficult stakeholder.",
+      "start": 2100,
+      "end": 2104
+    }
+  ],
+  "press": 2105,
+  "expect": {
+    "open": [["stakeholder", "expectations", "listen", "understand", "concern", "hear"]],
+    "question": ["stakeholder"],
+    "forbidden": [
+      "\\bI (?:handled|managed|led|worked with|once had)\\b",
+      "\\bat my (?:last|previous) (?:job|company|role)\\b"
+    ]
+  }
+}

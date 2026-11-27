@@ -1,0 +1,36 @@
+{
+  "id": "p15-hosting-not-given",
+  "category": "nodocs",
+  "session": {
+    "type": "sales",
+    "company": "Brightline Analytics (invented)",
+    "role": "Solutions engineer",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "Do you host all customer data inside the EU?",
+      "start": 2000,
+      "end": 2003
+    }
+  ],
+  "press": 2004,
+  "expect": {
+    "open": [["EU", "host", "data", "region"]],
+    "question": ["EU", "host", "data"],
+    "forbidden": [
+      "^\\s*yes\\b",
+      "\\bwe host\\b",
+      "\\b(?:all )?(?:customer )?data (?:is|stays) (?:in|inside) the EU"
+    ]
+  }
+}

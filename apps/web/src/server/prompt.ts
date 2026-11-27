@@ -601,6 +601,23 @@ function choiceLines(request: AnswerRequest): string[] {
   return lines;
 }
 
+/** ADR-0137: the heading over the call memory in the tail. */
+export const MEMORY_HEADING =
+  'Call memory (a running summary of the whole call so far, kept by the app; the exact words above win where they differ):';
+
+/**
+ * ADR-0137: the call memory block of the tail ([] when the request has none).
+ *
+ * @param request The request.
+ * @returns The lines.
+ * Called from: tailText(); tests
+ */
+export function memoryLines(request: AnswerRequest): string[] {
+  const memory = request.memory?.trim();
+  if (!memory) return [];
+  return [MEMORY_HEADING, '<call_memory>', escapeTags(memory), '</call_memory>', ''];
+}
+
 /**
  * ADR-0107: whether a request is a screen-only screenshot (Ctrl+Shift+Enter or the Screenshot button).
  *
@@ -646,6 +663,8 @@ function tailText(
   const parts = hasConversation
     ? ['</conversation>', '']
     : ['<conversation>', '(nothing said yet)', '</conversation>', ''];
+  // ADR-0137: the call memory (a running summary of the whole call), uncached, before the newest lines.
+  parts.push(...memoryLines(request));
   parts.push(
     '<latest>',
     ...(tail.length > 0

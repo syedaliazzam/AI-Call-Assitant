@@ -1,0 +1,32 @@
+{
+  "id": "p02-question-after-long-talk",
+  "category": "single",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "So a bit of background. Our onboarding today is mostly spreadsheets and email. New clients fill in a long form, someone on our side copies it into three systems, and then we chase them for the missing pieces for about two weeks. It works, but it's slow and people hate it, and we lose a few clients in that first month. We've tried a portal before but nobody used it. So if you were in our shoes, what would you change first in the onboarding flow?",
+      "start": 700,
+      "end": 745
+    }
+  ],
+  "press": 746,
+  "expect": {
+    "open": [["onboarding", "first", "form", "start"]],
+    "question": ["onboarding", "change"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

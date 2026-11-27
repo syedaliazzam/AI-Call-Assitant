@@ -4,11 +4,12 @@
  * kept, no scores), without duplicates; the session's Key terms come first, then the signed-in user's first
  * name and the contact's name, then company, role, the interview vocabulary, document names and (Batch D)
  * single capitalised words that repeat across runs ("Freshdesk", "Toptal"); at most MAX_KEYTERMS (100) and
- * MAX_KEYTERM_CHARS in all. Also extractSingleWordTerms() and firstNameOf(). All data is invented.
+ * MAX_KEYTERM_CHARS in all. Also extractSingleWordTerms() and firstNameOf(). All data is invented. ADR-0136: extractInstructionTerms() and the instruction terms in buildKeyterms().
  */
 import { describe, expect, it } from 'vitest';
 import {
   buildKeyterms,
+  extractInstructionTerms,
   extractSingleWordTerms,
   firstNameOf,
   MAX_KEYTERM_CHARS,
@@ -146,5 +147,29 @@ describe('firstNameOf (Batch D)', () => {
     expect(firstNameOf('J')).toBe('');
     expect(firstNameOf('')).toBe('');
     expect(firstNameOf(null)).toBe('');
+  });
+});
+
+describe('terms from the session instructions and description (ADR-0136)', () => {
+  it('takes acronyms, inner-capital names and capitalised runs inside a sentence, once each', () => {
+    const terms = extractInstructionTerms([
+      'Keep answers short. We use LangFuse and BM25 for the SOW review with Priya Raman at Northwind.',
+      'Please mention the SOW only if asked. US teams are out of scope.',
+    ]);
+    expect(terms).toEqual(['LangFuse', 'BM25', 'SOW', 'Priya Raman', 'Northwind']);
+  });
+
+  it('adds them to the keyterms after the company and role, before the document terms', () => {
+    const terms = buildKeyterms(
+      {
+        company: 'Acme Freight',
+        role: 'Account review',
+        preferences: { keyTerms: 'Bluefin Route' } as never,
+        instructions: 'Spell our tool as LangFuse.',
+        description: '',
+      },
+      [],
+    );
+    expect(terms).toEqual(['Bluefin Route', 'Acme Freight', 'Account review', 'LangFuse']);
   });
 });

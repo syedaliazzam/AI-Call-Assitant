@@ -1,0 +1,39 @@
+{
+  "id": "p07-question-just-started",
+  "category": "cutoff",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "That makes sense on the data side.",
+      "start": 1200,
+      "end": 1202
+    },
+    {
+      "speaker": "them",
+      "text": "And how would you deal with the",
+      "start": 1203,
+      "end": 1205,
+      "grey": true
+    }
+  ],
+  "press": 1205.3,
+  "expect": {
+    "open": [],
+    "question": ["deal", "handle", "how would"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "id": "p13-price-not-given",
+  "category": "nodocs",
+  "session": {
+    "type": "sales",
+    "company": "Brightline Analytics (invented)",
+    "role": "Solutions engineer",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "Before we go further, what would this cost us for forty users?",
+      "start": 1800,
+      "end": 1804
+    }
+  ],
+  "press": 1805,
+  "expect": {
+    "open": [["price", "pricing", "cost", "quote", "figure", "number"]],
+    "question": ["cost", "price"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

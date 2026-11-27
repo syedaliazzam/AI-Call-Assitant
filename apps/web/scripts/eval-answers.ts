@@ -28,6 +28,8 @@
  *            --show     also print each answer and the grader's reason (local use only; the
  *                       scenarios are invented, but answers are never printed by default)
  *            --dry-run  print the estimated number of Claude requests and stop
+ *            --prompt-hashes  28 Nov 2026: print one SHA-256 per prompt (model, token limit, system and
+ *                       messages) and stop; no request. Run it in two checkouts to show they send the same.
  *            --their-name=<name>  ADR-0093: the other person is named (their lines carry the name)
  *            --max-dollars=<n>    stop before the next scenario once this much is spent
  *            --no-grade answers only, no grader requests (half the cost): the code checks are
@@ -74,6 +76,7 @@
  * mustInclude and mustNotInclude (what a good answer must and must not
  * contain, in plain words for the grader); company (optional: company AI instructions, ADR-0083).
  */
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -376,6 +379,26 @@ function imageDataUrl(relative: string): string {
 }
 
 /** One answer, with what its hidden line said. */
+/**
+ * 28 Nov 2026, --prompt-hashes: receives the SHA-256 of each prompt answerScenario() would send (the model, the
+ * token limit, the system blocks and the messages), and answerScenario() then returns without a request.
+ * Null in a normal run.
+ */
+let promptHashSink: ((hash: string) => void) | null = null;
+
+/** What answerScenario() returns in --prompt-hashes mode (nothing was asked). */
+const NOT_ASKED: Omit<ScenarioAnswer, 'experiment'> = {
+  text: '',
+  meta: null,
+  placeholder: false,
+  usage: {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+  },
+};
+
 interface ScenarioAnswer {
   /** The answer as the user sees it. */
   text: string;
@@ -584,6 +607,15 @@ async function answerScenario(
   const viaThird = third !== null && !page;
   const model = viaThird ? third.modelId : page || smartModel ? models.smart : models.fast;
   const maxTokens = page ? KITE_CHAT_MAX_TOKENS : ANSWER_MAX_TOKENS;
+  // --prompt-hashes: the whole prompt this scenario would send, hashed; no request is made.
+  if (promptHashSink) {
+    promptHashSink(
+      createHash('sha256')
+        .update(JSON.stringify({ model, maxTokens, viaThird, ...prompt }))
+        .digest('hex'),
+    );
+    return { ...NOT_ASKED, experiment: { cvMatchLine, smartModel } };
+  }
   /**
    * One request with this prompt; its spend is counted.
    *
@@ -1050,6 +1082,54 @@ async function main(): Promise<void> {
     ]),
   );
   if (options.dryRun) return;
+  // 28 Nov 2026, --prompt-hashes: prints one SHA-256 per prompt (a consistency scenario's second prompt uses
+  // a fixed stand-in for its first answer), so two checkouts can be shown to send byte-identical prompts.
+  // No request is made and nothing is spent.
+  if (process.argv.slice(2).includes('--prompt-hashes')) {
+    const hashEnv = getClaudeEnv();
+    const hashModels = { fast: hashEnv.modelFast, smart: hashEnv.modelSmart };
+    const free = createSpendMeter();
+    let count = 0;
+    for (const scenario of scenarios) {
+      const hashes: string[] = [];
+      promptHashSink = (hash) => hashes.push(hash);
+      await answerScenario(
+        scenario,
+        hashModels,
+        false,
+        options.style,
+        free,
+        theirName,
+        undefined,
+        null,
+        spoken,
+        experiment,
+      );
+      if (scenario.repeat) {
+        const standIn = {
+          question: scenario.question,
+          text: 'Stand-in first answer for the prompt hash.',
+        };
+        await answerScenario(
+          scenario,
+          hashModels,
+          false,
+          options.style,
+          free,
+          theirName,
+          standIn,
+          null,
+          spoken,
+          experiment,
+        );
+      }
+      promptHashSink = null;
+      for (const hash of hashes) console.log(`${scenario.id} ${hash}`);
+      count += hashes.length;
+    }
+    console.log(`prompt hashes: ${count} prompts, ${scenarios.length} scenarios, no request sent`);
+    return;
+  }
   requireKey('eval-answers');
   const env = getClaudeEnv();
   const third = answerModel ? providerModel(answerModel) : null;

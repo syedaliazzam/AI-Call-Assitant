@@ -1170,3 +1170,37 @@ Spend: about $1.15 in round 2 (the version 6 run $0.83, probes $0.17, about $0.1
 **Follow-ups:**
 - Typed questions (`09`, `22`, `a-sales-unclear`) copy the template twice under version 6, so the card is removed and the answer is lost. ADR-0103's "no hidden line" fallback territory; not fixed.
 - The CV match signal's matching (Release gate follow-ups above) is what keeps `star-cv-match` on approach lines; changing it changes the locked base, so it waits with the rest.
+
+## Key-press group (27–28 Nov 2026, ADR-0132–ADR-0137)
+
+- **Script:** `apps/web/scripts/eval-press.ts`; scenarios `apps/web/tests/eval/press/*.json` (25 invented call snippets: one question, two or three, four or more, a question still being said, a statement, a question the user already answered, no documents, pricing and dates with no source, a long paragraph then a question, general knowledge, something said 20 minutes earlier).
+- **How:** each checkout runs its own press rules, request, live prompt and card formatter (run from that checkout's `apps/web`); the fast model answers; the reply goes through the live route's pipeline (as `--guard`); checks are in code (no grader): right question shown, all open questions covered (in the one reply, or under "Also asked" for four or more), no "not sure" non-answer, none of the scenario's forbidden patterns (an invented price, date, hosting or SSO claim), formatting (the card shows the model's own sentences), usable as it is (not empty, no hedge, not a bare promise, no thinking aloud), reads as one natural reply (no labels, numbering or blocks), and the time from the request to the first visible word on this machine. One run per scenario: rows can move by about two from run to run.
+- **Cost:** about $0.007 per 25-call run.
+
+### Results (28 Nov 2026, Windows 11 dev laptop, claude-haiku-5-5; before = `main` @ 137a5f9, after = the conservative candidate)
+
+| Check | Before | After |
+|---|---|---|
+| Right question picked | 24/25 | 25/25 |
+| All open questions covered | 23/25 | 24/25 |
+| No "not sure" non-answers | 24/25 | 24/25 |
+| No invented specific facts | 22/25 | 23/25 |
+| Formatting OK | 16/25 | 25/25 |
+| Answer usable as-is | 21/25 | 24/25 |
+| Reads as one natural reply | 22/25 | 24/25 |
+| Hidden question line arrived | 24/25 | 24/25 |
+| First visible word, median / p90 | 713 / 928 ms | 652 / 957 ms |
+
+Every category was equal or better (single 1→5 of 5, multi 1→3 of 4, many 0→1 of 1, cut-off 3→3 of 3, statement 2→2 of 2, already answered 0→2 of 2, no documents 1→5 of 7, memory 1→1 of 1). Still failing after: the start-date and EU-hosting cases answered "Yes" (production had the start-date one, and invented SSO and team-size facts instead of the hosting one), and one two-question case lost its answer to a broken hidden line (the page asks again silently, ADR-0112).
+
+**Measured and not used:** a block of the words since the last answer in the tail, the press rules at the end of the prompt, a changed hidden question line, and the full rewrite of the live prompt around one hard rule. Each made Haiku write its hidden lines in the wrong order or think aloud (7–11 of 25 cards lost), and the rewrite invented company facts ("Yes, we host all customer data in the EU") that production's explicit lists prevent.
+
+The time to the first word above is the server and model only; a press also no longer waits for the "Them" socket to catch up (238 ms median, 300 ms at p90, measured 27 Nov, `docs/investigations/2026-11-27-them-speaker-labels.md`).
+
+### Full suite on the candidate (28 Nov 2026): gate fails, not released
+
+`eval:answers --guard`, 111 scenarios × 2 runs, same machine and day; production (`main` @ 137a5f9) 8.68, candidate 8.55. Groups (mean of scenario totals, production → candidate): answers 8.93 → 9.23; screenshots 8.83 → 9.17; lessons 9.50 → 9.25; preferences 8.63 → 9.00; call-style 9.00 → 8.63; adaptive 8.33 → 8.17; missing-info 7.19 → 7.38; hallucination-bait 6.83 → 5.92; consistency 9.67 → 9.83; ask-kite 9.67 → 9.50; cv-embellishment 6.38 → 5.50; answer-length 9.25 → 9.50; question-detection 9.58 → 9.35; screenshot-types 9.64 → 8.71; company-star 8.83 → 9.00; screen-only 9.29 → 9.57. Grader found nothing invented 163 → 159 of 222; no number outside the documents and call 208 → 205. The suite has no key presses, so the drops come from the prompt edits (ADR-0133's contract paragraph and ADR-0134's softened rules): asking for a confident reply every time costs the honesty groups. Spend $0.77 + $0.79.
+
+### The release without prompt changes (28 Nov 2026): prompts proven identical, released
+
+The build released on 28 Nov 2026 (ADR-0132, 0135, 0136, 0137) keeps the contract and live prompt byte for byte. Its full suite: overall 8.63 (production 8.68 the same day), 9 groups lower by up to 0.75; at 4 runs per scenario on those 9 groups (both sides re-run): lessons 9.25 → 9.38, call-style 8.44 → 8.63, adaptive 8.30 → 8.33, hallucination-bait 7.21 → 6.75, consistency 9.58 → 9.50, ask-kite 9.63 → 9.67, cv-embellishment 6.19 → 5.44, question-detection 9.37 → 9.42, screenshot-types 9.39 → 9.14. `eval:answers --prompt-hashes` (new: one SHA-256 per prompt, no request) gave the same 114 hashes for the 111 scenarios in production's checkout and in the build, so these differences are run-to-run noise, not the build. Spend: $0.77 (full suite) + about $3.70 (4-run re-checks).

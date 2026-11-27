@@ -1,0 +1,44 @@
+{
+  "id": "p10-earlier-question-answered-by-user",
+  "category": "answered",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "What industries do you mostly work with?",
+      "start": 1500,
+      "end": 1503
+    },
+    {
+      "speaker": "you",
+      "text": "Mostly logistics and retail. We've done a lot of route planning and stock forecasting work.",
+      "start": 1504,
+      "end": 1512
+    },
+    {
+      "speaker": "them",
+      "text": "Nice. And how big is the team that would work with us?",
+      "start": 1513,
+      "end": 1517
+    }
+  ],
+  "press": 1518,
+  "expect": {
+    "open": [["team", "people", "engineers", "size"]],
+    "question": ["team"],
+    "forbidden": ["\\b\\d+\\s*(?:people|engineers|developers|consultants|person)\\b"]
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "id": "p19-new-question-after-a-card",
+  "category": "single",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "What tools do you use for project tracking?",
+      "start": 2400,
+      "end": 2403
+    },
+    {
+      "speaker": "you",
+      "text": "We mostly use a shared board and a weekly roadmap.",
+      "start": 2405,
+      "end": 2409
+    },
+    {
+      "speaker": "them",
+      "text": "Got it. How do you report progress to the client each week?",
+      "start": 2412,
+      "end": 2416
+    }
+  ],
+  "answeredEnd": 2403,
+  "press": 2417,
+  "expect": {
+    "open": [["report", "progress", "weekly", "each week", "update"]],
+    "question": ["progress", "report"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

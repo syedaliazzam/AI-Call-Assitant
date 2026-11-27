@@ -24,6 +24,9 @@ import {
   unansweredSpeech,
 } from '@/core/answer/newestQuestion';
 import type { AnsweredQuestion } from '@/core/answer/autoAnswer';
+
+/** The press time in the chooseNewest tests: after every line below (capture clock, ms). */
+const NOW = 20_000;
 import { createTranscript, type Utterance } from '@/core/transcript/transcript';
 
 /**
@@ -108,7 +111,7 @@ describe('chooseNewest (a press, after catching up)', () => {
       line('u1', 'them', 'What is your notice period?', 1_000, 3_000),
       line('u2', 'them', 'And how do you handle conflict?', 3_500, 6_000),
     ];
-    const choice = chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1' });
+    const choice = chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1', now: NOW });
     expect(choice).toMatchObject({
       kind: 'answer',
       text: 'And how do you handle conflict?',
@@ -128,7 +131,7 @@ describe('chooseNewest (a press, after catching up)', () => {
         ],
       }),
     ];
-    const choice = chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1' });
+    const choice = chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1', now: NOW });
     expect(choice).toMatchObject({
       kind: 'answer',
       text: 'Why do you want to leave?',
@@ -143,7 +146,7 @@ describe('chooseNewest (a press, after catching up)', () => {
         final: false,
       },
     ];
-    expect(chooseNewest({ lines, answeredEnd: null, lastAnswerId: null })).toMatchObject({
+    expect(chooseNewest({ lines, answeredEnd: null, lastAnswerId: null, now: NOW })).toMatchObject({
       kind: 'answer',
       grey: true,
     });
@@ -154,17 +157,17 @@ describe('chooseNewest (a press, after catching up)', () => {
       line('u1', 'them', 'How do you test your code?', 1_000, 3_000),
       line('u2', 'them', 'Our team ships every week.', 8_000, 10_000),
     ];
-    const choice = chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1' });
+    const choice = chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1', now: NOW });
     expect(choice).toMatchObject({ kind: 'answer', text: 'Our team ships every week.' });
   });
 
   it('rule 4: nothing new since the last card shows that card; nothing at all is "none"', () => {
     const lines = [line('u1', 'them', 'How do you test your code?', 1_000, 3_000)];
-    expect(chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1' })).toEqual({
+    expect(chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1', now: NOW })).toEqual({
       kind: 'show-existing',
       answerId: 'a1',
     });
-    expect(chooseNewest({ lines: [], answeredEnd: null, lastAnswerId: null })).toEqual({
+    expect(chooseNewest({ lines: [], answeredEnd: null, lastAnswerId: null, now: NOW })).toEqual({
       kind: 'none',
     });
   });
@@ -174,11 +177,13 @@ describe('chooseNewest (a press, after catching up)', () => {
       line('u1', 'them', 'How do you test your code?', 1_000, 3_000),
       line('u2', 'them', 'Okay.', 9_000, 9_400),
     ];
-    expect(chooseNewest({ lines: okay, answeredEnd: 3_000, lastAnswerId: 'a1' }).kind).toBe(
-      'show-existing',
-    );
+    expect(
+      chooseNewest({ lines: okay, answeredEnd: 3_000, lastAnswerId: 'a1', now: NOW }).kind,
+    ).toBe('show-existing');
     const why = [...okay.slice(0, 1), line('u2', 'them', 'Why Go?', 9_000, 9_600)];
-    expect(chooseNewest({ lines: why, answeredEnd: 3_000, lastAnswerId: 'a1' })).toMatchObject({
+    expect(
+      chooseNewest({ lines: why, answeredEnd: 3_000, lastAnswerId: 'a1', now: NOW }),
+    ).toMatchObject({
       kind: 'answer',
       text: 'Why Go?',
     });
@@ -190,13 +195,20 @@ describe('chooseNewest (a press, after catching up)', () => {
       line('u2', 'you', 'I built a payments service for a bank.', 4_000, 8_000),
       line('u3', 'them', 'What was the hardest part?', 9_000, 11_000),
     ];
-    expect(chooseNewest({ lines: replied, answeredEnd: null, lastAnswerId: null })).toMatchObject({
-      kind: 'answer',
-      text: 'What was the hardest part?',
+    const withReply = chooseNewest({
+      lines: replied,
+      answeredEnd: null,
+      lastAnswerId: null,
+      now: NOW,
     });
+    expect(withReply).toMatchObject({ kind: 'answer', text: 'What was the hardest part?' });
+    // ADR-0132: the window the press is watched with (device only) holds the same speech of theirs.
+    expect(withReply.kind === 'answer' && withReply.window.themText).toBe(
+      'What was the hardest part?',
+    );
     const backchannel = [replied[0]!, line('u2', 'you', 'Mm-hm.', 3_200, 3_500), replied[2]!];
     expect(
-      chooseNewest({ lines: backchannel, answeredEnd: null, lastAnswerId: null }),
+      chooseNewest({ lines: backchannel, answeredEnd: null, lastAnswerId: null, now: NOW }),
     ).toMatchObject({
       text: 'Tell me about your last project. What was the hardest part?',
     });
@@ -210,7 +222,9 @@ describe('chooseNewest (a press, after catching up)', () => {
       ),
       line('u2', 'you', 'So the project was big', 2_000, 4_000),
     ];
-    expect(chooseNewest({ lines: over, answeredEnd: null, lastAnswerId: null })).toMatchObject({
+    expect(
+      chooseNewest({ lines: over, answeredEnd: null, lastAnswerId: null, now: NOW }),
+    ).toMatchObject({
       kind: 'answer',
       lineIds: ['u1'],
     });
@@ -223,17 +237,19 @@ describe('chooseNewest (a press, after catching up)', () => {
     ];
     // Never notice-only: the words before the gap are answered, the card notes the lost audio, and the
     // span reaches the gap's end so a second press does not answer the same gap again.
-    expect(chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1' })).toEqual({
-      kind: 'answer',
-      text: 'How do you test your code?',
-      lineIds: ['u1'],
-      span: { start: 1_000, end: 9_000 },
-      grey: false,
-      words: 6,
-      segments: 1,
-      audioLost: true,
-    });
-    expect(chooseNewest({ lines, answeredEnd: 9_000, lastAnswerId: 'a2' })).toEqual({
+    expect(chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1', now: NOW })).toMatchObject(
+      {
+        kind: 'answer',
+        text: 'How do you test your code?',
+        lineIds: ['u1'],
+        span: { start: 1_000, end: 9_000 },
+        grey: false,
+        words: 6,
+        segments: 1,
+        audioLost: true,
+      },
+    );
+    expect(chooseNewest({ lines, answeredEnd: 9_000, lastAnswerId: 'a2', now: NOW })).toEqual({
       kind: 'show-existing',
       answerId: 'a2',
     });
@@ -245,17 +261,19 @@ describe('chooseNewest (a press, after catching up)', () => {
       line('g1', 'them', '[audio gap]', 5_000, 9_000, { gap: true }),
       line('u2', 'them', 'and in production', 9_000, 10_000),
     ];
-    expect(chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1' })).toMatchObject({
-      kind: 'answer',
-      text: 'and in production',
-      audioLost: true,
-    });
+    expect(chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1', now: NOW })).toMatchObject(
+      {
+        kind: 'answer',
+        text: 'and in production',
+        audioLost: true,
+      },
+    );
     // Their words ended long before the gap (more than GAP_CONTEXT_MS): nothing to answer around it.
     const old = [
       line('u1', 'them', 'How do you test your code?', 1_000, 3_000),
       line('g1', 'them', '[audio gap]', 20_000, 24_000, { gap: true }),
     ];
-    expect(chooseNewest({ lines: old, answeredEnd: 3_000, lastAnswerId: 'a1' })).toEqual({
+    expect(chooseNewest({ lines: old, answeredEnd: 3_000, lastAnswerId: 'a1', now: NOW })).toEqual({
       kind: 'gap',
     });
     // A gap before the user's reply is old news: the reply ended that exchange.
@@ -264,7 +282,9 @@ describe('chooseNewest (a press, after catching up)', () => {
       line('g1', 'them', '[audio gap]', 3_000, 4_000, { gap: true }),
       line('y1', 'you', 'I write unit tests first.', 5_000, 7_000),
     ];
-    expect(chooseNewest({ lines: replied, answeredEnd: 3_000, lastAnswerId: 'a1' })).toEqual({
+    expect(
+      chooseNewest({ lines: replied, answeredEnd: 3_000, lastAnswerId: 'a1', now: NOW }),
+    ).toEqual({
       kind: 'show-existing',
       answerId: 'a1',
     });
@@ -276,10 +296,14 @@ describe('chooseNewest (a press, after catching up)', () => {
       line('u2', 'them', 'And what about caching?', 3_800, 5_000),
     ];
     // The re-ask moved the answered end to 5.0 s; the cards of their own end at 3.0 s.
-    expect(chooseNewest({ lines, answeredEnd: 5_000, lastAnswerId: 'card-1' })).toMatchObject({
+    expect(
+      chooseNewest({ lines, answeredEnd: 5_000, lastAnswerId: 'card-1', now: NOW }),
+    ).toMatchObject({
       kind: 'show-existing',
     });
-    expect(chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'card-1' })).toMatchObject({
+    expect(
+      chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'card-1', now: NOW }),
+    ).toMatchObject({
       kind: 'answer',
       text: 'And what about caching?',
       lineIds: ['u2'],

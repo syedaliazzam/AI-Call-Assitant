@@ -1,0 +1,35 @@
+{
+  "id": "p20-two-questions-in-long-talk",
+  "category": "multi",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "So once we're live, we run the checks against real traffic and look at the scores, and then we decide what to fix next. We'd want to use your write-up of the process for that, step by step. What do you call that step, the scoring step, is that the judge? I might be mixing up the terms. But are we on the same page that we'd run the first one of those together?",
+      "start": 2500,
+      "end": 2532
+    }
+  ],
+  "press": 2533,
+  "expect": {
+    "open": [
+      ["judge", "scoring", "term", "call"],
+      ["together", "same page", "jointly", "first one"]
+    ],
+    "question": ["together", "same page", "judge"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

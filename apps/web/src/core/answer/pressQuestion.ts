@@ -7,8 +7,9 @@
  *          In order:
  *          1. New plain words that only continue the question just answered are asked again on its card
  *             (v1.4, ADR-0062).
- *          2. The other person is still asking: their newest grey line is new and not yet a question (a
- *             "Next question." or a first clause): the press waits for it, up to PRESS_WAIT_MS.
+ *          2. ADR-0132: a press never waits for the other person to finish (it waited up to 8 s for a grey
+ *             line that was not yet a question): their grey words are answered at once, and the card is
+ *             asked again when they go on (the continuation rule, autoAnswer.ts).
  *          3. The unanswered question since the user's last real reply, grey words included.
  *          4. Otherwise the newest real question of the call; talk about the call ("can you repeat that
  *             last part?"), greetings and remarks look back to it. When it was answered already, the
@@ -25,9 +26,6 @@ import { lastReplyIndex } from '../transcript/question';
 import { lineKind, pickQuestion, type PickedQuestion } from '../transcript/questionKind';
 import { readableLine, type Utterance } from '../transcript/transcript';
 import { CONTINUE_WINDOW_MS, continuationOf, type AnsweredQuestion } from './autoAnswer';
-
-/** How long a press waits for a question the other person is still asking, ms. */
-export const PRESS_WAIT_MS = 8_000;
 
 /** What a press does. */
 export type PressChoice =
@@ -46,10 +44,6 @@ export type PressChoice =
       partOfLines: boolean;
       /** True when some of its words are still grey. */
       grey: boolean;
-    }
-  | {
-      /** The other person is still asking: try again when the transcript changes. */
-      kind: 'wait';
     }
   | {
       /** The latest words look like noise. */
@@ -74,8 +68,6 @@ export interface PressInput {
   last: AnsweredQuestion | null;
   /** The current time (Unix ms, the lines' clock). */
   now: number;
-  /** When this press began waiting (choice 'wait'), or null for a new press. */
-  waitingSince?: number | null;
 }
 
 /**
@@ -114,7 +106,7 @@ function fromPicked(
  * Called from: useLiveAnswers.ts ask(); the real-call replay; tests
  */
 export function choosePress(input: PressInput): PressChoice {
-  const { answeredLineIds: answered, last, now } = input;
+  const { answeredLineIds: answered, last } = input;
   // 1.5.2 (ADR-0070): lines are read with the punctuation model's marks when they have no marks yet.
   const lines = input.lines.map(readableLine);
   const spoken = lines.filter((line) => line.text.trim() !== '' && !line.nonEnglish);
@@ -136,21 +128,6 @@ export function choosePress(input: PressInput): PressChoice {
         grey: whole.some((line) => !line.final),
       };
     }
-  }
-
-  // 2. Still being asked: their newest words are grey, new, and not a question yet. Two grey words ("Next
-  // question") are the start of one, not a listening sound: they are waited for too (a real "mm-hm" ends
-  // within a second or so, and the press then goes on as below).
-  const newestThem = spoken.findLast((line) => line.speaker === 'them');
-  const waitedEnough = input.waitingSince != null && now - input.waitingSince >= PRESS_WAIT_MS;
-  if (
-    newestThem &&
-    !newestThem.final &&
-    !answered.has(newestThem.id) &&
-    lineKind(newestThem.text) !== 'question' &&
-    !waitedEnough
-  ) {
-    return { kind: 'wait' };
   }
 
   // 3. The unanswered part of what they said since the user's last real reply.

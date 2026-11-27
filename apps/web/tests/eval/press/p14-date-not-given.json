@@ -1,0 +1,36 @@
+{
+  "id": "p14-date-not-given",
+  "category": "nodocs",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "If we sign this week, can you start on December seventh?",
+      "start": 1900,
+      "end": 1904
+    }
+  ],
+  "press": 1905,
+  "expect": {
+    "open": [["start", "date", "December", "seventh", "timing"]],
+    "question": ["start", "December"],
+    "forbidden": [
+      "^\\s*yes\\b",
+      "\\byes\\b[^.]*\\b(?:December|seventh|7th)",
+      "\\bwe can (?:start|begin) on\\b"
+    ]
+  }
+}

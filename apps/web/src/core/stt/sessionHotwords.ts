@@ -313,11 +313,13 @@ export function hotwordsText(hotwords: readonly Hotword[]): string {
 export const MAX_KEYTERMS = 100;
 
 /**
- * Batch D (P1-F): the most characters all keyterms may have together. Deepgram counts keyterms in tokens
- * (a few hundred at most per request); 1,500 characters stays well inside that, so a session with long
- * terms loses its last terms instead of failing the handshake (which would drop every keyterm).
+ * Batch D (P1-F): the most characters all keyterms may have together. Deepgram allows 500 tokens across all
+ * keyterms on both Flux and Nova-3 (https://developers.deepgram.com/docs/keyterm, read 27 Nov 2026), and a
+ * name is often one token per three characters or fewer. ADR-0136 lowered this from 1,500 to 1,200 (about
+ * 400 tokens at three characters a token), so a session with long terms loses its last terms instead of
+ * failing the handshake (which would drop every keyterm) or, with Configure, stopping the transcript.
  */
-export const MAX_KEYTERM_CHARS = 1_500;
+export const MAX_KEYTERM_CHARS = 1_200;
 
 /** Batch D (P1-F): the most single capitalised words from the documents (after the multi-word terms). */
 export const MAX_SINGLE_WORD_TERMS = 30;
@@ -373,6 +375,66 @@ export function extractSingleWordTerms(texts: readonly string[]): string[] {
     .map((entry) => entry.word);
 }
 
+/** ADR-0136: the most terms taken from the session's own instructions and description. */
+export const MAX_INSTRUCTION_TERMS = 20;
+
+/** ADR-0136: a word with a capital or a digit inside it ("LangFuse", "BM25", "iPhone"): a name, not grammar. */
+const INNER_MARK = /^[A-Za-z]+[A-Z0-9][A-Za-z0-9]*$/;
+
+/**
+ * ADR-0136: names, products and acronyms the user wrote in the session's instructions and description. The
+ * user typed these once, so (unlike documents, extractDocumentTerms) one mention is enough: acronyms
+ * ("SOW", "SSO"), words with a capital or digit inside ("LangFuse", "BM25"), and runs of capitalised words
+ * inside a sentence ("Northwind Freight", "Priya"); a capitalised word only at a sentence start is grammar,
+ * and common words are left out.
+ *
+ * @param texts The session's instructions and description.
+ * @returns The terms as written, in order of first mention, at most MAX_INSTRUCTION_TERMS.
+ * Called from: buildKeyterms(); tests
+ */
+export function extractInstructionTerms(texts: readonly string[]): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  const add = (term: string) => {
+    const key = term.toLowerCase();
+    if (term.length < 2 || seen.has(key) || result.length >= MAX_INSTRUCTION_TERMS) return;
+    seen.add(key);
+    result.push(term);
+  };
+  for (const text of texts) {
+    for (const sentence of text.split(/[.!?:;\n]+/)) {
+      const words = sentence
+        .split(/\s+/)
+        .map((token) => token.replace(/^[("“'[]+|[)"”'\],]+$/g, '').replace(/['’]s$/, ''))
+        .filter(Boolean);
+      let run: string[] = [];
+      const endRun = () => {
+        if (run.length > 0 && run.length <= MAX_PHRASE_WORDS) add(run.join(' '));
+        run = [];
+      };
+      words.forEach((word, index) => {
+        const key = word.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        // Common words, also in capitals ("US", "OK", "AM", "ID"), are never names.
+        if (COMMON_WORDS.has(key)) {
+          endRun();
+          return;
+        }
+        if (ACRONYM.test(word) || (INNER_MARK.test(word) && /[A-Z0-9]/.test(word.slice(1)))) {
+          endRun();
+          add(word);
+          return;
+        }
+        const name = CAPITALISED.test(word) && word.length >= 2;
+        // Inside a sentence only: a capital at the start is grammar ("Please", "Keep").
+        if (name && index > 0) run.push(word);
+        else endRun();
+      });
+      endRun();
+    }
+  }
+  return result;
+}
+
 /**
  * Batch D (P1-F): the first name in an account's display name ("Sam Rivera" → "Sam"), for the keyterms.
  *
@@ -417,11 +479,13 @@ function readableTerm(phrase: string): string {
  *
  * Priority (Batch D, P1-F, ADR-0079): 1. the session's Key terms field (the user's own list always comes
  * first); 2. the signed-in user's first name; 3. the session's contact name (the 14 Nov call heard the
- * user's name as "zone": no name was ever a keyterm); 4. company; 5. role or topic; 6. the Interview
- * vocabulary; 7. names and acronyms that repeat in the documents; 8. single capitalised words that repeat
- * in the documents (extractSingleWordTerms: "Freshdesk", "Toptal").
+ * user's name as "zone": no name was ever a keyterm); 4. company; 5. role or topic; 6. ADR-0136: names,
+ * products and acronyms written in the session's instructions and description (extractInstructionTerms);
+ * 7. the Interview vocabulary; 8. names and acronyms that repeat in the documents; 9. single capitalised
+ * words that repeat in the documents (extractSingleWordTerms: "Freshdesk", "Toptal").
  *
- * @param session   The session (its key terms, contact name, company, role and type are used).
+ * @param session   The session (its key terms, contact name, company, role, type, instructions and
+ *                  description are used).
  * @param documents The session's documents.
  * @param people    Batch D: the signed-in user's first name (optional; '' or absent adds nothing).
  * @returns The keyterms, highest priority first.
@@ -429,7 +493,7 @@ function readableTerm(phrase: string): string {
  */
 export function buildKeyterms(
   session: Pick<Session, 'company' | 'role' | 'preferences'> &
-    Partial<Pick<Session, 'type' | 'contactName'>>,
+    Partial<Pick<Session, 'type' | 'contactName' | 'instructions' | 'description'>>,
   documents: readonly Pick<StoredDocument, 'text'>[],
   people: KeytermPeople = {},
 ): string[] {
@@ -461,6 +525,13 @@ export function buildKeyterms(
   add(session.contactName);
   add(session.company);
   add(session.role);
+  // ADR-0136: names, products and acronyms the user wrote in the session's instructions and description.
+  for (const term of extractInstructionTerms([
+    session.instructions ?? '',
+    session.description ?? '',
+  ])) {
+    add(term);
+  }
   if (session.type === 'interview') for (const term of INTERVIEW_TECH_TERMS) add(term);
   const texts = documents.map((document) => document.text);
   const documentTerms = extractDocumentTerms(texts);

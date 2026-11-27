@@ -33,6 +33,12 @@
  *
  * Pure: the caller passes the lines, what was answered and the time. Text is never logged.
  */
+import {
+  MAX_PRESS_WINDOW_ITEMS,
+  MAX_PRESS_WINDOW_WORDS,
+  PRESS_WINDOW_MS,
+  type Speaker,
+} from '@kite/shared';
 import { isBlip } from '../transcript/blip';
 import { looksUnfinished } from '../transcript/complete';
 import { lastReplyIndex } from '../transcript/question';
@@ -49,8 +55,33 @@ import {
   type AnsweredQuestion,
 } from './autoAnswer';
 
-/** Rule 2: the longest a press waits for the other side to be transcribed up to the press, ms. */
+/**
+ * Rule 2: the longest a press waits for the other side to be transcribed up to the press, ms. ADR-0132: a
+ * press no longer waits (it answers at once with the words there are, and is updated once when the other
+ * person goes on); the constant stays for the cloud engine's catchUp() and the voice question.
+ */
 export const CATCH_UP_CAP_MS = 300;
+
+/**
+ * ADR-0132: the other person counts as still speaking at a press when their newest words ended less than
+ * this long before it (speech recognition is about a second behind) or are still grey, ms.
+ */
+export const SPEAKING_GAP_MS = 2_000;
+
+/**
+ * ADR-0132: a press made while the other person was speaking is updated once when they went on: their new
+ * words must start within this long after the press, ms (later words are the next question: press again).
+ */
+export const PRESS_UPDATE_START_MS = 2_000;
+
+/** ADR-0132: the update must be due (their turn over) within this long after the press, or it is dropped, ms. */
+export const PRESS_UPDATE_MAX_MS = 8_000;
+
+/**
+ * ADR-0133: a stretch that began before the window and goes on into it is included (its words from the
+ * window's start, by time) only when at least this much of it is inside the window, ms.
+ */
+const STRADDLE_MIN_MS = 1_000;
 
 /** Rule 7 / G2: "Finishing the question…" shows only when the wait lasts longer than this, ms. */
 export const FINISHING_NOTICE_AFTER_MS = 150;
@@ -202,6 +233,139 @@ function asQuestion(candidates: readonly Candidate[]): {
   };
 }
 
+/** ADR-0133: one stretch of a press's window, on the capture clock. */
+export interface WindowStretch {
+  /** Who spoke. */
+  speaker: Speaker;
+  /** The words. Never logged. */
+  text: string;
+  /** When it started (capture clock, Unix ms). */
+  tStart: number;
+  /** When it ended (capture clock, Unix ms). */
+  tEnd: number;
+  /** True when some of it was still grey. */
+  live: boolean;
+}
+
+/** ADR-0133: what was said since the last answer, both sides, as a press sends it. */
+export interface PressWindow {
+  /** Where it starts (capture clock): the end of the newest answered speech, at most PRESS_WINDOW_MS back. */
+  from: number;
+  /** The stretches, oldest first, same-speaker neighbours joined, the newest MAX_PRESS_WINDOW_WORDS words. */
+  stretches: WindowStretch[];
+  /** The other side's words in it (the newest MAX_NEWEST_WORDS), for the card and the document search. */
+  themText: string;
+  /** How many words of the other side it holds. */
+  themWords: number;
+  /** The other side's lines it draws on, oldest first. */
+  themLineIds: string[];
+  /** The other side's speech in it, or null when they said nothing in it. */
+  themSpan: AnsweredSpeech | null;
+  /** True when some of the other side's words were still grey. */
+  grey: boolean;
+  /** ADR-0132: the other side was still speaking at the press. */
+  speaking: boolean;
+}
+
+/**
+ * The words of a stretch from a time on: all of them when it starts there, the later share (by time) when
+ * it began earlier, none when too little of it is after that time (ADR-0133). A long turn the engine keeps
+ * as one stretch (a Flux turn of three minutes) is cut where the window starts, so the words answered
+ * before are not sent as new.
+ *
+ * @param segment The stretch.
+ * @param from    The window's start (capture clock).
+ * @returns Its words from then on ('' for none).
+ */
+function wordsFrom(segment: Segment, from: number): string {
+  if (segment.tStart >= from) return segment.text.trim();
+  if (segment.tEnd - from < STRADDLE_MIN_MS) return '';
+  const words = segment.text.trim().split(/\s+/).filter(Boolean);
+  const share = (from - segment.tStart) / Math.max(1, segment.tEnd - segment.tStart);
+  return words.slice(Math.round(words.length * share)).join(' ');
+}
+
+/**
+ * ADR-0133: the window a key press sends: everything both sides said since the newest answered speech
+ * ended (at most PRESS_WINDOW_MS back), so the model can find every open question in it and see which ones
+ * the user already answered out loud. Listening sounds ("mm-hm") and lost-audio marks are left out; words
+ * still grey are included (ADR-0132: a press never waits for them).
+ *
+ * @param lines       The visible lines (noise left out by the caller), in order.
+ * @param answeredEnd The end of the newest speech answered on a card of its own, or null.
+ * @param now         The press time (capture clock, Unix ms).
+ * @returns The window.
+ * Called from: chooseNewest(), pressUpdateDue(); useLiveAnswers.ts (legacy rules); tests
+ */
+export function pressWindow(
+  lines: readonly Utterance[],
+  answeredEnd: number | null,
+  now: number,
+): PressWindow {
+  const from = Math.max(answeredEnd ?? Number.NEGATIVE_INFINITY, now - PRESS_WINDOW_MS);
+  const raw: (WindowStretch & { lineId: string })[] = [];
+  for (const line of spokenLines(lines)) {
+    for (const segment of segmentsOf(line)) {
+      if (segment.tEnd <= from) continue;
+      const text = wordsFrom(segment, from);
+      if (text === '' || onlyListening(text)) continue;
+      raw.push({
+        lineId: line.id,
+        speaker: line.speaker,
+        text,
+        tStart: Math.max(segment.tStart, from),
+        tEnd: segment.tEnd,
+        live: !line.final,
+      });
+    }
+  }
+  // Time order across both sides (a stable sort keeps a line's own order).
+  raw.sort((a, b) => a.tStart - b.tStart);
+  const themRaw = raw.filter((stretch) => stretch.speaker === 'them');
+  // Same-speaker neighbours read as one turn.
+  const joined: WindowStretch[] = [];
+  for (const { lineId: _lineId, ...stretch } of raw) {
+    const previous = joined.at(-1);
+    if (previous && previous.speaker === stretch.speaker) {
+      previous.text = `${previous.text} ${stretch.text}`;
+      previous.tEnd = Math.max(previous.tEnd, stretch.tEnd);
+      previous.live ||= stretch.live;
+    } else joined.push({ ...stretch });
+  }
+  // The newest MAX_PRESS_WINDOW_WORDS words and MAX_PRESS_WINDOW_ITEMS stretches (the oldest words go first).
+  let budget = MAX_PRESS_WINDOW_WORDS;
+  const kept: WindowStretch[] = [];
+  for (const stretch of [...joined].reverse()) {
+    if (budget <= 0 || kept.length >= MAX_PRESS_WINDOW_ITEMS) break;
+    const words = stretch.text.split(/\s+/).filter(Boolean);
+    kept.unshift({ ...stretch, text: words.slice(-budget).join(' ') });
+    budget -= words.length;
+  }
+  const themWordList = themRaw
+    .map((stretch) => stretch.text)
+    .join(' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  const newestThem = spokenLines(lines).findLast((line) => line.speaker === 'them');
+  return {
+    from,
+    stretches: kept,
+    themText: themWordList.slice(-MAX_NEWEST_WORDS).join(' '),
+    themWords: themWordList.length,
+    themLineIds: [...new Set(themRaw.map((stretch) => stretch.lineId))],
+    themSpan:
+      themRaw.length > 0
+        ? {
+            start: Math.min(...themRaw.map((stretch) => stretch.tStart)),
+            end: Math.max(...themRaw.map((stretch) => stretch.tEnd)),
+          }
+        : null,
+    grey: themRaw.some((stretch) => stretch.live),
+    speaking:
+      newestThem !== undefined && (!newestThem.final || now - newestThem.tEnd < SPEAKING_GAP_MS),
+  };
+}
+
 /** What a press does (rules 3, 4, 7, 8). */
 export type NewestChoice =
   | {
@@ -224,6 +388,8 @@ export type NewestChoice =
        * The span then reaches the end of the gap, so the next press does not answer the same gap again.
        */
       audioLost?: boolean;
+      /** ADR-0132: the window the press is watched with (device only; never sent). */
+      window: PressWindow;
     }
   | {
       /** Nothing new since the last card: show it ("Showing the earlier answer" / "Already answering"). */
@@ -252,6 +418,8 @@ export interface NewestInput {
   answeredEnd: number | null;
   /** The newest card for speech in this call, or null. */
   lastAnswerId: string | null;
+  /** ADR-0133: the press time (capture clock, Unix ms); the window reaches at most PRESS_WINDOW_MS back. */
+  now: number;
 }
 
 /**
@@ -290,7 +458,10 @@ export function chooseNewest(input: NewestInput): NewestChoice {
   const words = candidates.length > 0 ? candidates : gap ? aroundGap(input.lines, gap) : [];
   if (words.length > 0) {
     const question = asQuestion(words);
-    if (!gap) return { kind: 'answer', ...question, segments: words.length };
+    // ADR-0132: the same stretch as the window the press is watched with (whether they were still speaking,
+    // and how many of their words were sent). Only the device uses it; the request is production's.
+    const window = pressWindow(input.lines, Math.min(from, question.span.start - 1), input.now);
+    if (!gap) return { kind: 'answer', ...question, segments: words.length, window };
     return {
       kind: 'answer',
       ...question,
@@ -298,11 +469,93 @@ export function chooseNewest(input: NewestInput): NewestChoice {
       span: { start: question.span.start, end: Math.max(question.span.end, gap.tEnd) },
       segments: words.length,
       audioLost: true,
+      window,
     };
   }
   if (gap) return { kind: 'gap' };
   if (input.lastAnswerId) return { kind: 'show-existing', answerId: input.lastAnswerId };
   return { kind: 'none' };
+}
+
+/** ADR-0132: a press made while the other person was still speaking, watched for one update. */
+export interface PressWatch {
+  /** The press's card. */
+  answerId: string;
+  /** When the key was pressed (capture clock, Unix ms). */
+  pressedAt: number;
+  /** The press window's start (capture clock), so the update reads the same window. */
+  from: number;
+  /** How many words of the other side the press sent. */
+  themWords: number;
+  /** When the other side's newest words sent with the press ended (capture clock). */
+  themEnd: number;
+}
+
+/** ADR-0132: what to do with a watched press now. */
+export type PressUpdate =
+  | {
+      /** Their turn is not over yet (or nothing new): look again later. */
+      kind: 'wait';
+    }
+  | {
+      /** No update: the user is speaking, the new words came too late, or the watch ran out. */
+      kind: 'stop';
+      /** Why (for the trace). */
+      reason: 'user-spoke' | 'late' | 'expired';
+    }
+  | {
+      /** Ask again once, on the same card, with the window as it is now. */
+      kind: 'update';
+      /** The window now. */
+      window: PressWindow;
+    };
+
+/**
+ * ADR-0132: whether a press made while the other person was speaking should be asked again now. A press
+ * answers at once with the words there are; when the other person went on (their new words started within
+ * PRESS_UPDATE_START_MS of the press) and their turn is now over, the card is asked once more with the
+ * whole window, in place. Nothing happens once the user speaks (they may be reading the answer out), or
+ * after PRESS_UPDATE_MAX_MS.
+ *
+ * @param watch The press.
+ * @param lines The visible lines (noise left out), in order.
+ * @param now   The current time (capture clock, Unix ms).
+ * @returns See PressUpdate.
+ * Called from: useLiveAnswers.ts (on each transcript change and a short timer while a press is watched); tests
+ */
+export function pressUpdateDue(
+  watch: PressWatch,
+  lines: readonly Utterance[],
+  now: number,
+): PressUpdate {
+  if (now - watch.pressedAt > PRESS_UPDATE_MAX_MS) return { kind: 'stop', reason: 'expired' };
+  const spoken = spokenLines(lines);
+  // The user started speaking after the press: never change the answer under them.
+  const userSpoke = spoken.some(
+    (line) =>
+      line.speaker === 'you' &&
+      line.tStart >= watch.pressedAt &&
+      line.text.trim().split(/\s+/).length >= 3 &&
+      !isBlip(line.text),
+  );
+  if (userSpoke) return { kind: 'stop', reason: 'user-spoke' };
+  const window = pressWindow(lines, watch.from, now);
+  if (window.themWords <= watch.themWords) return { kind: 'wait' };
+  // Their words after the ones sent: they went on at once, or started something new later.
+  const fresh = spoken
+    .filter((line) => line.speaker === 'them')
+    .flatMap((line) => segmentsOf(line))
+    .filter((segment) => segment.tEnd > watch.themEnd && !onlyListening(segment.text));
+  if (fresh.length === 0) return { kind: 'wait' };
+  const firstStart = Math.min(...fresh.map((segment) => Math.max(segment.tStart, watch.themEnd)));
+  if (firstStart > watch.pressedAt + PRESS_UPDATE_START_MS) return { kind: 'stop', reason: 'late' };
+  // Their turn must be over: no grey words, and the pause after their newest line (none at Flux's end of
+  // turn).
+  const newestThem = spoken.findLast((line) => line.speaker === 'them');
+  if (!newestThem || !newestThem.final || now - newestThem.tEnd < pauseAfter(newestThem)) {
+    return { kind: 'wait' };
+  }
+  return { kind: 'update', window };
 }
 
 /** What auto-answer (rule 9) and the re-ask (rule 6) need to know. */

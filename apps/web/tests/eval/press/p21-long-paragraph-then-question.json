@@ -1,0 +1,32 @@
+{
+  "id": "p21-long-paragraph-then-question",
+  "category": "single",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "Let me give you the full picture first. Our warehouse runs two shifts. The day shift handles inbound trucks and the night shift does all the picking for next-day orders. Most of our errors happen on the night shift, because that team is half temps and the scanners there are older. Last quarter we had a spike in wrong items shipped, and almost all of it traced back to nights. Management wants a fix before the holiday peak. Given all that, where would you focus first?",
+      "start": 2600,
+      "end": 2640
+    }
+  ],
+  "press": 2641,
+  "expect": {
+    "open": [["night"]],
+    "question": ["focus", "first", "where"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

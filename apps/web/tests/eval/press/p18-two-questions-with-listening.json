@@ -1,0 +1,47 @@
+{
+  "id": "p18-two-questions-with-listening",
+  "category": "multi",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "How do you usually test changes before they go live?",
+      "start": 2300,
+      "end": 2304
+    },
+    {
+      "speaker": "you",
+      "text": "Mm-hm.",
+      "start": 2304.5,
+      "end": 2305
+    },
+    {
+      "speaker": "them",
+      "text": "And who would be our main point of contact during the project?",
+      "start": 2306,
+      "end": 2310
+    }
+  ],
+  "press": 2311,
+  "expect": {
+    "open": [
+      ["test", "staging", "review", "check"],
+      ["contact", "point of contact", "main"]
+    ],
+    "question": ["contact", "test"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}
