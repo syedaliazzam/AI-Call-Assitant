@@ -363,9 +363,9 @@ Macs pick it up at their next check (start, or every 6 hours) and ask to restart
 
 ### Cost and time
 
-- **One build takes about 15–25 minutes**, measured on nothing yet; the first dry run will tell. Most of it is installing both Mac CPUs' packages, downloading the speech model (about 204 MB) and building the universal app.
-- **Free while the repository is public.** GitHub does not count standard runners' minutes for public repositories. On a private repository, macOS minutes count **10×**: about 150–250 minutes of the monthly allowance per build.
-- **Billing note (27 Nov 2026):** this account's Actions jobs stopped starting in November ("recent account payments have failed or your spending limit needs to be increased"; free minutes are back on 1 Dec 2026). Public repositories should not need minutes at all, but whether that account block also stops this public repository's jobs is not known: the first dry run will show it. If the run never starts, wait for 1 Dec 2026 or build on the Mac as before.
+- **One build takes about 7.5 minutes** (measured 27 Nov 2026, first dry run, run 45894538595: 5.5 minutes for build.sh and verify-build.sh, the rest setting up, uploading the artifact and cleaning up). Most of it is installing both Mac CPUs' packages, downloading the speech model (about 204 MB) and building the universal app. Downloading the artifact (about 850 MB) afterwards can take longer than the build.
+- **Free while the repository is public.** GitHub does not count standard runners' minutes for public repositories. On a private repository, macOS minutes count **10×**: about 75 minutes of the monthly allowance per build (7.5 × 10).
+- **Billing note (27 Nov 2026):** this account's Actions jobs stopped starting in November ("recent account payments have failed or your spending limit needs to be increased"; free minutes are back on 1 Dec 2026). The block did not stop this public repository's jobs: the first dry run (27 Nov 2026) ran normally. If a run ever never starts, wait for 1 Dec 2026 or build on the Mac as before.
 
 ### If a cloud build fails
 
