@@ -23,6 +23,8 @@
 import type { AnswerType } from '@kite/shared';
 import { useEffect, useRef, useState } from 'react';
 import type { AnswerRating } from '@/core/storage/types';
+// ADR-0128: the Answer key in words, from the one source (the call window's top bar subscribes to it).
+import { shownKeyLabel } from '@/ui/shownKeys';
 import { answerText, cardQuestion, splitAnswer } from '@/core/answer/format';
 import { stoppedEmpty } from '@/core/answer/history';
 import { sentenceCase, type DisplayTerm } from '@/core/transcript/display';
@@ -425,7 +427,7 @@ export function AnswerPanel(props: AnswerPanelProps) {
           <div className="flex flex-1 flex-col items-center justify-center gap-2 py-10 text-center text-[15px] text-ui-muted">
             <p>No answers yet.</p>
             <p>
-              Press Answer ({props.mac ? '⌘' : 'Ctrl+'}Enter) when they ask something, or type a
+              Press Answer ({shownKeyLabel('answer', props.mac)}) when they ask something, or type a
               message below.
             </p>
           </div>

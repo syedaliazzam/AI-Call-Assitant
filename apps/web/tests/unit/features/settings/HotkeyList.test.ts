@@ -29,7 +29,43 @@ const {
   rowHasConflict,
   rowKeys,
   rowWhere,
+  statusesForView,
 } = await import('@/features/settings/HotkeyList');
+
+describe('the Mac / Windows switch (ADR-0128)', () => {
+  const report: HotkeyStatus[] = [
+    { action: 'answer', accelerator: 'CommandOrControl+Enter', registered: false },
+  ];
+
+  it('uses the desktop app’s report only for this computer’s own set', () => {
+    expect(statusesForView(true, true, report)).toBe(report);
+    expect(statusesForView(false, false, report)).toBe(report);
+    // Viewing the other computer's keys: the table's, and no clash from this app.
+    expect(statusesForView(false, true, report)).toBeNull();
+    expect(statusesForView(true, false, report)).toBeNull();
+  });
+
+  it('lists the Mac’s keys and the Windows keys for the same rows', () => {
+    const mac = hotkeyRowsFor(true, true, true);
+    const windows = hotkeyRowsFor(true, true, false);
+    expect(mac.map((row) => row.label)).toEqual(windows.map((row) => row.label));
+    const answer = (rows: typeof mac) => rows.find((row) => row.actions.includes('answer'))!;
+    expect(hotkeyLabel(rowKeys(answer(mac), null, true), true)).toBe('⌃ ↵');
+    expect(hotkeyLabel(rowKeys(answer(windows), null, false), false)).toBe('Ctrl+↵');
+  });
+
+  it('shows a Mac 1.8.0 app’s previous / next and zoom keys (⌃ ⌥), not the new ones', () => {
+    const rows = hotkeyRowsFor(true, true, true);
+    const row = (action: string) =>
+      rows.find((candidate) => (candidate.actions as readonly string[]).includes(action))!;
+    const mac180: HotkeyStatus[] = [
+      { action: 'prev', accelerator: 'Control+Alt+Left', registered: true },
+      { action: 'zoom-in', accelerator: 'Control+Alt+=', registered: true },
+    ];
+    expect(hotkeyLabel(rowKeys(row('prev'), mac180, true), true)).toBe('⌃ ⌥ ← / →');
+    expect(hotkeyLabel(rowKeys(row('zoom-in'), mac180, true), true)).toBe('⌃ ⌥ = / - / 0');
+  });
+});
 
 /** A status saying the overlay's upward move is taken. */
 const TAKEN: HotkeyStatus[] = [

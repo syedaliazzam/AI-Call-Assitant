@@ -2,7 +2,7 @@
  * File: apps/web/src/ui/SegmentedControl.tsx
  * Purpose: A choice of a few options in one grey track, with the selected segment raised (spec S4:
  *          Session type). Arrow keys move the choice, as in any radio group.
- * Used by: src/features/session-setup/DetailsStep.tsx
+ * Used by: src/features/session-setup/DetailsStep.tsx, src/features/settings/HotkeyList.tsx (ADR-0128: Mac / Windows)
  * Depends on: React
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S4)
  * Theme: tokens from src/ui/tokens/theme.css

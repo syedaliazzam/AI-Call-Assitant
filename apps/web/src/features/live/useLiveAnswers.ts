@@ -68,7 +68,8 @@ import { makePreview, prepareScreenshot } from '@/core/screenshot/prepare';
 import { rateAnswer, reportAnswer, saveAnswer, setAnswerNote } from '@/core/storage/answers';
 import type { AnswerRating, Session, StoredAnswer, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
-import { getPlatform } from '@/platform';
+import { getPlatform, isMacComputer } from '@/platform';
+import { shownKeyLabel } from '@/ui/shownKeys';
 import { callTimings, type AnswerTrigger } from '@/core/live/callTimings';
 import { CaptureError } from '@/platform/errors';
 
@@ -148,9 +149,17 @@ export const SHOWING_EARLIER_NOTICE = 'Showing the earlier answer — nothing ne
 /** ADR-0076 (G3, E3 rule 7): a press while the answer to the same speech is still coming. */
 export const ALREADY_ANSWERING_NOTICE = 'Already answering — the answer is on its way.';
 
-/** ADR-0076 (G3): a press with nothing at all to answer. */
-export const NOTHING_NEW_NOTICE =
-  'Nothing new to answer. Press Answer (Ctrl+Enter) when they ask something, or ask your own question (Ctrl+Shift+Space).';
+/**
+ * ADR-0076 (G3): a press with nothing at all to answer. ADR-0128: the keys come from the one source, so a Mac reads
+ * ⌃ ↵ and ⌃ ⇧ ␣ (this said Ctrl+Enter everywhere until then).
+ *
+ * @param mac True on a Mac.
+ * @returns The notice.
+ * Called from: useLiveAnswers (a press with nothing new); tests
+ */
+export function nothingNewNotice(mac: boolean): string {
+  return `Nothing new to answer. Press Answer (${shownKeyLabel('answer', mac)}) when they ask something, or ask your own question (${shownKeyLabel('chat', mac)}).`;
+}
 
 /** ADR-0076 (E3 rule 8): only lost audio follows the last answer. */
 export const GAP_NOTICE =
@@ -1803,7 +1812,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         );
         return;
       }
-      setNotice(choice.kind === 'gap' ? GAP_NOTICE : NOTHING_NEW_NOTICE);
+      setNotice(choice.kind === 'gap' ? GAP_NOTICE : nothingNewNotice(isMacComputer()));
       decided(choice.kind === 'gap' ? 'gap' : 'nothing-new');
     },
     [ask, runner, transcript],
