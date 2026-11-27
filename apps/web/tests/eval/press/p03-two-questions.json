@@ -1,0 +1,41 @@
+{
+  "id": "p03-two-questions",
+  "category": "multi",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "you",
+      "text": "That covers the plan for the first month.",
+      "start": 790,
+      "end": 794
+    },
+    {
+      "speaker": "them",
+      "text": "Okay, two things from my side. Who on your team would actually run the pilot day to day? And what would you need from our IT people before we start?",
+      "start": 800,
+      "end": 812
+    }
+  ],
+  "press": 813,
+  "expect": {
+    "open": [
+      ["run", "lead", "own", "day to day", "day-to-day", "pilot"],
+      ["IT", "access", "need from", "before we start", "credentials", "permission"]
+    ],
+    "question": ["pilot", "IT"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

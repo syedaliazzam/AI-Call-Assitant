@@ -22,6 +22,7 @@
  */
 import {
   CONVERSATION_CAP_STEP_TOKENS,
+  MAX_CALL_MEMORY_CHARS,
   MAX_ANSWER_CHARS,
   MAX_CONVERSATION_CHUNKS,
   MAX_CONVERSATION_TOKENS,
@@ -34,6 +35,7 @@ import {
   type CallLine,
   type ConversationChunk,
   type ConversationItem,
+  type PressContext,
 } from '@kite/shared';
 import type { Session, StoredDocument } from '../storage/types';
 import { selectQuestion, type SelectedQuestion } from '../transcript/question';
@@ -44,6 +46,7 @@ import { findSimilarAnswer } from './similar';
 import { rankChunks, type ChunkIndex } from '../documents/chunks';
 import { toLiveSessionContext } from './warm';
 import { pinFor } from './instructionsPin';
+import type { PressWindow } from './newestQuestion';
 
 /** An answer given earlier in this call, as the live page keeps it in memory. */
 export interface CallAnswer {
@@ -116,6 +119,32 @@ export interface AnswerContextInput {
    * line. Its answer is private unless the chat switch says "For the call".
    */
   screenOnly?: boolean;
+  /**
+   * ADR-0133: a key press on the call: what both sides said since the last answer (newestQuestion.ts
+   * pressWindow()), sent as the request's press context.
+   */
+  press?: PressWindow;
+  /** ADR-0133: the questions an earlier card left on its "Still open:" line, answered by this press. */
+  stillOpen?: string;
+  /** ADR-0137: the call memory (core/answer/callMemory.ts), sent with the answer when there is one. */
+  memory?: string;
+}
+
+/**
+ * ADR-0133: a press window as the request carries it: whether the other side was still speaking, and any
+ * questions an earlier card left open. (The words themselves are the request's question; the user's replies
+ * are in the conversation.)
+ *
+ * @param window    The window (newestQuestion.ts pressWindow()).
+ * @param stillOpen Questions an earlier card left open, if this press answers them.
+ * @returns The press context.
+ * Called from: buildAnswerRequest(); tests
+ */
+export function toPressContext(window: PressWindow, stillOpen?: string): PressContext {
+  return {
+    speaking: window.speaking,
+    ...(stillOpen?.trim() ? { stillOpen: stillOpen.trim().slice(0, MAX_LINE_CHARS) } : {}),
+  };
 }
 
 /** What buildAnswerRequest() returns. */
@@ -296,6 +325,12 @@ export function buildAnswerRequest(input: AnswerContextInput): BuiltAnswerReques
     ...(chunks.length > 0 ? { conversation: chunks } : {}),
     ...(tailLines.length > 0 ? { tail: tailLines } : {}),
     ...(question ? { question: question.slice(0, MAX_LINE_CHARS) } : {}),
+    ...(input.memory?.trim()
+      ? { memory: input.memory.trim().slice(0, MAX_CALL_MEMORY_CHARS) }
+      : {}),
+    ...(input.mode === 'answer' && input.press
+      ? { press: toPressContext(input.press, input.stillOpen) }
+      : {}),
     ...(input.mode === 'screenshot' && input.image ? { image: input.image } : {}),
     ...(documentChunks.length > 0 ? { documentChunks } : {}),
     ...(input.lessons?.length ? { lessons: [...input.lessons] } : {}),

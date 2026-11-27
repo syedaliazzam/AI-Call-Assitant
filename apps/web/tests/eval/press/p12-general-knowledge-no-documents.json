@@ -1,0 +1,35 @@
+{
+  "id": "p12-general-knowledge-no-documents",
+  "category": "nodocs",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "Quick one: what's the actual difference between an evaluation pipeline and observability once you're in production?",
+      "start": 1700,
+      "end": 1707
+    }
+  ],
+  "press": 1708,
+  "expect": {
+    "open": [
+      ["evaluation", "eval"],
+      ["observability", "monitor"]
+    ],
+    "question": ["evaluation", "observability"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

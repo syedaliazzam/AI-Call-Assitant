@@ -6,7 +6,8 @@
  * Used by: src/features/live/LiveSession.tsx (when a live session opens),
  *          src/features/live/LivePage.tsx (again on Connect, Day 4),
  *          src/features/dev/ClaudeTest.tsx ("Warm with session")
- * Depends on: src/core/answer/answerClient.ts, src/core/storage/types.ts, @kite/shared
+ * Depends on: src/core/answer/answerClient.ts, src/core/storage/types.ts, src/core/stt/sessionHotwords.ts
+ *             (buildKeyterms, ADR-0136), @kite/shared
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.3 (Pre-warm), §7.2;
  *               day-03-sessions.md Stage 5
  *
@@ -16,6 +17,7 @@
  *
  * Logs only the session id, timings and token counts; never session or document text.
  */
+import { buildKeyterms } from '../stt/sessionHotwords';
 import {
   DEFAULT_CODING_LANGUAGE,
   cleanPersonName,
@@ -130,6 +132,10 @@ export function toLiveSessionContext(
   const others = context.documents.some((document) => document.kind !== 'resume');
   return {
     ...context,
+    // ADR-0136: the same key terms Deepgram listens for (the user's list first, then names, the company, the
+    // role, terms from the instructions and description, and names that repeat in the documents), so the
+    // answer spells them right even when only the documents' summary is sent.
+    keyTerms: buildKeyterms(session, documents),
     documents: context.documents.filter((document) => document.kind === 'resume'),
     documentsSummary: others ? (session.documentsSummary?.text ?? '') : '',
   };

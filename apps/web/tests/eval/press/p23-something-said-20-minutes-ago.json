@@ -1,0 +1,76 @@
+{
+  "id": "p23-something-said-20-minutes-ago",
+  "category": "memory",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "Before we dive in, a bit of context. Our budget owner is Dana Whitfield, and the deadline we really care about is the end of March.",
+      "start": 120,
+      "end": 128
+    },
+    {
+      "speaker": "you",
+      "text": "Thanks, that helps.",
+      "start": 129,
+      "end": 130
+    },
+    {
+      "speaker": "them",
+      "text": "Okay, so the first thing is the reporting backlog.",
+      "start": 300,
+      "end": 304
+    },
+    {
+      "speaker": "you",
+      "text": "We can clear the reporting backlog in the first sprint.",
+      "start": 305,
+      "end": 309
+    },
+    {
+      "speaker": "them",
+      "text": "Good. Then there is the data quality work we discussed.",
+      "start": 700,
+      "end": 704
+    },
+    {
+      "speaker": "you",
+      "text": "That one needs the source owners in the room.",
+      "start": 705,
+      "end": 708
+    },
+    {
+      "speaker": "them",
+      "text": "Makes sense, I will set that up.",
+      "start": 1100,
+      "end": 1103
+    },
+    {
+      "speaker": "them",
+      "text": "Going back to what I said right at the start: who did I say has to approve this, and by when?",
+      "start": 1320,
+      "end": 1326
+    }
+  ],
+  "answeredEnd": 1300,
+  "memory": "Key points:\n- Budget owner: Dana Whitfield.\n- Deadline they care about: end of March.\n- Reporting backlog first; data quality work needs the source owners.\nQuestions asked:\n- What is first? (answered)\nWhat the user said:\n- The reporting backlog can be cleared in the first sprint.\nOpen items:\n- Them to set up a session with the source owners.",
+  "press": 1327,
+  "expect": {
+    "open": [["Dana"], ["March"]],
+    "question": ["approve", "who", "Dana", "when"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

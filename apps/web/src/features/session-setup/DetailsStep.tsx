@@ -2,7 +2,7 @@
  * File: apps/web/src/features/session-setup/DetailsStep.tsx
  * Purpose: Step 1 of the Create/Edit session wizard (spec S4): session type, "Paste a job link", company,
  *          role or topic, job description, then Context: CV / Resume and Documents, with a used / limit
- *          counter for the session's character cap (a warning only above 500k, ADR-0117), and a collapsed Advanced section with Key terms at the
+ *          counter for the session's character cap (a warning only above 500k, ADR-0117), and Key terms (always shown, ADR-0136) at the
  *          bottom. Switching type keeps the fields they share. v1.3.0 (ADR-0057): Contact name is no
  *          longer asked for or shown; a session that has one keeps it unchanged.
  * Used by: src/features/session-setup/SessionWizard.tsx
@@ -17,7 +17,7 @@
 'use client';
 
 import type { JobImportFields } from '@kite/shared';
-import { Bot, Briefcase, ChevronRight, Phone } from 'lucide-react';
+import { Bot, Briefcase, Phone } from 'lucide-react';
 import { documentWarnings, MAX_SESSION_CHARS } from '@/core/documents/limits';
 import type { LibraryItem, SessionType } from '@/core/storage/types';
 import { Input } from '@/ui/Input';
@@ -168,27 +168,11 @@ export function DetailsStep({
         ))}
       </section>
 
-      {/* v1.3.0 (ADR-0057): Key terms, collapsed until opened. */}
-      <details className="group rounded-control border border-ui-border">
-        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 text-label text-ui-text [&::-webkit-details-marker]:hidden">
-          <ChevronRight
-            size={16}
-            strokeWidth={1.75}
-            aria-hidden="true"
-            className="shrink-0 text-ui-muted transition-transform duration-(--k-dur) group-open:rotate-90"
-          />
-          Advanced
-          {draft.preferences.keyTerms.trim() && (
-            <span className="text-[13px] font-normal text-ui-muted">Key terms added</span>
-          )}
-        </summary>
-        <div className="px-3 pb-3">
-          <KeyTermsInput
-            value={draft.preferences.keyTerms}
-            onChange={(keyTerms) => onChange({ preferences: { ...draft.preferences, keyTerms } })}
-          />
-        </div>
-      </details>
+      {/* ADR-0136: Key terms always show (v1.3.0, ADR-0057, had them in a collapsed Advanced section). */}
+      <KeyTermsInput
+        value={draft.preferences.keyTerms}
+        onChange={(keyTerms) => onChange({ preferences: { ...draft.preferences, keyTerms } })}
+      />
     </div>
   );
 }

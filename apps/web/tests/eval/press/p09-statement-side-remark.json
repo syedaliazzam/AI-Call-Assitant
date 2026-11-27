@@ -1,0 +1,38 @@
+{
+  "id": "p09-statement-side-remark",
+  "category": "statement",
+  "session": {
+    "type": "sales",
+    "company": "Brightline Analytics (invented)",
+    "role": "Solutions engineer",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "Sorry, give me one second, someone's at the door.",
+      "start": 1400,
+      "end": 1403
+    },
+    {
+      "speaker": "them",
+      "text": "Okay, I'm back, sorry about that.",
+      "start": 1420,
+      "end": 1422
+    }
+  ],
+  "press": 1423,
+  "expect": {
+    "open": [],
+    "question": ["back", "sorry", "door", "second", "welcome"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

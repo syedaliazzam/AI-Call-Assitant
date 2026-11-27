@@ -54,13 +54,27 @@ import { startKeepAlive } from '@/core/answer/keepAlive';
 import { warmGroup, warmSession } from '@/core/answer/warm';
 import { answerFailureText, OFFLINE_TEXT, type AnswerProblem } from '@/core/answer/unavailable';
 import { finishedReplyAction } from '@/core/answer/finishedReply';
-import { choosePress, PRESS_WAIT_MS } from '@/core/answer/pressQuestion';
+import { choosePress } from '@/core/answer/pressQuestion';
 import { chooseOwnQuestion, OWN_WAIT_MS, pressTarget } from '@/core/answer/ownQuestion';
 import {
   chooseNewest,
   FINISHING_NOTICE_AFTER_MS,
+  MAX_NEWEST_WORDS,
+  MAX_REASKS,
+  pressUpdateDue,
+  pressWindow,
   type NewestAutoDecision,
+  type PressWatch,
+  type PressWindow,
 } from '@/core/answer/newestQuestion';
+import { splitAnswer } from '@/core/answer/format';
+import {
+  emptyMemory,
+  memoryDue,
+  memoryRequest,
+  requestCallMemory,
+  type MemoryState,
+} from '@/core/answer/callMemory';
 import { createSpeculativeHold, themWentOn, type AskedSpeech } from '@/core/answer/speculative';
 import { type PickedQuestion } from '@/core/transcript/questionKind';
 import { isOnline } from '@/core/net/online';
@@ -127,12 +141,6 @@ type AskAgainOptions = Record<string, unknown> & {
 function isNoAnswer(type: AnswerType | undefined): boolean {
   return type === 'garbled' || type === 'none';
 }
-
-/**
- * 1.5.2 (ADR-0070): shown while a press waits for the question the other person is still asking
- * (core/answer/pressQuestion.ts 'wait').
- */
-export const WAITING_NOTICE = 'Listening for the question…';
 
 /**
  * ADR-0101: a voice question warms the prompt cache at most once in this long, ms (the cache lives 5 min; the
@@ -427,13 +435,6 @@ export interface LiveAnswersInput {
    */
   rules?: 'newest' | 'legacy';
   /**
-   * ADR-0076 (E3 rule 2): waits until the other side is transcribed up to a press (capped by the caller).
-   *
-   * @param atUnix The press (Unix ms).
-   * @returns How long it waited and whether it gave up.
-   */
-  catchUp?: (atUnix: number) => Promise<{ waitedMs: number; timedOut: boolean }>;
-  /**
    * Batch C (P1-1): listens for the other side's turn events (Flux), so a held speculative answer is
    * cancelled when their turn resumes.
    *
@@ -670,15 +671,13 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const answeredLinesRef = useRef(new Set<string>());
   // v1.4 (ADR-0062): the latest answer to speech, which a rerun or a continuation replaces.
   const lastAnsweredRef = useRef<AnsweredQuestion | null>(null);
-  // 1.5.2 (ADR-0070): a press waiting for the question the other person is still asking.
-  const pendingPressRef = useRef<{
-    since: number;
-    pressedAt: number;
-    trigger: AnswerTrigger;
-  } | null>(null);
-  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Retries the waiting press (set after ask is made, below).
-  const retryPendingRef = useRef<() => void>(() => undefined);
+  // ADR-0132: a press made while the other person was still speaking, watched for one update on its card
+  // (a press no longer waits for them: 1.5.2's wait of up to 8 s and ADR-0076's catch-up are gone).
+  const pressWatchRef = useRef<PressWatch | null>(null);
+  // ADR-0137: the call memory (a running summary of the whole call), kept for this call only.
+  const memoryRef = useRef<MemoryState>(emptyMemory());
+  // Looks at the watched press (set after ask is made, below).
+  const checkWatchRef = useRef<() => void>(() => undefined);
   /**
    * ADR-0107: asks again (the latest ask()); set by an effect below, used for an answer that came back
    * empty. ADR-0112: returns whether the request was sent (false offline, for example).
@@ -700,10 +699,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const lastPressEndRef = useRef<number | null>(null);
   // Batch D (P0-C): the card whose answer is streaming now, or null.
   const streamingIdRef = useRef<string | null>(null);
-  // ADR-0076 (G1): a press waiting for the other side; a second press calls force() and answers at once.
-  const pendingCatchUpRef = useRef<{ force: () => void } | null>(null);
-  // ADR-0076: the latest catch-up function and rules (read when a key is pressed).
-  const catchUpRef = useRef(input.catchUp);
+  // ADR-0076: the question rules ('newest' with cloud transcription).
   const rules = input.rules ?? 'legacy';
   // Batch C (P2-1): the documents' parts, made once per document (not per question), for each request.
   const chunkIndex = useMemo(() => buildChunkIndex(documents), [documents]);
@@ -800,7 +796,6 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     storeRef.current = store;
     chatTargetRef.current = input.chatTarget ?? 'auto';
     warmInputRef.current = { session, documents, lessons };
-    catchUpRef.current = input.catchUp;
     themConnectedRef.current = input.themConnected ?? true;
   });
 
@@ -958,8 +953,15 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
          * remembered by the repeat guard, so Answer does not ask the same speech again.
          */
         coveredLines?: readonly string[];
-        /** 1.5.2 (ADR-0070): when a press that is waiting for the question began waiting (Unix ms). */
-        waitingSince?: number;
+        /** ADR-0133: a key press's window (what both sides said since the last answer). */
+        press?: PressWindow;
+        /** ADR-0133: the questions an earlier card left on its "Still open:" line, answered now. */
+        stillOpen?: string;
+        /**
+         * ADR-0132: an in-place update of a press's card: the card keeps its answer until the new answer's
+         * first line is complete (no blank card, no notice).
+         */
+        smooth?: boolean;
         /**
          * ADR-0076 (E3 rule 3): exactly these words of the other person, chosen by newestQuestion.ts (a
          * press, an auto-answer or a re-ask). Sent as they are; not re-picked, not repeat-guarded.
@@ -1049,6 +1051,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       let replaces = options.replaces;
       // 1.5.2: a press that answered words still grey (asked again on its card if the person goes on).
       let greyPress = false;
+      // ADR-0133: what both sides said since the last answer, sent with a key press.
+      let pressFor: PressWindow | undefined = options.press;
       if (mode === 'answer' && options.exact) {
         // ADR-0076: the words newestQuestion.ts chose, exactly.
         picked = {
@@ -1067,35 +1071,13 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       } else if (mode === 'answer' && !options.question) {
         // 1.5.2 (ADR-0070): the press rules live in core/answer/pressQuestion.ts (the newest question,
         // grey words included; a continuation on its card; talk about the call looks back).
+        // ADR-0132: never waits for the other person to finish (their grey words are answered at once).
         const choice = choosePress({
           lines,
           answeredLineIds,
           last: lastAnswered,
           now: Date.now(),
-          waitingSince: options.waitingSince ?? null,
         });
-        if (choice.kind === 'wait') {
-          // The other person is still asking: answer it as soon as it is a question (or after
-          // PRESS_WAIT_MS with what there is). Tried again on each transcript change (the effect below).
-          const since = options.waitingSince ?? Date.now();
-          pendingPressRef.current = {
-            since,
-            pressedAt: keyPressAt,
-            trigger: options.trigger ?? 'hotkey',
-          };
-          if (!pendingTimerRef.current) {
-            pendingTimerRef.current = setTimeout(
-              () => {
-                pendingTimerRef.current = null;
-                retryPendingRef.current();
-              },
-              Math.max(0, since + PRESS_WAIT_MS - Date.now()) + 50,
-            );
-          }
-          setNotice(WAITING_NOTICE);
-          return false;
-        }
-        pendingPressRef.current = null;
         picked =
           choice.kind === 'answer'
             ? {
@@ -1110,6 +1092,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           partOfLines = choice.partOfLines;
           replaces = choice.replaces;
           greyPress = choice.grey;
+          // ADR-0133: a new press (not a continuation on its card) sends the window too.
+          if (!choice.replaces && !auto) {
+            pressFor = pressWindow(lines, answeredEndRef.current, Date.now());
+          }
         }
         if (picked.kind === 'none') {
           setNotice(NO_QUESTION_NOTICE);
@@ -1145,6 +1131,11 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ...(options.question ? { question: options.question } : {}),
         chunks: chunkIndex,
         ...(options.screenOnly ? { screenOnly: true } : {}),
+        // ADR-0137: the call memory goes with every answer once there is one.
+        ...(memoryRef.current.text ? { memory: memoryRef.current.text } : {}),
+        // ADR-0133: a key press's window, and the questions an earlier card left open.
+        ...(mode === 'answer' && pressFor && !auto ? { press: pressFor } : {}),
+        ...(mode === 'answer' && options.stillOpen ? { stillOpen: options.stillOpen } : {}),
         // Found by looking back past a greeting or an instruction: asked as it is.
         ...(picked?.kind === 'question' && (picked.lookedBack || partOfLines)
           ? { question: picked.selected.text }
@@ -1254,6 +1245,17 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ...(!replaces && options.rerunOf ? { rerunOf: options.rerunOf } : {}),
       };
       lastAskedIdRef.current = entry.id;
+      // ADR-0132: a press made while the other person was still speaking is watched for one update; any
+      // other request ends a watch (an update itself replaces the watched card).
+      if (mode === 'answer' && !auto && !replaces && rules === 'newest' && pressFor?.speaking) {
+        pressWatchRef.current = {
+          answerId: entry.id,
+          pressedAt: Date.now(),
+          from: pressFor.from,
+          themWords: pressFor.themWords,
+          themEnd: pressFor.themSpan?.end ?? Date.now(),
+        };
+      } else if (!replaces) pressWatchRef.current = null;
       // Mac 1.8.1 / Windows 1.7.5: the card's small preview, made after this function has started the request
       // (a task later), so it never delays the answer; the card shows the full image until it is ready.
       if (image && !entry.preview) {
@@ -1282,14 +1284,30 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       }
       // A new answer cancels the one still streaming (the runner does; mark it here). A rerun takes
       // the place of the answer it replaces.
-      setEntries((current) => [
-        ...current
-          .filter((old) => old.id !== entry.id)
-          .map((old) =>
-            old.status === 'streaming' ? { ...old, status: 'cancelled' as const } : old,
-          ),
-        entry,
-      ]);
+      setEntries((current) => {
+        // ADR-0132: an in-place update keeps the card's answer, type and question until its new first line.
+        const kept = options.smooth
+          ? current.find((old) => old.id === entry.id && old.text.trim() !== '')
+          : undefined;
+        const shown: AnswerEntry = kept
+          ? {
+              ...entry,
+              text: kept.text,
+              ...(kept.meta ? { meta: kept.meta } : {}),
+              ...(kept.cleanQuestion ? { cleanQuestion: kept.cleanQuestion } : {}),
+            }
+          : entry;
+        return [
+          ...current
+            .filter((old) => old.id !== entry.id)
+            .map((old) =>
+              old.status === 'streaming' ? { ...old, status: 'cancelled' as const } : old,
+            ),
+          shown,
+        ];
+      });
+      // ADR-0132: true while an in-place update still shows the card's earlier answer.
+      let keepingEarlier = options.smooth === true;
       // Batch C (P1-1): a held answer is shown when its hold ends (the hold's show below).
       if (!speculative) setShownId(entry.id);
       // Batch D (P0-C): the answer streaming now (an "in place" re-ask is allowed while it still streams).
@@ -1336,13 +1354,20 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           start: span.start,
           askedAt: Date.now(),
           auto: original ? original.auto : auto,
-          ...((original ? original.grey : greyPress && !auto) ? { grey: true } : {}),
+          ...((original ? original.grey : greyPress && !auto && !(pressFor && rules === 'newest'))
+            ? { grey: true }
+            : {}),
           words,
           anchorStart: original
             ? (original.anchorStart ?? original.start ?? span.start)
             : span.start,
           anchorEnd: original ? (original.anchorEnd ?? original.end) : span.end,
-          reasks: original ? (original.reasks ?? 0) + 1 : 0,
+          // ADR-0132: a press on the newest rules is updated by its watch, never by rule 6.
+          reasks: original
+            ? (original.reasks ?? 0) + 1
+            : pressFor && rules === 'newest' && !auto
+              ? MAX_REASKS
+              : 0,
           ...(original
             ? original.askedText !== undefined
               ? { askedText: original.askedText }
@@ -1569,6 +1594,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             callTimings.noteAnswer({ answerId: timingId, firstWordAt: Date.now() });
           }
           if (dropped(meta?.type)) return;
+          if (keepingEarlier) {
+            // ADR-0132: the earlier answer stays until the new answer line is complete, then it is swapped
+            // whole (its question shows the new words until the new clean question arrives).
+            if (!text.trimStart().includes('\n')) return;
+            keepingEarlier = false;
+            update(entry.id, { text, cleanQuestion: '' });
+            return;
+          }
           if (options.emptyRetry === true && !retryShown) {
             // ADR-0112: a silent retry's card appears with its first words.
             retryShown = true;
@@ -1739,6 +1772,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       resolvedAnswered,
       hold,
       chunkIndex,
+      rules,
     ],
   );
 
@@ -1766,6 +1800,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         lines,
         answeredEnd: ownEndRef.current,
         lastAnswerId: speechCardRef.current,
+        now: Date.now(),
       });
       if (choice.kind === 'answer') {
         // Covered by a re-ask (in place) but not by a card of its own: answered again, on its own card.
@@ -1782,6 +1817,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             ...(incomplete ? { incomplete: true } : {}),
             ...(choice.audioLost ? { audioLost: true } : {}),
           },
+          press: choice.window,
         });
         if (sent) lastPressEndRef.current = choice.span.end;
         decided(sent ? 'sent' : 'not-sent', {
@@ -1796,6 +1832,24 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       }
       if (choice.kind === 'show-existing') {
         const streaming = runner.busy() && lastAnsweredRef.current?.answerId === choice.answerId;
+        // ADR-0133: nothing new was said, and that card left questions on its "Still open:" line: this press
+        // answers them, on a new card (which becomes the card a later press looks at).
+        const earlier = streaming
+          ? undefined
+          : finishedRef.current.find((answer) => answer.id === choice.answerId);
+        const stillOpen = earlier ? splitAnswer(earlier.text, true).stillOpen : '';
+        if (stillOpen) {
+          const sent = ask('answer', {
+            pressedAt: keyPressAt,
+            trigger,
+            question: stillOpen,
+            stillOpen,
+            press: pressWindow(lines, ownEndRef.current, Date.now()),
+          });
+          if (sent) speechCardRef.current = lastAskedIdRef.current;
+          decided(sent ? 'still-open' : 'not-sent');
+          return;
+        }
         setShownId(choice.answerId);
         // Batch D (P1-G): when that card answered their words since the user's last press (auto-answer did),
         // it IS the answer to this press: shown with no notice. "Nothing new" only when nothing was said
@@ -1819,16 +1873,16 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   );
 
   /**
-   * ADR-0076 (E3 rule 2, G1–G3): a press under the 'newest' rules. It waits until the other side is
-   * transcribed up to the press (at most the caller's cap); "Finishing the question…" shows only after
-   * FINISHING_NOTICE_AFTER_MS; a second press while waiting answers at once.
+   * A press under the 'newest' rules (ADR-0076). ADR-0132: it no longer waits for the other side to be
+   * transcribed up to the press (ADR-0076 rule 2, up to 300 ms, with "Finishing the question…"): it answers
+   * at once with the words there are, grey ones included, and a press made while the other person was still
+   * speaking is updated once on its card when they go on (the watch below).
    *
    * @param trigger What asked.
    */
   const pressNewest = useCallback(
     (trigger: AnswerTrigger) => {
       const keyPressAt = performance.now();
-      const receivedAt = Date.now();
       callTimings.noteTrace('press', { trigger });
       if (!isOnline()) {
         setNotice(OFFLINE_TEXT);
@@ -1839,34 +1893,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       // the press below says "Already answering" unless something newer was said).
       if (hold.release())
         callTimings.noteTrace('press-decision', { decision: 'released', trigger });
-      const waiting = pendingCatchUpRef.current;
-      if (waiting) {
-        callTimings.noteTrace('press-again', { trigger });
-        waiting.force();
-        return;
-      }
-      let settled = false;
-      const noticeTimer = setTimeout(() => {
-        if (!settled) setNotice(FINISHING_NOTICE);
-      }, FINISHING_NOTICE_AFTER_MS);
-      const settle = (waitedMs: number, timedOut: boolean, forced: boolean) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(noticeTimer);
-        pendingCatchUpRef.current = null;
-        callTimings.noteTrace('press-wait', { waitedMs, timedOut, forced });
-        setNotice((current) => (current === FINISHING_NOTICE ? null : current));
-        decideNewest(trigger, keyPressAt, timedOut || forced);
-      };
-      pendingCatchUpRef.current = {
-        force: () => settle(Date.now() - receivedAt, false, true),
-      };
-      const wait =
-        catchUpRef.current?.(receivedAt) ?? Promise.resolve({ waitedMs: 0, timedOut: false });
-      wait.then(
-        (outcome) => settle(outcome.waitedMs, outcome.timedOut, false),
-        () => settle(Date.now() - receivedAt, true, false),
-      );
+      decideNewest(trigger, keyPressAt, false);
     },
     [decideNewest, hold],
   );
@@ -1898,35 +1925,94 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       // The options are the first request's own (typed loosely only to pass them through).
       ask(mode, options as Parameters<typeof ask>[1]);
   });
+  // ADR-0132: the watched press is looked at on every transcript change and every 250 ms (its turn ends by
+  // a pause, which no transcript change announces). Through a ref, so it always calls the latest ask().
   useEffect(() => {
-    retryPendingRef.current = () => {
-      const pending = pendingPressRef.current;
-      if (!pending) return;
-      pendingPressRef.current = null;
+    checkWatchRef.current = () => {
+      const watch = pressWatchRef.current;
+      if (!watch) return;
+      const lines = transcript.lines().filter((line) => !noiseLinesRef.current.has(line.id));
+      const due = pressUpdateDue(watch, lines, Date.now());
+      if (due.kind === 'wait') return;
+      pressWatchRef.current = null;
+      const span = due.kind === 'update' ? due.window.themSpan : null;
+      callTimings.noteTrace('press-update', {
+        decision: due.kind === 'update' ? 'update' : due.reason,
+        ...(due.kind === 'update' ? { words: due.window.themWords } : {}),
+      });
+      if (due.kind !== 'update' || !span) return;
+      // Once, in place, with no notice: the card keeps its answer until the new answer line is complete.
       ask('answer', {
-        waitingSince: pending.since,
-        pressedAt: pending.pressedAt,
-        trigger: pending.trigger,
+        trigger: 'rerun',
+        replaces: watch.answerId,
+        finishesSentence: true,
+        smooth: true,
+        press: due.window,
+        exact: {
+          text: due.window.themText,
+          lineIds: due.window.themLineIds,
+          span,
+          grey: false,
+          words: Math.min(due.window.themWords, MAX_NEWEST_WORDS),
+        },
       });
     };
   });
-  useEffect(
-    () =>
-      transcript.subscribe(() => {
-        if (pendingPressRef.current) retryPendingRef.current();
-      }),
-    [transcript],
-  );
-  // A new call, or End: nothing waits any more.
+  useEffect(() => {
+    const unsubscribe = transcript.subscribe(() => checkWatchRef.current());
+    const timer = setInterval(() => checkWatchRef.current(), 250);
+    return () => {
+      unsubscribe();
+      clearInterval(timer);
+    };
+  }, [transcript]);
+  // A new call, or End: nothing is watched any more.
   useEffect(
     () => () => {
-      pendingPressRef.current = null;
-      pendingCatchUpRef.current = null;
-      if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
-      pendingTimerRef.current = null;
+      pressWatchRef.current = null;
     },
     [callStartedAt, sessionId],
   );
+  // ADR-0137: the call memory is updated in the background (never at a key press, so an answer never waits
+  // for it): every 15 s the rules in core/answer/callMemory.ts decide whether enough was said since the last
+  // update. A new call starts with an empty memory.
+  useEffect(() => {
+    memoryRef.current = emptyMemory();
+    let stopped = false;
+    const timer = setInterval(() => {
+      const state = memoryRef.current;
+      const lines = transcript.lines().filter((line) => !noiseLinesRef.current.has(line.id));
+      const due = memoryDue(state, lines, Date.now());
+      if (!due) return;
+      const askedAt = Date.now();
+      memoryRef.current = { ...state, inFlight: true, lastAt: askedAt };
+      const until = Math.max(...due.map((line) => line.tEnd));
+      void requestCallMemory(
+        memoryRequest(
+          { type: session.type, company: session.company, role: session.role },
+          state.text,
+          due,
+          callStartedAt,
+        ),
+      ).then((memory) => {
+        if (stopped) return;
+        memoryRef.current = memory
+          ? { ...memoryRef.current, text: memory, until, inFlight: false, failedAt: null }
+          : { ...memoryRef.current, inFlight: false, failedAt: Date.now() };
+        // Counts and sizes only, never the memory.
+        callTimings.noteTrace('memory', {
+          ok: memory !== null,
+          lines: due.length,
+          ms: Date.now() - askedAt,
+          ...(memory ? { chars: memory.length } : {}),
+        });
+      });
+    }, 15_000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [transcript, callStartedAt, sessionId, session.type, session.company, session.role]);
 
   const clear = useCallback(() => {
     // Selection falls back to the newest answer (v1.0.4): never an empty card while answers exist.

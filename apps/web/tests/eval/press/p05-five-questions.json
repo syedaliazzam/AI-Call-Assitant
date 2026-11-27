@@ -1,0 +1,40 @@
+{
+  "id": "p05-five-questions",
+  "category": "many",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "Let me just run through my list. What's the timeline for phase two? Who signs off on the design? How do you handle change requests? What does the handover look like? And how often will we get status updates?",
+      "start": 1000,
+      "end": 1018
+    }
+  ],
+  "press": 1019,
+  "expect": {
+    "open": [
+      ["handover", "hand over", "hand-off", "handoff"],
+      ["status", "update", "how often"],
+      ["change request", "changes"]
+    ],
+    "question": ["handover", "status", "update", "change"],
+    "forbidden": [
+      "\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d",
+      "\\b\\d+\\s*(?:weeks?|months?)\\b"
+    ],
+    "many": true
+  }
+}

@@ -185,8 +185,6 @@ export interface LiveAnswersProps {
    * presses and auto-answer.
    */
   rules?: 'newest' | 'legacy';
-  /** ADR-0076 (E3 rule 2): waits until the other side is transcribed up to a press (capped). */
-  catchUp?: (atUnix: number) => Promise<{ waitedMs: number; timedOut: boolean }>;
   /** Batch C (P1-1): the other side's turn events (Flux), for the speculative answer's hold. */
   themTurns?: (listener: (event: 'start' | 'eager' | 'end' | 'resumed') => void) => () => void;
 }
@@ -348,7 +346,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
     store: props.store,
     paused: props.hygiene === 'paused',
     ...(props.rules ? { rules: props.rules } : {}),
-    ...(props.catchUp ? { catchUp: props.catchUp } : {}),
     ...(props.themTurns ? { themTurns: props.themTurns } : {}),
   });
   // Grows with each Chat or Ask Kite shortcut: the message box (always shown) takes the typing.

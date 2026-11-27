@@ -3,14 +3,14 @@
  * cases built from the real call of 11 Nov 2026 (its times, invented words). The newest question is
  * answered while still grey, never the one before it (the press at 54.4 s answered Q1 while Q2 was grey);
  * the user reading an answer aloud over the question does not hide it; a press while the other person has
- * only said "Next question" waits for the question, and stops waiting after PRESS_WAIT_MS; a press on
+ * only said "Next question" is answered at once (ADR-0132: it waited up to 8 s before); a press on
  * "can you repeat that last part?" looks back to the latest real question (182.7 s); an older unanswered
  * question never wins over the newest one; new plain words continue the card just answered; noise is
  * reported; nothing from the other person is 'none'.
  */
 import { describe, expect, it } from 'vitest';
 import type { AnsweredQuestion } from '@/core/answer/autoAnswer';
-import { choosePress, PRESS_WAIT_MS } from '@/core/answer/pressQuestion';
+import { choosePress } from '@/core/answer/pressQuestion';
 import type { Utterance } from '@/core/transcript/transcript';
 
 /** The call's clock: second s of the recording, as Unix ms. */
@@ -77,16 +77,16 @@ describe('choosePress', () => {
     ).toMatchObject({ kind: 'answer', lineIds: ['u5'] });
   });
 
-  it('waits while they have only said "Next question", then gives up waiting after PRESS_WAIT_MS', () => {
+  it('ADR-0132: never waits, even when they have only said "Next question" so far', () => {
     const lines = [
       line('u2', 'them', Q1, 20.2, 25.3),
       line('u5', 'them', 'NEXT QUESTION', 46.5, 47.4, false),
     ];
     const input = { lines, answeredLineIds: new Set(['u2']), last: null, now: at(47.5) };
-    expect(choosePress(input)).toEqual({ kind: 'wait' });
-    expect(choosePress({ ...input, waitingSince: at(47.5) - PRESS_WAIT_MS })).not.toEqual({
-      kind: 'wait',
-    });
+    // Their grey words are answered at once; the card is asked again when they go on.
+    const choice = choosePress(input);
+    expect(choice).toMatchObject({ kind: 'answer', grey: true });
+    expect(choice.kind === 'answer' && choice.lineIds).toContain('u5');
   });
 
   it('looks back past "can you repeat that last part?" to the latest real question (182.7 s)', () => {

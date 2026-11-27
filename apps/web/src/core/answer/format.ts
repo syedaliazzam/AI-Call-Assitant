@@ -3,8 +3,9 @@
  * Purpose: Splits an answer's text (complete or still streaming) into its parts: the answer line,
  *          the bullet points, any code blocks, a coding answer's complexity, an optional closing tip to
  *          say, what to say about the code, and an optional private note for the user only. Joins the
- *          speakable parts back as plain text for Copy. v1.1.0 (ADR-0043): an answer line longer than
- *          12 words is cut at a clause, and the rest becomes the first bullet.
+ *          speakable parts back as plain text for Copy. ADR-0135 (was v1.1.0, ADR-0043): an answer line
+ *          longer than 12 words shows its first sentence and the rest becomes the first bullet; a sentence
+ *          is never split, and a line that only goes on with the sentence above is joined to it.
  * Used by: src/features/answers/AnswerBody.tsx, src/features/live/AnswerPanel.tsx,
  *          src/features/live/LiveAnswers.tsx (the overlay), src/core/review/conversation.ts
  * Depends on: src/core/transcript/display.ts (sentenceCase, chipWords: for the card's question)
@@ -44,6 +45,16 @@ export interface AnswerParts {
   tip: string;
   /** A private note for the user, not to be said ("Note: …", without its label), or ''. */
   note: string;
+  /**
+   * ADR-0133: the questions a press left for the next press ("Still open: …", without its label), or ''.
+   * Not said, not copied; the next press with nothing new answers them.
+   */
+  stillOpen: string;
+  /**
+   * ADR-0133: true when the answer gives several questions one labelled line each ("Timeline: …"): the
+   * answer line and the bullets then show their labels in bold (labelOf()), and no line is cut.
+   */
+  labelled: boolean;
 }
 
 /**
@@ -61,6 +72,15 @@ const SAY_LABEL = /^(?:how to )?say(?: it)?\s*:\s*/i;
 /** The label of a private note line. */
 const NOTE_LABEL = /^(?:private\s+)?note\s*:\s*/i;
 
+/** ADR-0133: the label of the line naming the questions left for the next press. */
+const STILL_OPEN_LABEL = /^still open\s*:\s*/i;
+
+/**
+ * ADR-0133: a short label at the start of a line ("Timeline: …", "Data hosting: …"): one to four words,
+ * starting with a capital, then a colon and the rest of the line.
+ */
+const SHORT_LABEL = /^(\p{Lu}[\p{L}\p{N}&/'’-]*(?:\s+[\p{L}\p{N}&/'’-]+){0,3}):\s+(\S.*)$/u;
+
 /** The line that opens a coding answer's steps. */
 const KEY_STEPS_LABEL = /^key steps\s*:?$/i;
 
@@ -76,14 +96,56 @@ export const MAX_ANSWER_LINE_WORDS = 12;
  */
 const ONE_LINE_MAX_WORDS = 30;
 
-/** Where an answer line is best cut: after these marks, or before these joining words. */
-const CLAUSE_BREAK = /[,;:—–]\s+|\s+(?=(?:and|but|so|because|which|while|with|using)\s)/gi;
+/**
+ * ADR-0135: where an answer line may be cut: only between two whole sentences (a full stop, question or
+ * exclamation mark, any closing quote or bracket, a space, then the next sentence's first letter or digit).
+ * It used to cut inside a sentence, at a comma or before a joining word ("with", "so", "to"…), which turned
+ * "I'll confirm the details with you before we move on." into a headline and a bullet "With you before we
+ * move on." (27 Nov 2026 Mac call). A sentence is never split now.
+ */
+const SENTENCE_BREAK = /[.!?]["'”’)\]]*\s+(?=["'“‘(]?[\p{Lu}\d])/gu;
 
-/** Where it can be cut when there is no clause to cut at: before a word that starts a phrase. */
-const PHRASE_BREAK = /\s+(?=(?:to|for|when|after|before|that|if|then|or|by|from)\s)/gi;
+/**
+ * Words that end in a full stop without ending a sentence ("e.g. Kafka", "Dr. Patel", "U.S. teams"):
+ * a full stop right after one of these is never a sentence end (ADR-0135). Compared in lower case.
+ */
+const NOT_SENTENCE_END = new Set([
+  'e.g',
+  'i.e',
+  'etc',
+  'vs',
+  'mr',
+  'mrs',
+  'ms',
+  'dr',
+  'prof',
+  'st',
+  'no',
+  'approx',
+  'inc',
+  'ltd',
+  'co',
+  'u.s',
+  'u.k',
+  'a.m',
+  'p.m',
+]);
 
-/** Bullet marks at the start of a line: "-", "*", "•", or "1." / "1)". */
-const BULLET_MARK = /^\s*(?:[-*•]|\d+[.)])\s+/;
+/**
+ * Bullet marks at the start of a line: "-", "*", "•", an en or em dash (ADR-0135: some models list with
+ * them), or "1." / "1)".
+ */
+const BULLET_MARK = /^\s*(?:[-*•–—]|\d+[.)])\s+/;
+
+/**
+ * ADR-0135: a line that goes on with the sentence above it: it starts with a lower-case letter (after any
+ * bullet mark). Joined to the line before when that one does not end a sentence, so a sentence the model
+ * (or a stream) broke over two lines is never shown as a headline and a bullet.
+ */
+const CONTINUES_SENTENCE = /^\p{Ll}/u;
+
+/** ADR-0135: a line that ends a sentence or a label ("Key steps:"), so the next line is a new one. */
+const ENDS_LINE = /[.!?:;]["'”’)\]]*$/;
 
 /**
  * A hidden line ("[[coding|call|docs]]", "[[question|…]]"). The server removes them (server/
@@ -129,44 +191,44 @@ export function answerLineWords(line: string): number {
 }
 
 /**
- * The last place in a line a pattern allows a cut, within the word limit.
+ * ADR-0135: where the line's first sentence ends, when it is followed by another one: the first sentence
+ * break after at least three words (fewer is not a line anyone can say on its own) that is not an
+ * abbreviation's full stop.
  *
- * @param line    The line.
- * @param pattern Where it may be cut.
- * @returns Where the first part ends and the rest starts, or null.
+ * @param line The line.
+ * @returns Where the first sentence ends and the next starts, or null when the line is one sentence.
  * Called from: splitLongLine()
  */
-function lastBreak(line: string, pattern: RegExp): { end: number; next: number } | null {
-  let cut: { end: number; next: number } | null = null;
-  for (const match of line.matchAll(pattern)) {
-    const words = answerLineWords(line.slice(0, match.index));
-    if (words > MAX_ANSWER_LINE_WORDS) break;
-    // Fewer than three words is not a line anyone can say on its own.
-    if (words >= 3) cut = { end: match.index, next: match.index + match[0].length };
+function firstSentenceBreak(line: string): { end: number; next: number } | null {
+  for (const match of line.matchAll(SENTENCE_BREAK)) {
+    const before = line.slice(0, match.index);
+    if (answerLineWords(before) < 3) continue;
+    // "e.g. Kafka" or "Dr. Patel": the word before the full stop is an abbreviation, not a sentence end.
+    const lastWord = (before.split(/\s+/).at(-1) ?? '').toLowerCase();
+    if (match[0].startsWith('.') && NOT_SENTENCE_END.has(lastWord)) continue;
+    // The mark itself (and any closing quote) stays with the first sentence.
+    const marks = /^[.!?]["'”’)\]]*/.exec(match[0])?.[0].length ?? 1;
+    return { end: match.index + marks, next: match.index + match[0].length };
   }
-  return cut;
+  return null;
 }
 
 /**
- * Cuts an answer line longer than the limit at its last clause break within the limit, or failing that
- * before a word that starts a phrase (v1.1.0, item 16). The prompt asks for 12 words, and the model
- * often runs over; this is what makes the card keep to it, with no extra request. A line with no such
- * break stays whole: a cut anywhere else would read worse than one long line.
+ * Keeps the card's answer line short without ever splitting a sentence (ADR-0135; v1.1.0 item 16 cut at a
+ * clause instead). An answer line over the limit that holds more than one sentence shows its first
+ * sentence; the other sentences become the first bullet. A line that is one sentence stays whole however
+ * long it is: half a sentence on each line reads worse than one long line, and a cut in the middle once
+ * made "…confirm the details with you before we move on." read as two lines.
  *
  * @param line The answer line.
- * @returns The line to show and the rest ('' when it fits or cannot be cut).
+ * @returns The line to show and the rest ('' when it fits or is one sentence).
  * Called from: splitAnswer(); tests
  */
 export function splitLongLine(line: string): { line: string; rest: string } {
   if (answerLineWords(line) <= MAX_ANSWER_LINE_WORDS) return { line, rest: '' };
-  const cut = lastBreak(line, CLAUSE_BREAK) ?? lastBreak(line, PHRASE_BREAK);
+  const cut = firstSentenceBreak(line);
   if (!cut) return { line, rest: '' };
-  const head = line.slice(0, cut.end).trim();
-  const tail = line.slice(cut.next).trim();
-  return {
-    line: /[.!?]$/.test(head) ? head : `${head}.`,
-    rest: tail.charAt(0).toUpperCase() + tail.slice(1),
-  };
+  return { line: line.slice(0, cut.end).trim(), rest: line.slice(cut.next).trim() };
 }
 
 /**
@@ -191,6 +253,7 @@ export function splitAnswer(text: string, finished = false): AnswerParts {
   let say = '';
   let tip = '';
   let note = '';
+  let stillOpen = '';
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i]!;
     const fence = CODE_FENCE.exec(line);
@@ -202,6 +265,20 @@ export function splitAnswer(text: string, finished = false): AnswerParts {
     }
     if (line.trim() === '') continue;
     if (HIDDEN_LINE.test(line)) continue;
+    // ADR-0135: a line that only goes on with the sentence above (a lower-case start, after a line that did
+    // not end a sentence) is joined to it, never shown as a bullet of its own. Code, labelled lines and a
+    // finished sentence are never joined to.
+    const continued = plain(line.replace(BULLET_MARK, ''));
+    if (CONTINUES_SENTENCE.test(continued) && code.length === 0) {
+      if (bullets.length > 0 && !ENDS_LINE.test(bullets.at(-1)!)) {
+        bullets[bullets.length - 1] = `${bullets.at(-1)!} ${continued}`;
+        continue;
+      }
+      if (bullets.length === 0 && headline !== '' && !ENDS_LINE.test(headline)) {
+        headline = `${headline} ${continued}`;
+        continue;
+      }
+    }
     if (headline === '' && bullets.length === 0 && code.length === 0) {
       // A model sometimes labels the first line "Headline:"; the panel shows the headline itself.
       headline = plain(line.replace(BULLET_MARK, '')).replace(HEADLINE_LABEL, '');
@@ -214,6 +291,7 @@ export function splitAnswer(text: string, finished = false): AnswerParts {
     else if (TIP_LABEL.test(clean)) tip = clean.replace(TIP_LABEL, '');
     else if (SAY_LABEL.test(clean)) say = clean.replace(SAY_LABEL, '');
     else if (NOTE_LABEL.test(clean)) note = clean.replace(NOTE_LABEL, '');
+    else if (STILL_OPEN_LABEL.test(clean)) stillOpen = clean.replace(STILL_OPEN_LABEL, '');
     // A depth offer is the Tip when there is none; a second one adds nothing to say.
     else if (DEPTH_OFFER.test(clean)) tip ||= clean;
     else bullets.push(clean);
@@ -222,12 +300,27 @@ export function splitAnswer(text: string, finished = false): AnswerParts {
   // and a line still arriving has nothing yet to sit above.
   const oneLine =
     finished && bullets.length === 0 && answerLineWords(headline) <= ONE_LINE_MAX_WORDS;
-  if (bullets.length > 0 || code.length > 0 || oneLine) {
+  // ADR-0133: several questions answered one labelled line each: shown as written, never cut.
+  const labelled = labelOf(headline) !== null && bullets.some((bullet) => labelOf(bullet) !== null);
+  if (!labelled && (bullets.length > 0 || code.length > 0 || oneLine)) {
     const { line, rest } = splitLongLine(headline);
     headline = line;
     if (rest) bullets.unshift(rest);
   }
-  return { headline, bullets, keySteps, code, complexity, say, tip, note };
+  return { headline, bullets, keySteps, code, complexity, say, tip, note, stillOpen, labelled };
+}
+
+/**
+ * ADR-0133: a line's short label and the words after it ("Timeline: we start in May." → "Timeline" and
+ * "we start in May."), or null when the line has none.
+ *
+ * @param line A line of the answer.
+ * @returns The label and the rest, or null.
+ * Called from: splitAnswer(); AnswerBody.tsx (bold labels); tests
+ */
+export function labelOf(line: string): { label: string; text: string } | null {
+  const match = SHORT_LABEL.exec(line.trim());
+  return match ? { label: match[1]!, text: match[2]! } : null;
 }
 
 /**
@@ -274,5 +367,37 @@ export function cardQuestion(
   if (!raw.trim()) return fallback;
   const cased = chipWords(sentenceCase(raw.trim(), terms)).join(' ');
   const end = cased.lastIndexOf('?');
-  return end === -1 ? cased : cased.slice(0, end + 1);
+  return shortQuestion(end === -1 ? cased : cased.slice(0, end + 1));
+}
+
+/**
+ * ADR-0133: the most words a card shows of a question it has no clean version of. A press now sends
+ * everything said since the last answer (up to MAX_NEWEST_WORDS of the other side), and the 27 Nov 2026
+ * card showed about 45 seconds of talk as its "Question" when the hidden question line did not arrive.
+ */
+export const MAX_SHOWN_QUESTION_WORDS = 20;
+
+/**
+ * ADR-0133: a raw question kept short for the card: the newest whole sentences that fit in
+ * MAX_SHOWN_QUESTION_WORDS words, or, when even the newest sentence is longer, its last words after "…".
+ *
+ * @param text The raw words (already cut after the last question mark).
+ * @returns The words to show.
+ * Called from: cardQuestion()
+ */
+function shortQuestion(text: string): string {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= MAX_SHOWN_QUESTION_WORDS) return text;
+  // Sentences, each with its own end mark (the last may have none).
+  const sentences = text.match(/[^.?!]+[.?!]*/g)?.map((sentence) => sentence.trim()) ?? [text];
+  const kept: string[] = [];
+  let count = 0;
+  for (const sentence of [...sentences].reverse()) {
+    const length = sentence.split(/\s+/).filter(Boolean).length;
+    if (count + length > MAX_SHOWN_QUESTION_WORDS) break;
+    kept.unshift(sentence);
+    count += length;
+  }
+  if (kept.length > 0) return kept.join(' ');
+  return `…${words.slice(-MAX_SHOWN_QUESTION_WORDS).join(' ')}`;
 }

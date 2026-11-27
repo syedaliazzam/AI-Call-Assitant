@@ -670,10 +670,9 @@ test('pickers: choose from the library, upload, one resume, and the session keep
 test('key terms are chips: typed, pasted as a list, removed, and saved one per line', async () => {
   await go('/sessions/new');
   await fillDetails();
-  // v1.3.0 (ADR-0057): Key terms sit in a collapsed Advanced section; Contact name is gone.
+  // ADR-0136: Key terms always show (no Advanced section); v1.3.0 (ADR-0057): Contact name is gone.
   await expect(page.getByLabel('Contact name')).toHaveCount(0);
-  await expect(page.getByLabel('Key terms')).toBeHidden();
-  await page.getByText('Advanced', { exact: true }).click();
+  await expect(page.getByText('Advanced', { exact: true })).toHaveCount(0);
   const terms = page.getByLabel('Key terms');
   await terms.fill('Northwind');
   await terms.press('Enter');

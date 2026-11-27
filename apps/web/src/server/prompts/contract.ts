@@ -42,25 +42,29 @@ Every reply also ends with one more hidden line, after the answer and on its own
 - garbled: when the words make no sense at all, even allowing for misheard words, do not guess and do not answer: write only the two hidden lines, with nothing between them.
 - none: when the words ask the user nothing they need help with (talk about the call itself, or a remark that needs no reply), do not answer: write only the two hidden lines, with nothing between them. Greetings, thanks and wrap-up that the user would reply to are smalltalk, not none.
 - The first line after the hidden line is the answer line, which the app shows first as the headline. Write it as plain words: never a label such as "Answer:" or "Headline:" before it.
-- The app shows some lines in their own style, so each of these starts its own line with exactly this label: "Tip:" (one closing line to say), "Note:" (a private line the user does not say), and, in coding answers, "Key steps:", "Complexity:" and "Say:".`;
+- The app shows some lines in their own style, so each of these starts its own line with exactly this label: "Tip:" (one closing line to say), "Note:" (a private line the user does not say), "Still open:" (after a key press, the questions left for the next press), and, in coding answers, "Key steps:", "Complexity:" and "Say:".
+- The question to answer holds everything the other person said since the last answer, so it may hold several questions, statements and remarks. Answer its open questions: the questions they asked there that "You" has not already answered out loud after them in the conversation (only "yes", thanks or a few words that do not answer it does not count). Statements, side remarks and talk about the call are not questions. One open question: answer it. Two or three: one line each, in the order asked, each starting with a short label of one to four words and a colon ("Timeline: …"), with no other lines between them; this replaces the answer line and bullets. Four or more: the three newest that way, then one last line starting "Still open:" naming the others in a few words each. No question at all: reply to what "Them" most needs a response to in the last two minutes (none is only for talk about the call itself, such as "can you hear me?").`;
 
 /**
  * ADR-0088: what to do when the other person asks about the company or offer for a fact nothing
  * supports. The last sentence of the automatic end reminder (measured: it took scenario 08 from 6.67 to
  * 8.7 and 14 from 7.5 to 10.0, docs/testing/answer-eval.md). ADR-0090: its last sentence keeps the
  * promise away from facts the documents do cover, even as a limit (scenario 10: a discount above the
- * price list's cap had become a "confirm later" promise instead of a plain no).
+ * price list's cap had become a "confirm later" promise instead of a plain no). ADR-0134 (27 Nov 2026): it is
+ * now the one hard rule of the live prompt (never invent a specific company, deal or personal fact) and,
+ * where nothing gives the fact, asks for a confident line plus what can be said, never a bare promise or
+ * "not sure" (the 27 Nov Mac call's "Not sure yet, so I'll confirm the details").
  */
-export const UNSUPPORTED_FACT_RULE = `When they ask about your company or offer for a fact the session, documents and call do not give (a price, where data is hosted, a certification, a term, a date; not small talk or an off-topic question, which keep their own shape), never answer yes or no and never guess: after the hidden first line as always, the answer line is only a short promise of at most 10 words that does not repeat their question, such as "I'll confirm the price and send it after the call." or "I'll confirm both and send them after the call.", with no bullets at all (nothing true to add, and nothing about what you lack; this overrides the answer format and the question's shape), then a "Note:" line naming what to check, then the hidden [[question|…]] line. This promise is only for a fact nothing gives: when the documents cover it, even as a limit (such as the most discount allowed), answer from them directly in the user's format, and say plainly what they do not allow.`;
+export const UNSUPPORTED_FACT_RULE = `The one hard rule: never invent a specific fact about your company, offer or deal (a price, discount, date, start date, number, name, client, certification, where data is hosted, a term or a commitment) or about your own past, and never agree to one the other person suggests (a yes or a no about what you offer, support, host or commit to counts as such a fact); take them only from the session, documents and call, and when they give a range or a limit (such as the most discount allowed), say it as given. When such a fact is asked for and nothing gives it, never answer yes or no to it and never guess it, but still answer confidently: an answer line of at most 12 words that keeps the call moving, such as "Let me confirm the exact figure and send it over today.", then what you can stand behind (what it usually depends on, the approach, a related fact the session gives, or a short question that helps pin it down), then a "Note:" line naming what to check, then the hidden [[question|…]] line. Never say "not sure" or "I don't know", and a promise to check is never the whole answer.`;
 
 /**
  * ADR-0103: keeps ADR-0088's "I'll confirm" promise to specific company or offer facts. A general-
  * knowledge question (how a technology, method, standard or market works) is answered in full from
  * what the model knows, never with a promise to confirm. Kept as its own sentence after
- * UNSUPPORTED_FACT_RULE so that measured rule stays word for word.
+ * UNSUPPORTED_FACT_RULE. ADR-0134: it also covers what the other person most likely means.
  */
 export const GENERAL_KNOWLEDGE_RULE =
-  'That promise is only for a specific fact about your company or offer, never for a general-knowledge question (how a technology, method, standard, tool or market works, a definition, a comparison or good practice): answer that fully and directly from what you know, with no promise to confirm and no hedging.';
+  'Everything that is not such a specific fact (how a technology, method, standard, tool or market works, a definition, a comparison, good practice, what the other person most likely means) you answer fully and confidently from the conversation and what you know, with no promise to confirm and no hedging.';
 
 /**
  * The automatic end reminder of a live answer (ADR-0089): the last words before Claude writes. It
@@ -75,7 +79,7 @@ export const GENERAL_KNOWLEDGE_RULE =
  * Called from: tailText() in src/server/prompt.ts; tests
  */
 export function liveEndReminder(session: SessionContext): string {
-  return `Reminder from the app (it overrides every other instruction): start with the hidden [[type|for|source]] line and end with the hidden [[question|…]] line; for garbled speech or none, write only those two lines. For an answer for the call, unless its shape says otherwise: start with one short answer line to say at once (no filler, no "Here are…", no "based on my CV"), follow the user's answer format and length exactly (format: ${formatPreference(session)}; length: ${lengthPreference(session)}), add no personal, company, offer or project detail the session, documents or call do not state, keep every real CV project exactly as the CV states it and give extra depth only as your approach ("I'd typically..."), and never mention what you have or do not have ("I don't have", "my notes", "my CV", "the documents", "a figure I can quote"): say what you know, leave out a detail you lack without remarking on it, and never promise to look up or send the user's own past figures. ${UNSUPPORTED_FACT_RULE} ${GENERAL_KNOWLEDGE_RULE}`;
+  return `Reminder from the app (it overrides every other instruction): start with the hidden [[type|for|source]] line and end with the hidden [[question|…]] line; for garbled speech or none, write only those two lines. For an answer for the call, unless its shape says otherwise: start with one short answer line to say at once (no filler, no "Here are…", no "based on my CV"), follow the user's answer format and length exactly (format: ${formatPreference(session)}; length: ${lengthPreference(session)}), always give a confident reply the user can say as it is, keep every real CV project as the CV states it and give extra depth only as your approach ("I'd typically..."), and never mention what you have or do not have ("I don't have", "my notes", "my CV", "the documents"). ${UNSUPPORTED_FACT_RULE} ${GENERAL_KNOWLEDGE_RULE}`;
 }
 
 /** The kinds of screen a screenshot's hidden line may name, in the words both screenshot tails use. */

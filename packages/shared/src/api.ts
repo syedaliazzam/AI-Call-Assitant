@@ -397,6 +397,65 @@ export const MAX_TAIL_LINES = 100;
 export const MAX_LINE_CHARS = 2_000;
 
 /**
+ * ADR-0133: what a key press on the call sends besides the conversation and the question (which holds
+ * everything the other side said since the last answer, the user's own replies being in the conversation).
+ */
+export interface PressContext {
+  /** ADR-0132: true when the other side was still speaking at the press (the question's end may be cut off). */
+  speaking: boolean;
+  /**
+   * ADR-0133: the questions an earlier answer listed on its "Still open:" line, when the press came with
+   * nothing new said since: they are answered now. Never logged.
+   */
+  stillOpen?: string;
+}
+
+/**
+ * ADR-0133: how far back a press's window reaches when there was no answer since, ms (about the last
+ * three minutes of the call: the open questions, and with none, what needs a reply in the last minutes).
+ */
+export const PRESS_WINDOW_MS = 180_000;
+
+/** ADR-0133: most words a press's window carries (the newest kept): about three minutes of speech. */
+export const MAX_PRESS_WINDOW_WORDS = 450;
+
+/** ADR-0133: most stretches in a press's window. */
+export const MAX_PRESS_WINDOW_ITEMS = 40;
+
+/** ADR-0137: the longest call memory, in characters (about 350 words). */
+export const MAX_CALL_MEMORY_CHARS = 2_400;
+
+/** ADR-0137: most new transcript lines one call-memory update may carry. */
+export const MAX_CALL_MEMORY_LINES = 400;
+
+/** ADR-0137: the body of POST /api/memory: the memory so far and the lines said since it was written. */
+export interface CallMemoryRequest {
+  /** What the call is (the other side's label, the company, the role, the call type). Never logged. */
+  session: {
+    /** Kind of call, for example 'sales' or 'interview'. */
+    type: string;
+    /** Company the call is with ('' when not given). */
+    company: string;
+    /** Role or topic ('' when not given). */
+    role: string;
+  };
+  /** The memory so far ('' at the first update). Never logged. */
+  previous: string;
+  /** The final lines said since the memory was last written, oldest first. Never logged. */
+  lines: CallLine[];
+}
+
+/** ADR-0137: the reply of POST /api/memory. */
+export interface CallMemoryResponse {
+  /** The updated memory (at most MAX_CALL_MEMORY_CHARS). Never logged. */
+  memory: string;
+  /** Token usage of the request. */
+  usage: AnswerUsage;
+  /** Server time for the request, in ms. */
+  ms: number;
+}
+
+/**
  * Longest screenshot data URL, in characters: about 1 MB of JPEG in base64 (the client keeps
  * the JPEG under 1 MB, core/screenshot/prepare.ts).
  */
@@ -523,6 +582,18 @@ export interface AnswerRequest {
   tail?: CallLine[];
   /** The question to answer: selected from the transcript or typed by the user. */
   question?: string;
+  /**
+   * ADR-0133: a key press on the call (mode `answer`): whether the other side was still speaking, or the
+   * questions an earlier answer left open. Absent on auto-answers, typed questions and screenshots. Uncached
+   * (a note on the tail's question line).
+   */
+  press?: PressContext;
+  /**
+   * ADR-0137: the call memory, a running summary of the whole call so far (key points, questions asked, what
+   * the user said, open items) kept by the device during the call (POST /api/memory). Uncached (in the
+   * tail). At most MAX_CALL_MEMORY_CHARS. Never logged.
+   */
+  memory?: string;
   /**
    * Mode `screenshot` only, and required there: the screenshot as a JPEG data URL
    * (`data:image/jpeg;base64,…`, at most MAX_IMAGE_CHARS). Never logged or stored.

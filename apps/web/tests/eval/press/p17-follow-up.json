@@ -1,0 +1,44 @@
+{
+  "id": "p17-follow-up",
+  "category": "single",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "Where would you start with our reporting?",
+      "start": 2200,
+      "end": 2203
+    },
+    {
+      "speaker": "you",
+      "text": "I'd start with the finance reports, then move to the operations dashboards.",
+      "start": 2204,
+      "end": 2209
+    },
+    {
+      "speaker": "them",
+      "text": "Okay. And why that order?",
+      "start": 2210,
+      "end": 2212
+    }
+  ],
+  "press": 2213,
+  "expect": {
+    "open": [["finance", "because", "first", "order"]],
+    "question": ["order", "why", "finance"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

@@ -29,11 +29,14 @@ import { parseAnswerRequest } from '@/server/validate';
  * (call kinds, general knowledge, examples removed), checked with the answers group (answer-eval.md,
  * 18 Nov 2026). ADR-0107 (19 Nov 2026): the contract's screen types (question; a screenshot is never
  * garbled or none) and the default prompt's screenshot section (find the question or task and answer it),
- * checked with the answers, screenshots, screenshot-types and screen-only groups. Earlier history:
+ * checked with the answers, screenshots, screenshot-types and screen-only groups. ADR-0134 (27 Nov 2026):
+ * the live prompt rewritten around one hard rule (never invent specific facts) with a confident line instead
+ * of a bare "I'll confirm" promise; the key-press rules in the contract (full eval:all against
+ * same-day production, answer-eval.md). Earlier history:
  * ADR-0032, v1.0.1–v1.4, ADR-0084 (unchanged), ADR-0086, ADR-0088, ADR-0089 (see git history of this
  * file). Changing it needs a re-run of the answers group.
  */
-const RULES_SHA256 = 'e837e15711cfc391411b8788fad7d32fe22c60d79e1a7c75f1937aef28e8b076';
+const RULES_SHA256 = '7cc44c9376acdac0f5f09da24b43de4c87208cc7bd641f1894f594e3e78a9ac1';
 
 /**
  * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte

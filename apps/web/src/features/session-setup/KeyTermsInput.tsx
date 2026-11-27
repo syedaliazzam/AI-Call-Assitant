@@ -91,7 +91,8 @@ export function KeyTermsInput({ value, onChange }: KeyTermsInputProps) {
         />
       </div>
       <p id={hintId} className="text-helper text-ui-muted">
-        They help the transcript spell names right.
+        Names, products and acronyms said on the call. They help the transcript and the answers
+        spell them right.
       </p>
     </div>
   );

@@ -438,29 +438,29 @@ describe('the rules block with the default prompt (ADR-0089)', () => {
     // made replies copy the contract's placeholder); the contract alone defines it.
     expect(DEFAULT_LIVE_PROMPT.toLowerCase()).not.toContain('hidden');
     // Numbers are said as given, never worked out into a new figure.
+    expect(SYSTEM_RULES).toContain('Say a number exactly as it was given.');
+    // ADR-0103, ADR-0134: general knowledge is answered fully, never as a fact about the user's company.
     expect(SYSTEM_RULES).toContain(
-      'Say a number exactly as the session details, documents or conversation give it.',
-    );
-    // ADR-0103: general knowledge is answered fully, but not where the answer turns on a company's facts.
-    expect(SYSTEM_RULES).toContain(
-      'General knowledge is answered fully and directly from what you know',
+      'Everything else you answer fully and directly from your general knowledge',
     );
     expect(SYSTEM_RULES).toContain(
-      'The moment it does, the next two sections decide the answer, however familiar the subject is.',
+      "Never present general knowledge as the user's own experience or as a fact about their company.",
     );
     expect(SYSTEM_RULES).toContain(
       "If the same or a similar question comes again, reuse the earlier answer's facts and, as closely as you can, its wording",
     );
     // Day 4 Stage 10 (round 2, kept): short answer lines, supporting lines only from session facts.
     expect(SYSTEM_RULES).toContain('numbers, names, conditions and steps go in the lines after it');
-    expect(SYSTEM_RULES).toContain(
-      'Each supporting line must state a fact from the session details',
-    );
+    // ADR-0134: "each supporting line must state a fact from the session details" was removed (it made
+    // answers thin); the anti-invention lists stay under the one hard rule.
+    expect(SYSTEM_RULES).toContain('Keep to what helps with this question.');
     expect(SYSTEM_RULES).toContain('Never offer or hint at a price, discount, exception');
     // Round 3 (kept): a short answer line even when the session cannot answer. ADR-0103 version 3:
     // the promise is 10 words or fewer and does not repeat the question.
+    // ADR-0134: the one hard rule, with a confident line and what can be said instead of a bare promise.
+    expect(SYSTEM_RULES).toContain('The one hard rule: never invent specific facts');
     expect(SYSTEM_RULES).toContain(
-      'in 10 words or fewer, that does not repeat the question and gives no explanation of why',
+      'Let me confirm the exact figure and send it over today. What I can say is',
     );
     // ADR-0089: the learned preferences moved to the user's preferences in the session block.
     expect(SYSTEM_RULES).not.toContain('Learned preferences');

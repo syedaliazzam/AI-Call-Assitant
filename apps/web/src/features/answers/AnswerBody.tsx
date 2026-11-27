@@ -17,7 +17,7 @@
 import type { AnswerTarget } from '@kite/shared';
 import { useState } from 'react';
 import { claimSegments } from '@/core/answer/claimCheck';
-import { splitAnswer } from '@/core/answer/format';
+import { labelOf, splitAnswer } from '@/core/answer/format';
 import { inlinePieces, markdownBlocks } from '@/core/answer/markdown';
 
 /**
@@ -100,6 +100,37 @@ function ClaimText({
     </>
   );
 }
+
+/**
+ * ADR-0133: a line of an answer that gives several questions one line each: its short label in bold, then
+ * its words (with their claims underlined). A line with no label is shown as it is.
+ *
+ * @param props.text   The line.
+ * @param props.claims The words to underline.
+ * @returns The line.
+ * Rendered by: AnswerBody
+ */
+function LabelledText({
+  text,
+  claims,
+}: {
+  /** The line. */
+  text: string;
+  /** The words to underline. */
+  claims: readonly string[];
+}) {
+  const parts = labelOf(text);
+  if (!parts) return <ClaimText text={text} claims={claims} />;
+  return (
+    <>
+      <span className="mr-1 font-semibold text-ui-heading">{parts.label}:</span>
+      <ClaimText text={parts.text} claims={claims} />
+    </>
+  );
+}
+
+/** ADR-0133: what the "Still open" line says after the questions, so the user knows to press again. */
+export const STILL_OPEN_HINT = 'press Answer again for these.';
 
 /**
  * A code block with its own Copy button.
@@ -287,10 +318,10 @@ export function AnswerBody(props: AnswerBodyProps) {
       <p className={`text-ui-muted ${sizes.body}`}>…</p>
     );
   }
-  const { headline, bullets, keySteps, code, complexity, say, tip, note } = splitAnswer(
-    text,
-    props.finished ?? false,
-  );
+  const { headline, bullets, keySteps, code, complexity, say, tip, note, stillOpen, labelled } =
+    splitAnswer(text, props.finished ?? false);
+  // ADR-0133: several questions, one labelled line each: the labels in bold.
+  const Line = labelled ? LabelledText : ClaimText;
   return (
     <>
       {!(props.hideEmptyHeadline && !headline) && (
@@ -299,7 +330,7 @@ export function AnswerBody(props: AnswerBodyProps) {
           className={`leading-snug text-ui-heading [text-wrap:pretty] ${sizes.headline}`}
         >
           {props.answerLabel && <span className="mr-1.5 font-extrabold">Answer:</span>}
-          {headline ? <ClaimText text={headline} claims={claims} /> : '…'}
+          {headline ? <Line text={headline} claims={claims} /> : '…'}
         </h2>
       )}
       {keySteps && bullets.length > 0 && (
@@ -312,7 +343,7 @@ export function AnswerBody(props: AnswerBodyProps) {
         >
           {bullets.map((bullet, i) => (
             <li key={i}>
-              <ClaimText text={bullet} claims={claims} />
+              <Line text={bullet} claims={claims} />
             </li>
           ))}
         </ul>
@@ -336,6 +367,13 @@ export function AnswerBody(props: AnswerBodyProps) {
         <p aria-label="Tip" className={`mt-2.5 leading-relaxed text-ui-muted ${sizes.body}`}>
           <span className="mr-1 font-medium">Tip:</span>
           <ClaimText text={tip} claims={claims} />
+        </p>
+      )}
+      {stillOpen && (
+        // ADR-0133: the questions left for the next press: not words to say, so muted like the Tip.
+        <p aria-label="Still open" className={`mt-2.5 leading-relaxed text-ui-muted ${sizes.body}`}>
+          <span className="mr-1 font-medium">Still open:</span>
+          {stillOpen} <span className="text-ui-muted">({STILL_OPEN_HINT})</span>
         </p>
       )}
       {note && (

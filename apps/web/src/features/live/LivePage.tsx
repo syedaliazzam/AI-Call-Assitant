@@ -86,7 +86,6 @@ import { withNameKeyterm } from '@/core/stt/sessionHotwords';
 import { findNameOffer, theirLabel, theirName, withTheirName } from '@/core/transcript/theirName';
 import type { CloudEvent } from '@/core/stt/deepgram';
 import type { ChannelEngine } from '@/core/stt/failover';
-import { CATCH_UP_CAP_MS } from '@/core/answer/newestQuestion';
 import { mayRestart, soundCountsForWatchdog, TranscriptWatchdog } from '@/core/stt/watchdog';
 import { accurateWanted, getTranscriptionMode } from '@/core/storage/transcriptionPrefs';
 import { takeCallLock } from '@/core/live/callLock';
@@ -1984,10 +1983,6 @@ export function LivePage({
           ? {
               rules: 'newest' as const,
               themTurns: themTurns.subscribe,
-              catchUp: (atUnix: number) =>
-                cloudRef.current
-                  ? cloudRef.current.catchUp('them', atUnix, CATCH_UP_CAP_MS)
-                  : Promise.resolve({ waitedMs: 0, timedOut: false }),
             }
           : {})}
       />

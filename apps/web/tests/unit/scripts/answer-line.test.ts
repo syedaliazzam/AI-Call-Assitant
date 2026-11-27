@@ -31,10 +31,17 @@ describe('callAnswerLine', () => {
     });
   });
 
-  it('also reports the line as the card shows it, after its cut at a clause', () => {
-    const long =
+  it('also reports the line as the card shows it: cut only between sentences (ADR-0135)', () => {
+    const oneSentence =
       'We cut late deliveries by a third across the northern routes, mostly by rerouting at night';
-    expect(callAnswerLine(`${long}\n- A bullet.`, 'headline+bullets', null)).toEqual({
+    // One sentence is never split: the card shows all 16 words.
+    expect(callAnswerLine(`${oneSentence}\n- A bullet.`, 'headline+bullets', null)).toEqual({
+      answerLineWords: 16,
+      shownLineWords: 16,
+    });
+    const twoSentences =
+      'We cut late deliveries by a third on the northern routes. Most came from night rerouting.';
+    expect(callAnswerLine(`${twoSentences}\n- A bullet.`, 'headline+bullets', null)).toEqual({
       answerLineWords: 16,
       shownLineWords: 11,
     });

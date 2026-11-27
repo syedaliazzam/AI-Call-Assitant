@@ -1,0 +1,38 @@
+{
+  "id": "p08-statement-next-step",
+  "category": "statement",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "you",
+      "text": "We can share the written plan by Friday.",
+      "start": 1300,
+      "end": 1304
+    },
+    {
+      "speaker": "them",
+      "text": "Great, that works for us. I'll loop in our finance lead next week so she can look at it too.",
+      "start": 1305,
+      "end": 1311
+    }
+  ],
+  "press": 1312,
+  "expect": {
+    "open": [],
+    "question": ["finance", "plan", "next week", "loop"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

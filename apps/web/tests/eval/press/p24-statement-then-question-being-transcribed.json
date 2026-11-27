@@ -1,0 +1,45 @@
+{
+  "id": "p24-statement-then-question-being-transcribed",
+  "category": "cutoff",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "We already have one customer on it as a beta, and we'll add a few more over the next weeks and gather signals from them.",
+      "start": 2800,
+      "end": 2808
+    },
+    {
+      "speaker": "you",
+      "text": "Yes, that's mostly it.",
+      "start": 2808.5,
+      "end": 2810
+    },
+    {
+      "speaker": "them",
+      "text": "So is it understood that doing one of those improvement runs together with you is part of",
+      "start": 2810.3,
+      "end": 2815,
+      "grey": true
+    }
+  ],
+  "press": 2815.2,
+  "expect": {
+    "open": [["together", "part of", "yes", "jointly", "with you", "included"]],
+    "question": ["together", "part", "improvement", "run"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}

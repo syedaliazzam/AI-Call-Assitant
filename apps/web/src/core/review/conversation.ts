@@ -374,7 +374,10 @@ function paragraphs(
       continue;
     }
     const { answer } = entry;
-    const { headline, bullets, code, complexity, say, tip } = splitAnswer(answer.text, true);
+    const { headline, bullets, code, complexity, say, tip, stillOpen } = splitAnswer(
+      answer.text,
+      true,
+    );
     const question = cardQuestion(
       answer.question,
       answer.cleanQuestion,
@@ -394,6 +397,8 @@ function paragraphs(
     // Labelled, so the file says which line is which.
     if (say) block.push({ text: `Say: ${say}` });
     if (tip) block.push({ text: `Tip: ${tip}` });
+    // ADR-0133: the questions the answer left for the next press.
+    if (stillOpen) block.push({ text: `Still open: ${stillOpen}` });
     blocks.push(block);
   }
   return blocks.flatMap((block, index) => (index === 0 ? block : [{ text: '' }, ...block]));

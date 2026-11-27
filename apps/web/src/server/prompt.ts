@@ -601,6 +601,55 @@ function choiceLines(request: AnswerRequest): string[] {
   return lines;
 }
 
+/** ADR-0137: the heading over the call memory in the tail. */
+export const MEMORY_HEADING =
+  'Call memory (a running summary of the whole call so far, kept by the app; the exact words above win where they differ):';
+
+/**
+ * ADR-0137: the call memory block of the tail ([] when the request has none).
+ *
+ * @param request The request.
+ * @returns The lines.
+ * Called from: tailText(); tests
+ */
+export function memoryLines(request: AnswerRequest): string[] {
+  const memory = request.memory?.trim();
+  if (!memory) return [];
+  return [MEMORY_HEADING, '<call_memory>', escapeTags(memory), '</call_memory>', ''];
+}
+
+/**
+ * ADR-0132: how the question is introduced when the other side was still speaking at the press (like
+ * SPOKEN_LABEL, a short note in the same line). ADR-0133: the press keeps production's tail ("Question to
+ * answer: …", everything they said since the last answer); the rules for several questions are in the locked
+ * contract (prompts/contract.ts LIVE_CONTRACT). Measured 27 Nov 2026: a separate block and instructions at the
+ * end of the prompt made Haiku write the hidden lines in the wrong order or think aloud (as ADR-0107 found).
+ */
+export const STILL_SPEAKING_LABEL = 'they were still speaking, so its end may be cut off';
+
+/** ADR-0133: how the questions an earlier answer left on its "Still open:" line are introduced. */
+export const STILL_OPEN_LABEL = 'left open by an earlier answer';
+
+/**
+ * ADR-0133: the tail's question line for a request: production's "Question to answer: …", with a short note
+ * for a press made while they were still speaking, or for questions an earlier answer left open.
+ *
+ * @param request  The request (mode answer).
+ * @param question The question (trimmed).
+ * @returns The line.
+ * Called from: tailText(); tests
+ */
+export function questionLine(request: AnswerRequest, question: string): string {
+  const note = request.press?.stillOpen
+    ? STILL_OPEN_LABEL
+    : request.press?.speaking
+      ? STILL_SPEAKING_LABEL
+      : '';
+  return note
+    ? `Question to answer (${note}): ${escapeTags(question)}`
+    : `Question to answer: ${escapeTags(question)}`;
+}
+
 /**
  * ADR-0107: whether a request is a screen-only screenshot (Ctrl+Shift+Enter or the Screenshot button).
  *
@@ -646,6 +695,8 @@ function tailText(
   const parts = hasConversation
     ? ['</conversation>', '']
     : ['<conversation>', '(nothing said yet)', '</conversation>', ''];
+  // ADR-0137: the call memory (a running summary of the whole call), uncached, before the newest lines.
+  parts.push(...memoryLines(request));
   parts.push(
     '<latest>',
     ...(tail.length > 0
@@ -669,7 +720,10 @@ function tailText(
         : `Question typed by the user: ${escapeTags(question)}`,
     );
   } else if (question) {
-    parts.push(`Question to answer: ${escapeTags(question)}`);
+    // ADR-0132/0133: a key press notes "still speaking" or "left open" (never in a rollback).
+    parts.push(
+      previous ? `Question to answer: ${escapeTags(question)}` : questionLine(request, question),
+    );
   } else {
     parts.push('Answer the latest question from "Them".');
   }

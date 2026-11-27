@@ -1,0 +1,39 @@
+{
+  "id": "p06-question-still-being-said",
+  "category": "cutoff",
+  "session": {
+    "type": "regular",
+    "company": "Harbourline Consulting (invented)",
+    "role": "Delivery lead",
+    "description": "",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "lines": [
+    {
+      "speaker": "them",
+      "text": "We're going to put a couple more customers on it next month and collect some real data.",
+      "start": 1100,
+      "end": 1106
+    },
+    {
+      "speaker": "them",
+      "text": "Is running the first improvement cycle together with you part of",
+      "start": 1106.4,
+      "end": 1110,
+      "grey": true
+    }
+  ],
+  "press": 1110.2,
+  "expect": {
+    "open": [["together", "jointly", "with you", "alongside", "part of"]],
+    "question": ["together", "cycle", "part", "improvement"],
+    "forbidden": ["\\$\\s?\\d|\\d+\\s?(?:dollars|usd|euros?|pounds)\\b|\\b(?:costs?|is) \\d"]
+  }
+}
