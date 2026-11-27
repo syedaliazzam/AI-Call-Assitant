@@ -13,16 +13,19 @@
 ## Where things stand (filled in by the release run, 27 Nov 2026)
 
 - **Web:**
-  - `main` @ `<MERGE>`, deployed to production: `<PROD URL>`, aliased to `call.paramountintelligence.co`.
-  - Previous production deployment, for a rollback: `<PREV URL>` (`main` @ `c34dacb` + docs).
+  - `main` @ `e691241`, deployed to production: https://kite-call-assistant-ho89a4xvf-paramount-intelligence.vercel.app, aliased to `call.paramountintelligence.co`.
+  - Previous production deployment, for a rollback: https://kite-call-assistant-umsmg9e18-paramount-intelligence.vercel.app (`main` @ `c34dacb`).
 - **Windows 1.7.5** (built, not published):
   - Folder: `D:\Paramount Intelligence\AI Call Assistant\aica-mac\apps\desktop\release\`.
-  - `Paramount-AI-Setup-1.7.5.exe`: SHA-256 `<EXE SHA>`.
-  - Also `Paramount-AI-Setup-1.7.5.exe.blockmap` and `latest.yml` (version 1.7.5).
+  - `Paramount-AI-Setup-1.7.5.exe`: SHA-256 `ccee3699618a4cecd40f01fcd99cb132758444ccc87f5300fa3f47bdb6b71cae`.
+  - `Paramount-AI-Setup-1.7.5.exe.blockmap`: `0a4757adec525c55b1a19801659ca7937c09545dfbd9bbc605d91154361f3a2a`; `latest.yml` (version 1.7.5): `ce88b23733d54417541b7432533777770c47b61ca2990e69dc8b24e53e2ffa40`.
+  - Local install check (27 Nov 2026): **PASS**, the published 1.7.4 found 1.7.5, downloaded it and verified it.
 - **Mac 1.8.1** (dry run, not published):
-  - Run: `<RUN URL>`, artifact `paramount-ai-mac-1.8.1`.
-  - SHA-256 of the four files: see the run's summary (copied in the release report).
-- **`mac-internal-release`:** fast-forwarded to `main`.
+  - Run: https://github.com/syedaliazzam/AI-Call-Assitant/actions/runs/46008101989 (`e691241`, success, 7.5 min, ALL CHECKS PASSED), artifact `paramount-ai-mac-1.8.1` (kept until 4 Dec 2026).
+  - SHA-256: `latest-mac.yml` `62fbd4dc15672f4199ed910c47bc496e786344e49aa7d98004c0e34dfabcbfa1`; `Paramount-AI-1.8.1-universal-mac.zip` `08a28582d5bd082d58d9be5492661cb5066eb58ed3be6bcf7274c159282e618e`; `.zip.blockmap` `75d1bfa4049f2ddae47727b4420fd70bc0556d61f1516c8122a48c96d36e3f3e`; `Paramount-AI-1.8.1-universal.dmg` `ca7359dfbd816382030f16d99dc4e23fd5ecb43c86dfa2791ffe03f637198bdb`.
+  - The publish run builds the same commit again, so its files have their own hashes; the checks are the same.
+- **`mac-internal-release`:** fast-forwarded to `main` @ `e691241`.
+- **Production e2e** (27 Nov 2026, disposable account created and deleted): domain, desktop-link, launcher, sync-api, sync-devices, legacy-upload: 21 passed, 1 skipped (the admin page, which needs an admin account).
 
 ## 1. Publish Windows 1.7.5 (about 10 min)
 
@@ -46,7 +49,7 @@
      Set-Content -Encoding ascii SHA256SUMS.txt
    ```
 
-   The first line must match `<EXE SHA>`.
+   The first line must match `ccee3699618a4cecd40f01fcd99cb132758444ccc87f5300fa3f47bdb6b71cae`.
 3. **Publish** as the newest ("latest") release. Windows apps read the latest release's `latest.yml`. `mac-latest` stays a pre-release and is not touched.
 
    ```
@@ -130,7 +133,7 @@ Do it on one Windows PC with 1.7.4 and one Mac with 1.8.0, each signed in, with 
 
 | What broke | Do this |
 |---|---|
-| **The web app** | `vercel rollback <PREV URL> --yes` (from a folder linked to `kite-call-assistant`). Everyone is on the previous site within a minute, including 1.7.5 / 1.8.1 apps, which keep working with it (their new capture choice is then simply not used). After a rollback, new deploys need `vercel promote`. Then fix forward on a branch, and `git revert -m 1 <MERGE>` on `main` if the merge itself is the problem. |
+| **The web app** | `vercel rollback https://kite-call-assistant-umsmg9e18-paramount-intelligence.vercel.app --yes` (from a folder linked to `kite-call-assistant`). Everyone is on the previous site within a minute, including 1.7.5 / 1.8.1 apps, which keep working with it (their new capture choice is then simply not used). After a rollback, new deploys need `vercel promote`. Then fix forward on a branch, and `git revert -m 1 e691241` on `main` if the merge itself is the problem. |
 | **Windows 1.7.5** (before many have it) | `gh release edit v1.7.4 -R Zainpak123/kite-releases --latest`: new checks find 1.7.4 again and download nothing. PCs already on 1.7.5 keep it (the updater never goes back). Fix forward as 1.7.6. Do not delete v1.7.5's files while PCs may be downloading. |
 | **Mac 1.8.1** | `publish-mac.mjs` keeps only the newest files on `mac-latest`. To stop it spreading, delete only `latest-mac.yml` from `mac-latest`. The site then says "Mac version coming soon" within ten minutes (ADR-0125), and new Macs cannot install until a fixed 1.8.2 is published. Macs on 1.8.1 keep it. |
 | **A key clash found after release** | The keys come from the shell: a fix needs a new desktop version on that system. Until then Settings → Hotkeys shows the clash. |
