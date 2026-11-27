@@ -5,6 +5,8 @@
  * testUpdateFeed() accepts only an http:// feed on this computer, and startUpdater() uses it.
  * Mac 1.8.1 / Windows 1.7.5: "Check for Updates…" (checkNow()) says up to date, downloading, failed or not available
  * here; a downloaded update asks again, but waits while a call is on; manualCheckReply() has the words.
+ * Mac 1.8.2 / Windows 1.7.6 (ADR-0131): nothing asks on its own (not after a download, not when a call ends);
+ * only Check for Updates… shows the Restart now / Later question.
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -142,7 +144,7 @@ describe('Check for Updates… (Mac 1.8.1 / Windows 1.7.5)', () => {
     expect(await started.checkNow()).toBe('unavailable');
   });
 
-  it('asks Restart now / Later again for a downloaded update, but not during a call', async () => {
+  it('ADR-0131: asks Restart now / Later only from Check for Updates…, never on its own or during a call', async () => {
     const { started, handlers, callActive } = start();
     const senderFrame = { url: 'https://kite.example/live/s1', parent: null };
     callActive({ senderFrame }, true);
@@ -151,8 +153,14 @@ describe('Check for Updates… (Mac 1.8.1 / Windows 1.7.5)', () => {
     expect(dialogs.showMessageBox).not.toHaveBeenCalled();
     expect(await started.checkNow()).toBe('ready-later');
     expect(dialogs.showMessageBox).not.toHaveBeenCalled();
-    // The call ends: the question comes (Later is answered in this fake), and a manual check asks again.
+    // The call ends: nothing pops up (the meeting may still be shared).
     callActive({ senderFrame }, false);
+    expect(dialogs.showMessageBox).not.toHaveBeenCalled();
+    // A second download outside a call asks nothing either.
+    handlers.get('update-downloaded')!({ version: '1.8.2' });
+    expect(dialogs.showMessageBox).not.toHaveBeenCalled();
+    // Only the user's own Check for Updates… asks (Later is answered in this fake), and asks again next time.
+    expect(await started.checkNow()).toBe('ready');
     expect(dialogs.showMessageBox).toHaveBeenCalledTimes(1);
     expect(await started.checkNow()).toBe('ready');
     expect(dialogs.showMessageBox).toHaveBeenCalledTimes(2);
@@ -168,10 +176,10 @@ describe('Check for Updates… (Mac 1.8.1 / Windows 1.7.5)', () => {
       'Downloading Paramount AI 1.7.5',
     );
     expect(manualCheckReply('downloading', { current: '1.7.4' })?.detail).toMatch(
-      /never during a call/,
+      /installed the next time you quit/,
     );
     expect(manualCheckReply('ready-later', { current: '1.8.0', next: '1.8.1' })?.detail).toMatch(
-      /when your call ends/,
+      /installed the next time you quit/,
     );
     expect(manualCheckReply('failed', { current: '1.8.1' })?.message).toBe(
       'Could not check for updates',

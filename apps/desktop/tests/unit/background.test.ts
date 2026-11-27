@@ -1,6 +1,6 @@
 /**
  * Tests for apps/desktop/src/drive/background.ts (desktop 1.7.2, ADR-0106): an exit with Drive work left
- * closes the windows and runs on, with the notification; the app quits by itself once the page reports
+ * closes the windows and runs on (ADR-0131: with no system notification, only the tray); the app quits by itself once the page reports
  * nothing left and no upload is sending; "Quit now" asks first; a second exit asks the same; uploads that
  * stand still for STALL_MS end it; a call that just ended counts until its page reports; reopening runs
  * the app as usual; bad reports are ignored; the tray's words.
@@ -10,7 +10,6 @@ import {
   CHECK_EVERY_MS,
   REPORT_GRACE_MS,
   STALL_MS,
-  backgroundNotice,
   createBackgroundExit,
   workLine,
   type BackgroundView,
@@ -28,7 +27,6 @@ function rig(options: { keep?: boolean; confirm?: boolean } = {}) {
   const seen = {
     entered: 0,
     quits: 0,
-    notices: [] as { title: string; body: string }[],
     views: [] as BackgroundView[],
     timers: [] as { run: () => void; ms: number; stopped: boolean }[],
     asked: 0,
@@ -40,7 +38,6 @@ function rig(options: { keep?: boolean; confirm?: boolean } = {}) {
       seen.entered += 1;
       return options.keep ?? true;
     },
-    notify: (title, body) => seen.notices.push({ title, body }),
     quit: () => {
       seen.quits += 1;
     },
@@ -77,7 +74,7 @@ function rig(options: { keep?: boolean; confirm?: boolean } = {}) {
 
 const ONE = { calls: 1, recordings: 1, sent: 0, total: 100 };
 
-describe('workLine and backgroundNotice', () => {
+describe('workLine', () => {
   it('says what is left, with the share of the recordings already in Drive', () => {
     expect(workLine(null)).toBeNull();
     expect(workLine({ calls: 0, recordings: 0, sent: 0, total: 0 })).toBeNull();
@@ -92,14 +89,9 @@ describe('workLine and backgroundNotice', () => {
     );
   });
 
-  it('is the notification the brief asks for', () => {
-    expect(backgroundNotice(ONE)).toEqual({
-      title: 'Uploading 1 recording to Drive.',
-      body: "Paramount AI will close when it's done.",
-    });
-    expect(backgroundNotice({ calls: 1, recordings: 0, sent: 0, total: 0 }).title).toBe(
-      'Saving 1 call to Drive.',
-    );
+  it('ADR-0131: the controller has no way to show a system notification', async () => {
+    const background = await import('../../src/drive/background');
+    expect('backgroundNotice' in background).toBe(false);
   });
 });
 
@@ -109,18 +101,14 @@ describe('createBackgroundExit', () => {
     r.control.report({ calls: 0, recordings: 0, sent: 0, total: 0 });
     expect(r.control.requestExit()).toBe('quit');
     expect(r.seen.entered).toBe(0);
-    expect(r.seen.notices).toEqual([]);
   });
 
-  it('runs on with work left, tells the person, and quits by itself when it is done', () => {
+  it('runs on with work left, says so in the tray only, and quits by itself when it is done', () => {
     const r = rig();
     r.control.report(ONE);
     expect(r.control.requestExit()).toBe('background');
     expect(r.control.inBackground()).toBe(true);
     expect(r.seen.entered).toBe(1);
-    expect(r.seen.notices).toEqual([
-      { title: 'Uploading 1 recording to Drive.', body: "Paramount AI will close when it's done." },
-    ]);
     expect(r.seen.timers[0]!.ms).toBe(CHECK_EVERY_MS);
     expect(r.seen.views.at(-1)).toEqual({
       background: true,
@@ -152,7 +140,6 @@ describe('createBackgroundExit', () => {
     r.control.report(ONE);
     expect(r.control.requestExit()).toBe('quit');
     expect(r.control.inBackground()).toBe(false);
-    expect(r.seen.notices).toEqual([]);
   });
 
   it('counts a call that just ended until its page reports it', () => {

@@ -1,12 +1,15 @@
 /**
  * File: apps/desktop/src/drive/host.ts
  * Purpose: Wires Google Drive saving into the shell (desktop 1.6.0, ADR-0072): the IPC calls for
- *          uploading a recording file (its progress goes back to the page that asked) and for the native
- *          "saved" notification, for Kite origin main frames only; and the call state, which pauses every
+ *          uploading a recording file (its progress goes back to the page that asked), for Kite origin
+ *          main frames only; and the call state, which pauses every
  *          upload the moment a call starts. 1.6.2 (ADR-0074): a recording file's size. 1.7.2 (ADR-0106): the
  *          page's Drive queue report and the count of uploads sending, for the background upload on exit.
+ *          Mac 1.8.2 / Windows 1.7.6 (ADR-0131): the "saved" notification is gone. Its channel stays (an
+ *          older page may still ask) but refuses every request: a system notification is not covered by
+ *          screen-share protection, and the meeting may still be shared after a call.
  * Used by: src/main.ts
- * Depends on: electron (types), src/drive/{upload,notice}.ts, src/channels.ts, src/hotkeys.ts
+ * Depends on: electron (types), src/drive/upload.ts, src/channels.ts, src/hotkeys.ts
  *             (isKiteSender), src/recordings/manager.ts (types)
  * Architecture: docs/decisions/ADR-0072-google-drive-saving.md; architecture §7.3
  *
@@ -22,7 +25,6 @@ import {
 } from '../channels';
 import { isKiteSender } from '../hotkeys';
 import type { RecordingManager } from '../recordings/manager';
-import { showNotice, type NoticeDeps } from './notice';
 import { createDriveUploader, type DriveUploader } from './upload';
 
 /** What installDrive() needs. */
@@ -39,8 +41,6 @@ export interface DriveHostDeps {
    * @param init The request.
    */
   fetch(url: string, init: RequestInit): Promise<Response>;
-  /** Electron's Notification and shell, for the "saved" notification. */
-  notices: NoticeDeps;
   /**
    * 1.7.2 (ADR-0106): a Kite page reported the Drive work left (checked by the receiver).
    * @param report What arrived.
@@ -122,7 +122,9 @@ export function installDrive(deps: DriveHostDeps): DriveHost {
     });
     return result;
   });
-  handle(SHOW_NOTICE_CHANNEL, (_event, notice) => showNotice(deps.notices, notice));
+  // ADR-0131: shows nothing, ever ("false": the system cannot show one). Kept so an older page's call gets
+  // an answer instead of an error.
+  handle(SHOW_NOTICE_CHANNEL, () => false);
   // 1.6.2 (ADR-0074): a recording file's size, for the server to start and verify its upload.
   handle(DRIVE_FILE_SIZE_CHANNEL, (_event, request) => uploader.fileSize(request));
   // 1.7.2 (ADR-0106): the page's report of the Drive work left (send: the page does not wait).

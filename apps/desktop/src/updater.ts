@@ -12,6 +12,10 @@
  *          this computer are accepted. Squirrel.Mac installs only a build signed with our certificate.
  *          Mac 1.8.1 / Windows 1.7.5: "Check for Updates…" (checkNow(), manualCheckReply()) checks at once and says
  *          "You're up to date", or downloads and then asks Restart now / Later under the same rules.
+ *          Mac 1.8.2 / Windows 1.7.6 (ADR-0131): the restart question is never shown on its own any more
+ *          (it used to pop up the moment a call ended, while the meeting may still be shared, and a message
+ *          box is not covered by screen-share protection). A downloaded update is installed when the user
+ *          quits Paramount AI; "Check for Updates…" still offers Restart now / Later, because the user asked.
  * Used by: src/main.ts (installed builds only)
  * Depends on: electron (app, dialog, ipcMain), electron-updater (autoUpdater; the feed is the
  *             "publish" setting in electron-builder.yml, written into the installed app),
@@ -85,7 +89,7 @@ export interface UpdateState {
  * @param state See UpdateState.
  * @returns 'ask' to show the restart question; 'wait' while a call is live or Drive uploads are left
  *          (ask when they end); 'none' when there is nothing to ask.
- * Called from: startUpdater() (after a download, and when a call ends); tests
+ * Called from: startUpdater() ("Check for Updates…" only, ADR-0131; and the update test's hook); tests
  */
 export function nextUpdateStep(state: UpdateState): 'ask' | 'wait' | 'none' {
   if (!state.downloaded || state.asked) return 'none';
@@ -111,12 +115,10 @@ export interface UpdaterOptions {
 
 /** What startUpdater() gives main.ts. */
 export interface Updater {
-  /** 1.7.2 (ADR-0106): the Drive uploads are done: ask now if an update was waiting for them. */
-  uploadsIdle(): void;
   /**
    * Mac 1.8.1 / Windows 1.7.5: "Check for Updates…" (the Mac app menu, the tray): checks now and says what it
-   * found. A downloaded update gets the usual Restart now / Later question, never during a call or while Drive
-   * uploads are left (it then says it will ask afterwards).
+   * found. A downloaded update gets the Restart now / Later question, never during a call or while Drive
+   * uploads are left (it then says it installs at the next quit; ADR-0131).
    *
    * @returns What the check found (the message shown is manualCheckReply() of it).
    */
@@ -132,9 +134,10 @@ export interface Updater {
 /**
  * What "Check for Updates…" found (Mac 1.8.1 / Windows 1.7.5).
  * - `up-to-date`: this is the newest version.
- * - `downloading`: a newer version is downloading; the restart question comes when it is ready.
+ * - `downloading`: a newer version is downloading; it is installed at the next quit (ADR-0131: no question).
  * - `ready`: a newer version is downloaded; the Restart now / Later question is shown instead of a message.
- * - `ready-later`: downloaded, but a call or Drive uploads are on: the question comes when they end.
+ * - `ready-later`: downloaded, but a call or Drive uploads are on: installed at the next quit, or asked at
+ *   the next "Check for Updates…" (ADR-0131: nothing asks on its own when they end).
  * - `failed`: the check could not reach the release feed (offline, GitHub down).
  * - `unavailable`: this app does not update itself (a development run, or a Microsoft Store install).
  */
@@ -174,13 +177,13 @@ export function manualCheckReply(
       return {
         message: `Downloading Paramount AI${next}`,
         detail:
-          'It downloads in the background. When it is ready, Paramount AI asks you to restart (never during a call).',
+          'It downloads in the background and is installed the next time you quit Paramount AI. To restart into it sooner, choose Check for Updates… again after your call.',
       };
     case 'ready-later':
       return {
         message: `Paramount AI${next} is ready`,
         detail:
-          'Paramount AI asks you to restart when your call ends and any Drive uploads have finished.',
+          'It is installed the next time you quit Paramount AI. To restart into it sooner, choose Check for Updates… again once your call and any Drive uploads have finished.',
       };
     case 'failed':
       return {
@@ -224,15 +227,14 @@ export function startUpdater(options: UpdaterOptions): Updater {
     console.log('[kite] update feed: local test feed');
   }
 
-  /** Asks to restart when the state allows it. */
-  const maybeAsk = () => {
+  /**
+   * Asks Restart now / Later when the state allows it. ADR-0131: only "Check for Updates…" calls it (the
+   * user asked); nothing asks on its own after a download, a call or the Drive uploads.
+   */
+  const ask = () => {
     state.uploading = options.uploadsBusy?.() ?? false;
     if (nextUpdateStep(state) !== 'ask') return;
     state.asked = true;
-    if (process.env.KITE_TEST_UPDATE_ACCEPT === '1') {
-      autoUpdater.quitAndInstall(true, true);
-      return;
-    }
     const window = options.getWindow();
     const question = {
       type: 'info' as const,
@@ -260,15 +262,20 @@ export function startUpdater(options: UpdaterOptions): Updater {
 
   options.ipcMain.on(CALL_ACTIVE_CHANNEL, (event, active: unknown) => {
     if (!isKiteSender(event, options.allowedOrigin)) return;
+    // ADR-0131: remembered for "Check for Updates…" only. A call ending asks nothing: the meeting may still
+    // be shared, and a message box would be seen by everyone.
     state.callActive = active === true;
-    // A call just ended: ask now if an update was waiting for it.
-    maybeAsk();
   });
   autoUpdater.on('update-downloaded', (info) => {
     console.log(`[kite] update ${info.version} downloaded (running ${app.getVersion()})`);
     state.downloaded = true;
     state.asked = false;
-    maybeAsk();
+    // The update test (Day 6) has no one to click: it restarts at once, outside a call and uploads.
+    state.uploading = options.uploadsBusy?.() ?? false;
+    if (process.env.KITE_TEST_UPDATE_ACCEPT === '1' && nextUpdateStep(state) === 'ask') {
+      autoUpdater.quitAndInstall(true, true);
+    }
+    // ADR-0131: otherwise nothing pops up; it is installed when the user quits (autoInstallOnAppQuit).
   });
   autoUpdater.on('error', (error) => {
     // Offline or the feed unreachable: try again at the next check.
@@ -296,7 +303,7 @@ export function startUpdater(options: UpdaterOptions): Updater {
       state.asked = false;
       state.uploading = options.uploadsBusy?.() ?? false;
       if (nextUpdateStep(state) === 'wait') return 'ready-later';
-      maybeAsk();
+      ask();
       return 'ready';
     }
     try {
@@ -310,5 +317,5 @@ export function startUpdater(options: UpdaterOptions): Updater {
       return 'failed';
     }
   };
-  return { uploadsIdle: maybeAsk, checkNow, foundVersion: () => found };
+  return { checkNow, foundVersion: () => found };
 }

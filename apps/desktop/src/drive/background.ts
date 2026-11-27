@@ -3,13 +3,14 @@
  * Purpose: Finishing Google Drive uploads after the user exits (desktop 1.7.2, ADR-0106). The page reports
  *          how much Drive work this computer still has (DriveQueueReport); when the user exits (the panel's
  *          close button, closing its window, the tray's Quit, Cmd+Q) with work left, the app closes every
- *          window but keeps running with its tray icon, shows "Uploading 1 recording to Drive. Paramount AI
- *          will close when it's done.", and quits by itself once the work is done. "Quit now" in the tray
+ *          window but keeps running with its tray icon (whose tooltip and menu say what is left), and quits
+ *          by itself once the work is done. Mac 1.8.2 / Windows 1.7.6 (ADR-0131): no system notification
+ *          any more (a shared screen would show it). "Quit now" in the tray
  *          asks first, then quits (the queue resumes at the next start). Uploads that stop moving for
  *          STALL_MS (offline, Google refusing) also end it: the queue resumes at the next start, so the app
  *          never runs on in the background for nothing. The app is never hidden from the taskbar's tray,
  *          the Dock or the process list (CLAUDE.md).
- *          Pure logic: main.ts gives it the windows, the notification, the tray and the quit.
+ *          Pure logic: main.ts gives it the windows, the tray and the quit.
  * Used by: src/main.ts; tests/unit/background.test.ts
  * Depends on: @kite/shared (DriveQueueReport, isDriveQueueReport)
  * Architecture: docs/decisions/ADR-0106-background-upload-on-exit.md; ADR-0072, ADR-0077
@@ -49,12 +50,6 @@ export interface BackgroundExitDeps {
    * @returns False when no page is left that can keep uploading (then the app just quits).
    */
   enterBackground(): boolean;
-  /**
-   * Shows a native notification.
-   * @param title The first line.
-   * @param body  The second line.
-   */
-  notify(title: string, body: string): void;
   /** Quits for real (main.ts lets the quit through). */
   quit(): void;
   /**
@@ -134,25 +129,6 @@ export function workLine(work: DriveQueueReport | null): string | null {
   }
   if (work.calls > 0) return `Saving ${plural(work.calls, 'call')} to Drive`;
   return null;
-}
-
-/**
- * The notification shown when the app goes on in the background.
- *
- * @param work What is left.
- * @returns Its two lines.
- * Called from: requestExit(); tests
- */
-export function backgroundNotice(work: DriveQueueReport | null): { title: string; body: string } {
-  const recordings = work?.recordings ?? 0;
-  const calls = work?.calls ?? 0;
-  const title =
-    recordings > 0
-      ? `Uploading ${plural(recordings, 'recording')} to Drive.`
-      : calls > 0
-        ? `Saving ${plural(calls, 'call')} to Drive.`
-        : 'Saving your call to Drive.';
-  return { title, body: "Paramount AI will close when it's done." };
 }
 
 /**
@@ -263,8 +239,8 @@ export function createBackgroundExit(deps: BackgroundExitDeps): BackgroundExit {
       if (!deps.enterBackground()) return 'quit';
       background = true;
       lastMoveAt = deps.now();
-      const notice = backgroundNotice(work);
-      deps.notify(notice.title, notice.body);
+      // ADR-0131: no system notification ("Saving your call to Drive."): a shared screen would show it. The
+      // tray icon's tooltip and menu say what is left (showView below).
       console.info('drive: running on in the background', {
         recordings: work?.recordings ?? 0,
         calls: work?.calls ?? 0,
