@@ -8,7 +8,7 @@
 - Do the steps in order.
 - Stop at the first ❌ and use the rollback section.
 - No secret is ever printed or pasted.
-- Publishing either desktop app is your decision: nothing below has been published.
+- Publishing either desktop app is your decision. Both were published on 27 Nov 2026 with the developer's approval (see "Published" below).
 
 ## Where things stand (filled in by the release run, 27 Nov 2026)
 
@@ -25,6 +25,33 @@
   - Run: https://github.com/syedaliazzam/AI-Call-Assitant/actions/runs/46028400531 (`main` @ `84e71da`, success, 8 min, ALL CHECKS PASSED), artifact `paramount-ai-mac-1.8.2`.
   - SHA-256: `latest-mac.yml` `df1aa911ffc572219be07fe0e92bfa267b2a02e5968c62f2380ee93b89d6a809`; `Paramount-AI-1.8.2-universal-mac.zip` `f9e598cf8cef03bf8d716165029f925013085dbf8d102e0f04a456a114de9182`; `.zip.blockmap` `0ff600cd551f9a562aa1b127fd601358d26c253f8519d0b26f94c0fc1f927a2d`; `Paramount-AI-1.8.2-universal.dmg` `a4165b505d003a5b5b902fa650f9d1fd25c8e339f0dd7c9ade719020a30edad8`.
   - The publish run builds the same commit again, so its files have their own hashes; the checks are the same.
+
+## Published (27 Nov 2026, approved by the developer)
+
+- **Windows 1.7.6**, published first:
+  - Local install check (step 1.1), after installing 7-Zip 26.06 with winget: **PASS**. 1.7.5 found, downloaded and verified 1.7.6 from a feed on this computer.
+  - Release https://github.com/Zainpak123/kite-releases/releases/tag/v1.7.6, **Latest**, published 17:19 UTC.
+  - Install check again on the real feed after publishing: **PASS** (1.7.5 → 1.7.6).
+  - `/download/windows`: 302 to `…/latest/download/Paramount-AI-Setup-1.7.6.exe`. `mac-latest` was untouched (1.8.1, Pre-release).
+  - Published SHA-256 (GitHub's own digests; the same as the build above):
+    - `Paramount-AI-Setup-1.7.6.exe` `84a83224c9631e3b0c3a728e64197762e57c1cd8119b128c8b90313917642958`
+    - `Paramount-AI-Setup-1.7.6.exe.blockmap` `346df0198788101cf160cd1a76a29b364767d7f61f399751e32b2b9470f7ed90`
+    - `latest.yml` `52d934669a590ac6afe0728153336d22b8d031392e92cdbd9a85a4c6a68b7667`
+    - `SHA256SUMS.txt` `301c409fcfebd10183bd130703a83c42164ff9d7b7f17ee2a31b97082cd35cf6`
+- **Mac 1.8.2**:
+  - `mac-internal-release` was fast-forwarded to `main` first (`1671bc2` → `3471bfb`; the app code is the same as the dry run's `84e71da`, only docs differ).
+  - Publish run: https://github.com/syedaliazzam/AI-Call-Assitant/actions/runs/46041012379 (`mac-internal-release` @ `3471bfb`, success, 7 min, ALL CHECKS PASSED).
+  - Checks after the run:
+    - `latest-mac.yml` says `version: 1.8.2`;
+    - `mac-latest` is still a **Pre-release**;
+    - Windows "Latest" is still **v1.7.6**;
+    - `/api/mac-release` returns `{"published":true}`.
+  - Published SHA-256 (rebuilt by the publish run, so different from the dry run's):
+    - `latest-mac.yml` `406b3be8d7fc1a34d27e768cfa1f4549fc75731070a81accf6363dc62bb7c526`
+    - `Paramount-AI-1.8.2-universal-mac.zip` `faf9a3616258cc26783ab6fc58fc03af2dac115563e3e5925b074017367f29cd`
+    - `Paramount-AI-1.8.2-universal-mac.zip.blockmap` `205d1c280307ffa1b49e657cdd4df1479346288241d55ee7e39147ad03975925`
+    - `Paramount-AI-1.8.2-universal.dmg` `066f759233eb6d553cb8dfb56153de0c5f4b1d89b297ef1bf85de7a0afc5a5ad`
+- Rollback for each app: section 4.
 
 ## 1. Publish Windows 1.7.6 (about 10 min)
 
