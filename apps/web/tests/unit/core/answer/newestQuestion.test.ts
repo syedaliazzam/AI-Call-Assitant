@@ -189,7 +189,7 @@ describe('chooseNewest (a press, after catching up)', () => {
     });
   });
 
-  it('ADR-0133: a reply no longer ends the window: it goes with the press, for the model to weigh', () => {
+  it('rule 5: a real reply ends the window; a short one or one begun over them does not', () => {
     const replied = [
       line('u1', 'them', 'Tell me about your last project.', 1_000, 3_000),
       line('u2', 'you', 'I built a payments service for a bank.', 4_000, 8_000),
@@ -201,13 +201,10 @@ describe('chooseNewest (a press, after catching up)', () => {
       lastAnswerId: null,
       now: NOW,
     });
-    expect(withReply).toMatchObject({
-      kind: 'answer',
-      text: 'Tell me about your last project. What was the hardest part?',
-    });
-    // Both sides, in time order: the model checks whether the user already answered a question out loud.
-    expect(withReply.kind === 'answer' && withReply.window.stretches.map((s) => s.speaker)).toEqual(
-      ['them', 'you', 'them'],
+    expect(withReply).toMatchObject({ kind: 'answer', text: 'What was the hardest part?' });
+    // ADR-0132: the window the press is watched with (device only) holds the same speech of theirs.
+    expect(withReply.kind === 'answer' && withReply.window.themText).toBe(
+      'What was the hardest part?',
     );
     const backchannel = [replied[0]!, line('u2', 'you', 'Mm-hm.', 3_200, 3_500), replied[2]!];
     expect(

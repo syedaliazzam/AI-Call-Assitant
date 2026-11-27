@@ -388,7 +388,7 @@ export type NewestChoice =
        * The span then reaches the end of the gap, so the next press does not answer the same gap again.
        */
       audioLost?: boolean;
-      /** ADR-0133: what both sides said since the last answer, sent with the press. */
+      /** ADR-0132: the window the press is watched with (device only; never sent). */
       window: PressWindow;
     }
   | {
@@ -445,47 +445,31 @@ function aroundGap(lines: readonly Utterance[], gap: Utterance): Candidate[] {
  * Called from: useLiveAnswers.ts (press); tests
  */
 export function chooseNewest(input: NewestInput): NewestChoice {
-  // ADR-0133: everything both sides said since the newest answered speech, the user's own replies included
-  // (the model checks which questions they already answered out loud), so the user's last reply is no
-  // longer where the other side's words start.
-  const window = pressWindow(input.lines, input.answeredEnd, input.now);
-  // Rule 8 (Batch D, P1-G): their audio lost since the last answer (and since the user's last reply: a gap
-  // the user already spoke after is old news).
-  const gapFrom = Math.max(window.from, replyStartOf(spokenLines(input.lines)));
-  const gap = input.lines.findLast(
-    (line) => line.gap === true && line.speaker === 'them' && line.tEnd > gapFrom,
+  const candidates = unansweredSpeech(input.lines, input.answeredEnd);
+  // Rule 8 (Batch D, P1-G): their audio lost since the last answer (and since the user's last reply).
+  const from = Math.max(
+    input.answeredEnd ?? Number.NEGATIVE_INFINITY,
+    replyStartOf(spokenLines(input.lines)),
   );
-  if (window.themSpan) {
-    const themStretches = window.stretches.filter((stretch) => stretch.speaker === 'them').length;
-    const answer = {
-      kind: 'answer' as const,
-      text: window.themText,
-      lineIds: window.themLineIds,
-      span: window.themSpan,
-      grey: window.grey,
-      words: Math.min(window.themWords, MAX_NEWEST_WORDS),
-      segments: themStretches,
-      window,
-    };
-    if (!gap) return answer;
-    // Reaches the gap's end, so a second press does not answer the same gap again.
-    return {
-      ...answer,
-      span: { start: answer.span.start, end: Math.max(answer.span.end, gap.tEnd) },
-      audioLost: true,
-    };
-  }
-  // With nothing new, the newest words around the gap.
-  const around = gap ? aroundGap(input.lines, gap) : [];
-  if (gap && around.length > 0) {
-    const question = asQuestion(around);
+  const gap = input.lines.findLast(
+    (line) => line.gap === true && line.speaker === 'them' && line.tEnd > from,
+  );
+  // The words to answer: the new ones, or with nothing new, the newest around the gap.
+  const words = candidates.length > 0 ? candidates : gap ? aroundGap(input.lines, gap) : [];
+  if (words.length > 0) {
+    const question = asQuestion(words);
+    // ADR-0132: the same stretch as the window the press is watched with (whether they were still speaking,
+    // and how many of their words were sent). Only the device uses it; the request is production's.
+    const window = pressWindow(input.lines, Math.min(from, question.span.start - 1), input.now);
+    if (!gap) return { kind: 'answer', ...question, segments: words.length, window };
     return {
       kind: 'answer',
       ...question,
+      // Reaches the gap's end, so a second press does not answer the same gap again.
       span: { start: question.span.start, end: Math.max(question.span.end, gap.tEnd) },
-      segments: around.length,
+      segments: words.length,
       audioLost: true,
-      window: pressWindow(input.lines, question.span.start - 1, input.now),
+      window,
     };
   }
   if (gap) return { kind: 'gap' };

@@ -1133,9 +1133,6 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ...(options.screenOnly ? { screenOnly: true } : {}),
         // ADR-0137: the call memory goes with every answer once there is one.
         ...(memoryRef.current.text ? { memory: memoryRef.current.text } : {}),
-        // ADR-0133: a key press's window, and the questions an earlier card left open.
-        ...(mode === 'answer' && pressFor && !auto ? { press: pressFor } : {}),
-        ...(mode === 'answer' && options.alsoAsked ? { alsoAsked: options.alsoAsked } : {}),
         // Found by looking back past a greeting or an instruction: asked as it is.
         ...(picked?.kind === 'question' && (picked.lookedBack || partOfLines)
           ? { question: picked.selected.text }

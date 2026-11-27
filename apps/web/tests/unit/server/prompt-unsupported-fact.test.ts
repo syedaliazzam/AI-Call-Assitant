@@ -45,14 +45,9 @@ describe('the unsupported-fact sentence (ADR-0088)', () => {
   const sentence = UNSUPPORTED_FACT_RULE;
 
   it('says what to do instead of answering yes or no, and keeps the hidden lines in order', () => {
-    // ADR-0134: no yes or no, no agreeing to a suggested fact, no guess, and never "not sure".
-    expect(sentence).toContain(
-      'never answer yes or no, never agree to one they suggest, and never guess',
-    );
-    expect(sentence).toContain('Never say "not sure" or "I don\'t know".');
+    expect(sentence).toContain('never answer yes or no and never guess');
     expect(sentence).toContain('after the hidden first line as always');
-    // ADR-0134: a confident line, then one line with what can be said (it had "no bullets at all").
-    expect(sentence).toContain('then one line with what you can stand behind');
+    expect(sentence).toContain('with no bullets at all');
     expect(sentence).toContain(
       'then a "Note:" line naming what to check, then the hidden [[question|…]] line.',
     );
@@ -66,9 +61,7 @@ describe('the unsupported-fact sentence (ADR-0088)', () => {
   });
 
   it('gives example answer lines of 12 words or fewer', () => {
-    const examples = [...sentence.matchAll(/"((?:I'll|Let me) confirm[^"]*)"/g)].map(
-      (match) => match[1]!,
-    );
+    const examples = [...sentence.matchAll(/"(I'll confirm[^"]*)"/g)].map((match) => match[1]!);
     expect(examples.length).toBeGreaterThanOrEqual(2);
     for (const example of examples) expect(example.split(/\s+/).length).toBeLessThanOrEqual(12);
   });
