@@ -7,8 +7,8 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (default hotkeys);
  *               day-04-answers.md Stage 6
  *
- * The modifier is ⌘ on macOS and Ctrl elsewhere; ADR-0110: on a Mac, Clear, Clear transcript, previous /
- * next and zoom are ⌃⌥ keys (macHotkeyFor()), so ⌘⌫, ⌘←/→ and ⌘= / - / 0 keep their Mac meaning. While
+ * The modifier is Ctrl, and on a Mac Control (⌃) since Mac 1.8.1 (ADR-0110 amended 27 Nov 2026, as ParakeetAI;
+ * until then ⌘, with ⌃⌥ for Clear, previous / next and zoom), so every ⌘ key keeps its Mac meaning. While
  * the user types in a text box, no shortcut is taken: Ctrl+← / Ctrl+→ and Ctrl+Backspace already move
  * and delete by word there,
  * and Enter sends the chat question. Two exceptions (v1.2.0, spec S14), keys that edit nothing and are
@@ -58,63 +58,47 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 /**
- * ADR-0110: the Mac's keys (packages/shared MAC_GLOBAL_HOTKEYS). ⌘ for Answer, Screenshot, the voice
- * question, Ask AI, the script bar and the screenshot and voice question, as before; ⌃⌥ (Control+Option)
- * for Clear answers, Clear transcript, previous / next and zoom, so ⌘⌫, ⌘← / ⌘→ and ⌘= / ⌘- / ⌘0 keep
- * their usual Mac meaning.
+ * ADR-0110 (amended 27 Nov 2026, Mac 1.8.1): on a Mac the keys are the Windows keys with Control (⌃), so a press is
+ * read as Windows reads it, except that Option changes the character (⌥K types "˚", ⌥= types "≠"): with Option
+ * held, a letter, digit, = or - is read from the key's place (e.code). ⌘ is never part of a Kite shortcut on a Mac.
  *
- * @param press  The key press (not a repeat).
- * @param typing True when it happened in a text box.
- * @returns The action, or null.
- * Called from: hotkeyFor()
+ * @param press The key press.
+ * @returns The same press, with the key read from its place when Option is held.
+ * Called from: hotkeyFor(); isTranscriptKey()
  */
-function macHotkeyFor(press: KeyPress, typing: boolean): HotkeyAction | null {
+function macPress(press: KeyPress): KeyPress {
   const place = press.code ?? '';
-  // ⌃⌥ with no ⌘: never while typing (Option+arrows and Option+⌫ edit text).
-  if (press.ctrlKey && press.altKey && !press.metaKey) {
-    if (typing) return null;
-    if (place === 'Backspace' || press.key === 'Backspace') {
-      return press.shiftKey ? 'clear-transcript' : 'clear';
-    }
-    // "+" is Shift+= on most layouts, so both count for zoom in.
-    if (place === 'Equal') return 'zoom-in';
-    if (press.shiftKey) return null;
-    if (place === 'ArrowLeft' || press.key === 'ArrowLeft') return 'prev';
-    if (place === 'ArrowRight' || press.key === 'ArrowRight') return 'next';
-    if (place === 'Minus') return 'zoom-out';
-    if (place === 'Digit0') return 'zoom-reset';
-    return null;
-  }
-  if (!press.metaKey || press.ctrlKey) return null;
-  // ⌘⌥: the screenshot and voice question (also from a text box), Ask AI and the script bar.
-  if (press.altKey) {
-    if (press.shiftKey) return null;
-    if (press.key === 'Enter') return 'screenshot-send';
-    if (typing) return null;
-    if (place === 'KeyK' || press.key.toLowerCase() === 'k') return 'ask-kite';
-    if (place === 'KeyS' || press.key.toLowerCase() === 's') return 'script-bar';
-    return null;
-  }
-  // ⌘ alone: Answer, Screenshot and the voice question (the voice question also from a text box).
-  if (press.key === ' ' && press.shiftKey) return 'chat';
-  if (typing) return null;
-  if (press.key === 'Enter') return press.shiftKey ? 'screenshot' : 'answer';
-  return null;
+  const fromPlace =
+    /^Key([A-Z])$/.exec(place)?.[1]?.toLowerCase() ??
+    /^Digit([0-9])$/.exec(place)?.[1] ??
+    (place === 'Equal' ? '=' : place === 'Minus' ? '-' : undefined);
+  // Copied field by field: a KeyboardEvent's fields are getters, which a spread would not copy.
+  return {
+    key: press.altKey && fromPlace !== undefined ? fromPlace : press.key,
+    ctrlKey: press.ctrlKey,
+    metaKey: press.metaKey,
+    shiftKey: press.shiftKey,
+    altKey: press.altKey,
+    repeat: press.repeat,
+    target: press.target,
+    ...(press.code !== undefined ? { code: press.code } : {}),
+  };
 }
 
 /**
  * The hotkey action for a key press, or null when it is not a Kite shortcut.
  *
- * @param press The key press.
- * @param mac   True on macOS (the Mac's keys, ADR-0110), false elsewhere (Ctrl).
+ * @param pressed The key press.
+ * @param mac     True on macOS (Control, with letters read by place while Option is held), false elsewhere.
  * @returns 'answer', 'screenshot', 'screenshot-send', 'chat', 'clear', 'clear-transcript', 'prev',
  *          'next', 'ask-kite', 'script-bar', or null.
  * Called from: listenForHotkeys(); tests
  */
-export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
-  if (press.repeat) return null;
-  const typing = isTyping(press.target);
-  if (mac) return macHotkeyFor(press, typing);
+export function hotkeyFor(pressed: KeyPress, mac: boolean): HotkeyAction | null {
+  if (pressed.repeat) return null;
+  const typing = isTyping(pressed.target);
+  // ADR-0110 (amended 27 Nov 2026): the same keys on a Mac, with Control (⌃).
+  const press = mac ? macPress(pressed) : pressed;
   // The shortcuts with Alt: Ask Kite (ADR-0030) and the script bar (v1.0.2, ADR-0035). Every other
   // Alt combination stays the browser's.
   if (press.altKey) {
@@ -174,7 +158,7 @@ export function isVoiceCancelKey(press: KeyPress): boolean {
 }
 
 /**
- * Whether a key press is the overlay's Transcript key (v1.3.0, ADR-0056: Ctrl+Alt+T, ⌘⌥T on macOS),
+ * Whether a key press is the overlay's Transcript key (v1.3.0, ADR-0056: Ctrl+Alt+T; ⌃⌥T on a Mac since 1.8.1),
  * handled only by the overlay's own page while it has focus. Never while typing in a box, and never where
  * Ctrl+Alt is AltGr and types a letter (e.key is then that letter, not "t").
  *
@@ -185,11 +169,10 @@ export function isVoiceCancelKey(press: KeyPress): boolean {
  */
 export function isTranscriptKey(press: KeyPress, mac: boolean): boolean {
   if (press.repeat || !press.altKey || press.shiftKey) return false;
-  const held = mac ? press.metaKey && !press.ctrlKey : press.ctrlKey && !press.metaKey;
+  const held = press.ctrlKey && !press.metaKey;
   if (!held || isTyping(press.target)) return false;
-  // On macOS Option changes e.key ("†"), so the key's place (e.code) is checked there too.
-  const code = (press as KeyPress & { code?: string }).code;
-  return press.key.toLowerCase() === 't' || (mac && code === 'KeyT');
+  // On macOS Option changes e.key ("†"), so the key's place (e.code) is read there (macPress()).
+  return (mac ? macPress(press) : press).key.toLowerCase() === 't';
 }
 
 /**

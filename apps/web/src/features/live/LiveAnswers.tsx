@@ -522,6 +522,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
               ...(entry.incomplete ? { incomplete: true } : {}),
               // Batch D (P1-G): their audio was lost around the question.
               ...(entry.audioLost ? { audioLost: true } : {}),
+              // Mac 1.8.1 / Windows 1.7.5: the screenshot's small preview and its screen (memory only).
+              ...(entry.preview ? { preview: entry.preview } : {}),
+              ...(entry.screen
+                ? { screen: { number: entry.screen.number, count: entry.screen.count } }
+                : {}),
             }
           : null,
       chatTarget,
@@ -817,6 +822,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
       else if (command.type === 'report') actions.current.report(command.id, command.note);
       else if (command.type === 'reanswer')
         actions.current.reanswer(command.id, command.answerType);
+      // Mac 1.8.1 / Windows 1.7.5: "Wrong screen?" on the overlay's card.
+      else if (command.type === 'wrong-screen') actions.current.retakeScreen(command.id);
       else if (command.type === 'chat-target') {
         setTarget(command.target);
         setChatTarget(props.session.id, command.target);
@@ -1302,6 +1309,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
           {...(props.copy ? { copy: props.copy } : {})}
           sessionType={props.session.type}
           onReanswer={answers.reanswer}
+          onWrongScreen={answers.retakeScreen}
+          capturing={answers.capturing}
           onShow={answers.show}
         />
       </div>

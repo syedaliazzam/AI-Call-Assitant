@@ -38,7 +38,19 @@ import type {
   ShareProtectionState,
   WindowControlAction,
 } from '@kite/shared';
+import type { ScreenshotRequest, ScreenshotScreen } from '@kite/shared';
 import type { MicDevice, OutputKind } from './media';
+
+/** A screenshot as the platform took it (Mac 1.8.1 / Windows 1.7.5 add the screen). */
+export interface CapturedScreenshot {
+  /** The image (PNG from the shell, or the browser's frame). In memory only. */
+  image: Blob;
+  /**
+   * The screen it came from (Mac 1.8.1 / Windows 1.7.5 desktop apps), or null: a browser, or an older desktop app
+   * (Windows 1.7.4, Mac 1.8.0), which cannot say or take another screen.
+   */
+  screen: ScreenshotScreen | null;
+}
 import type { PipRenderer } from './pip';
 
 // Re-exported so code using the platform can import every platform type from one place.
@@ -146,12 +158,15 @@ export interface Platform {
 
   /**
    * Takes a screenshot to answer from.
-   * - Desktop: the shell captures the current display (desktopCapturer) and returns PNG bytes.
-   * - Browser: grabs a frame from the screen or tab stream the user already shared.
+   * - Desktop: the shell captures a display (desktopCapturer) and returns PNG bytes. Mac 1.8.1 / Windows 1.7.5: the
+   *   display under the mouse pointer, and it says which screen; an older shell takes the display under its window
+   *   and says nothing (screen null), and ignores the request.
+   * - Browser: grabs a frame from the screen or tab stream the user already shared (screen null).
    *
-   * @returns The image as a Blob.
+   * @param request Mac 1.8.1 / Windows 1.7.5, desktop only: "Wrong screen?" asks for the screen after this one.
+   * @returns The image as a Blob, and the screen it came from when the shell says.
    */
-  captureScreenshot(): Promise<Blob>;
+  captureScreenshot(request?: ScreenshotRequest): Promise<CapturedScreenshot>;
 
   /**
    * Opens the small live view for a session (transcript line, latest answer, Answer button).

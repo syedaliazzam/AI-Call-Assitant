@@ -18,6 +18,7 @@ import {
   globalHotkeys,
   SCREENSHOT_SEND_HOTKEY,
   VOICE_CANCEL_HOTKEY,
+  hotkeyAccelerator,
 } from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -80,16 +81,16 @@ describe('createHotkeys', () => {
   });
 
   it('reports a shortcut another app holds, and never releases it', () => {
-    const { globalShortcut } = fakeGlobalShortcut(['CommandOrControl+Alt+H']);
+    const { globalShortcut } = fakeGlobalShortcut(['CommandOrControl+Alt+Y']);
     const hotkeys = createHotkeys(globalShortcut, vi.fn());
     const statuses = hotkeys.enable();
     expect(statuses.find((status) => status.action === 'overlay-toggle')).toEqual({
       action: 'overlay-toggle',
-      accelerator: 'CommandOrControl+Alt+H',
+      accelerator: 'CommandOrControl+Alt+Y',
       registered: false,
     });
     hotkeys.disable();
-    expect(globalShortcut.unregister).not.toHaveBeenCalledWith('CommandOrControl+Alt+H');
+    expect(globalShortcut.unregister).not.toHaveBeenCalledWith('CommandOrControl+Alt+Y');
     expect(globalShortcut.unregister).toHaveBeenCalledTimes(
       Object.keys(DEFAULT_GLOBAL_HOTKEYS).length - 1,
     );
@@ -131,7 +132,7 @@ describe('isKiteSender', () => {
 describe('installHotkeys', () => {
   it('turns the shortcuts on and off over IPC for the Kite page only', async () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
-    const { globalShortcut, callbacks, press } = fakeGlobalShortcut(['CommandOrControl+Alt+H']);
+    const { globalShortcut, callbacks, press } = fakeGlobalShortcut(['CommandOrControl+Alt+Y']);
     const handlers = new Map<string, (event: unknown, on: unknown) => unknown>();
     const ipcMain = { handle: vi.fn((channel: string, fn) => handlers.set(channel, fn)) };
     const sendToPage = vi.fn();
@@ -143,7 +144,7 @@ describe('installHotkeys', () => {
     }[];
     expect(statuses.filter((status) => !status.registered)).toHaveLength(1);
     expect(JSON.stringify(vi.mocked(console.info).mock.calls)).toContain(
-      '"taken":["CommandOrControl+Alt+H"]',
+      '"taken":["CommandOrControl+Alt+Y"]',
     );
     press('CommandOrControl+Enter');
     expect(sendToPage).toHaveBeenCalledWith(HOTKEY_CHANNEL, 'answer');
@@ -196,7 +197,7 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
     });
     controller.enable();
     press('CommandOrControl+Enter');
-    press('CommandOrControl+Alt+H');
+    press('CommandOrControl+Alt+Y');
     press('CommandOrControl+Alt+Shift+Up');
     press('CommandOrControl+Shift+Down');
     // v1.0.2 (ADR-0035): the script bar goes to the page, which decides what the overlay shows.
@@ -248,7 +249,7 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
   });
 
   it('check() finds conflicts outside a call and releases everything again', () => {
-    const { globalShortcut, callbacks } = fakeGlobalShortcut(['CommandOrControl+Alt+H']);
+    const { globalShortcut, callbacks } = fakeGlobalShortcut(['CommandOrControl+Alt+Y']);
     const hotkeys = createHotkeys(globalShortcut, vi.fn());
     const statuses = hotkeys.check();
     expect(statuses.filter((status) => !status.registered).map((s) => s.action)).toEqual([
@@ -510,24 +511,22 @@ describe('the Ask Kite shortcut (ADR-0030)', () => {
   });
 });
 
-describe('the Mac keys (ADR-0110)', () => {
-  /** The Mac's text-editing and window keys a call must never take. */
-  const MAC_EDITING_KEYS = [
+describe('the Mac keys (ADR-0110 amended 27 Nov 2026, Mac 1.8.1)', () => {
+  /** ⌘ keys every Mac app uses (text editing, window, zoom); a call must never take one. */
+  const MAC_COMMAND_KEYS = [
     'CommandOrControl+Left',
     'CommandOrControl+Right',
     'CommandOrControl+Backspace',
-    'CommandOrControl+Shift+Backspace',
+    'CommandOrControl+Enter',
     'CommandOrControl+=',
     'CommandOrControl+-',
     'CommandOrControl+0',
     'CommandOrControl+Shift+Left',
-    'CommandOrControl+Shift+Right',
-    'CommandOrControl+Shift+Up',
-    'CommandOrControl+Shift+Down',
-    'CommandOrControl+Alt+H',
+    'CommandOrControl+Alt+K',
+    'CommandOrControl+Alt+Y',
   ];
 
-  it('holds ⌃⌥ and ⌃⌘ keys instead, and still forwards each press as its action', () => {
+  it('holds the Windows keys with Control (⌃), never ⌘, and forwards each press as its action', () => {
     const { globalShortcut, callbacks, press } = fakeGlobalShortcut();
     const sendToPage = vi.fn();
     const overlayAction = vi.fn();
@@ -538,34 +537,51 @@ describe('the Mac keys (ADR-0110)', () => {
       overlayAction,
       allowedOrigin: ORIGIN,
       accelerators: globalHotkeys(true),
+      ownKeys: {
+        askKite: hotkeyAccelerator('ask-kite', true),
+        transcript: hotkeyAccelerator('transcript', true),
+      },
     });
+    // Ask AI is held for as long as the app runs, with ⌃ ⌥ K.
+    expect(callbacks.has('Control+Alt+K')).toBe(true);
     controller.enable();
-    for (const key of MAC_EDITING_KEYS) expect(callbacks.has(key)).toBe(false);
-    press('Control+Alt+Left');
-    press('Control+Alt+Backspace');
-    press('Control+Alt+=');
-    press('CommandOrControl+Enter');
+    for (const key of MAC_COMMAND_KEYS) expect(callbacks.has(key), key).toBe(false);
+    for (const key of callbacks.keys()) expect(key, key).not.toMatch(/Command/);
+    press('Control+Left');
+    press('Control+Backspace');
+    press('Control+=');
+    press('Control+Enter');
+    press('Control+Alt+K');
     expect(sendToPage.mock.calls.map((call) => call[1])).toEqual([
       'prev',
       'clear',
       'zoom-in',
       'answer',
+      'ask-kite',
     ]);
-    press('Control+Alt+H');
-    press('Control+Command+Up');
+    press('Control+Alt+Y');
+    press('Control+Shift+Up');
     expect(overlayAction.mock.calls.map((call) => call[0])).toEqual([
       'overlay-toggle',
       'overlay-row-top',
     ]);
-    expect(controller.check().find((status) => status.action === 'prev')?.accelerator).toBe(
-      'Control+Alt+Left',
+    const statuses = controller.check();
+    expect(statuses.find((status) => status.action === 'prev')?.accelerator).toBe('Control+Left');
+    expect(statuses.find((status) => status.action === 'transcript')?.accelerator).toBe(
+      'Control+Alt+T',
+    );
+    expect(statuses.find((status) => status.action === 'ask-kite')?.accelerator).toBe(
+      'Control+Alt+K',
     );
   });
 
-  it('leaves Windows exactly as before', () => {
+  it('leaves Windows as before, with show or hide on Ctrl+Alt+Y (ADR-0127)', () => {
     expect(globalHotkeys(false)).toBe(DEFAULT_GLOBAL_HOTKEYS);
     const { globalShortcut, callbacks } = fakeGlobalShortcut();
-    createHotkeys(globalShortcut, vi.fn()).enable();
-    for (const key of MAC_EDITING_KEYS) expect(callbacks.has(key)).toBe(true);
+    const controller = createHotkeys(globalShortcut, vi.fn());
+    controller.enable();
+    controller.enableAskKite();
+    for (const key of MAC_COMMAND_KEYS) expect(callbacks.has(key), key).toBe(true);
+    expect(callbacks.has('CommandOrControl+Alt+H')).toBe(false);
   });
 });

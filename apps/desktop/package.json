@@ -1,6 +1,7 @@
 {
   "name": "@kite/desktop",
-  "version": "1.8.0",
+  "version": "1.8.1",
+  "windowsVersion": "1.7.5",
   "private": true,
   "description": "Kite desktop shell (Electron): opens the deployed Kite web app in a locked-down window and adds native features via window.kiteDesktop.",
   "author": "Paramount Intelligence",
@@ -14,7 +15,7 @@
     "test": "pnpm electron:install && pnpm build && playwright test",
     "test:unit": "vitest run",
     "test:manual": "pnpm electron:install && pnpm build && playwright test -c playwright.manual.config.ts",
-    "dist:win": "pnpm electron:install && pnpm build && node scripts/stage-stt-model.mjs && electron-builder --win --publish never",
+    "dist:win": "pnpm electron:install && pnpm build && node scripts/stage-stt-model.mjs && node scripts/dist-win.mjs",
     "mac:prepare": "pnpm electron:install && pnpm build && node scripts/stage-native.mjs --mac-universal && node scripts/stage-stt-model.mjs",
     "dist:mac": "pnpm mac:prepare && electron-builder --mac --publish never",
     "dist:mac:developer-id": "pnpm mac:prepare && electron-builder --mac --publish never -c electron-builder.mac-developer-id.yml",

@@ -8,7 +8,8 @@
  *          source tags, how it was asked, the time and the time to the first word, then 👍 / 👎,
  *          Copy and Report (Cancel while it streams). The others are collapsed to the question and
  *          the answer line; clicking one selects it (v1.0.4, ADR-0040). A screenshot answer shows a
- *          small thumbnail, from memory only (Day 5).
+ *          small thumbnail, from memory only (Day 5); Mac 1.8.1 / Windows 1.7.5: with its screen ("Screen 2") and
+ *          "Wrong screen?" (ScreenshotSource.tsx).
  * Used by: src/features/live/LiveAnswers.tsx
  * Depends on: src/core/answer/format.ts, src/features/answers (AnswerBody, AnswerTags),
  *             src/features/live/useLiveAnswers.ts (AnswerEntry), src/ui (Button, icons)
@@ -29,6 +30,7 @@ import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
 import { Button } from '@/ui/Button';
 import { CopyIcon, FlagIcon, ThumbDownIcon, ThumbUpIcon } from '@/ui/icons';
+import { ScreenshotSource } from './ScreenshotSource';
 import type { AnswerEntry } from './useLiveAnswers';
 
 /** Props for AnswerPanel. */
@@ -64,6 +66,10 @@ export interface AnswerPanelProps {
   sessionType?: string;
   /** Answers again in another shape (the type menu in the footer). */
   onReanswer?: (id: string, answerType: AnswerType) => void;
+  /** Mac 1.8.1 / Windows 1.7.5: "Wrong screen?" on a screenshot answer (the next screen, the same card). */
+  onWrongScreen?: (id: string) => void;
+  /** Mac 1.8.1 / Windows 1.7.5: true while a screenshot is being taken ("Wrong screen?" waits). */
+  capturing?: boolean;
   /** Selects an answer (clicking a collapsed card). */
   onShow?: (id: string) => void;
 }
@@ -192,13 +198,16 @@ function AnswerCard(props: AnswerCardProps) {
       )}
 
       <div className="mt-2">
-        {entry.thumbnail && (
-          // The screenshot, from memory (a data URL; never saved). Small, for context only.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={entry.thumbnail}
-            alt="Screenshot this answer is about"
-            className="mb-2 max-h-20 border border-ui-border"
+        {entry.mode === 'screenshot' && (
+          // The screenshot, from memory (a data URL; never saved). Small, for context only. Mac 1.8.1 / Windows
+          // 1.7.5: its screen and "Wrong screen?", once it has finished (a retake would stop it otherwise).
+          <ScreenshotSource
+            image={entry.preview ?? entry.thumbnail}
+            screen={entry.screen}
+            busy={props.capturing}
+            {...(props.onWrongScreen
+              ? { onWrongScreen: () => props.onWrongScreen?.(entry.id) }
+              : {})}
           />
         )}
         {/* No placeholder answer line when Claude was unavailable, the answer has a problem box,
@@ -436,6 +445,8 @@ export function AnswerPanel(props: AnswerPanelProps) {
                 {...(props.copy ? { copy: props.copy } : {})}
                 {...(props.sessionType ? { sessionType: props.sessionType } : {})}
                 {...(props.onReanswer ? { onReanswer: props.onReanswer } : {})}
+                {...(props.onWrongScreen ? { onWrongScreen: props.onWrongScreen } : {})}
+                {...(props.capturing ? { capturing: props.capturing } : {})}
                 {...(props.onShow ? { onShow: props.onShow } : {})}
               />
             ))

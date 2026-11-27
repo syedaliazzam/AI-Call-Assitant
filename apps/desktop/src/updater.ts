@@ -10,6 +10,8 @@
  *          1.8.0 (ADR-0109): macOS reads its own channel (mac-latest, set in electron-builder.yml), and a
  *          local test feed can be set for the real-Mac update test (testUpdateFeed()); only addresses on
  *          this computer are accepted. Squirrel.Mac installs only a build signed with our certificate.
+ *          Mac 1.8.1 / Windows 1.7.5: "Check for Updates…" (checkNow(), manualCheckReply()) checks at once and says
+ *          "You're up to date", or downloads and then asks Restart now / Later under the same rules.
  * Used by: src/main.ts (installed builds only)
  * Depends on: electron (app, dialog, ipcMain), electron-updater (autoUpdater; the feed is the
  *             "publish" setting in electron-builder.yml, written into the installed app),
@@ -111,6 +113,87 @@ export interface UpdaterOptions {
 export interface Updater {
   /** 1.7.2 (ADR-0106): the Drive uploads are done: ask now if an update was waiting for them. */
   uploadsIdle(): void;
+  /**
+   * Mac 1.8.1 / Windows 1.7.5: "Check for Updates…" (the Mac app menu, the tray): checks now and says what it
+   * found. A downloaded update gets the usual Restart now / Later question, never during a call or while Drive
+   * uploads are left (it then says it will ask afterwards).
+   *
+   * @returns What the check found (the message shown is manualCheckReply() of it).
+   */
+  checkNow(): Promise<ManualCheckOutcome>;
+  /**
+   * The newer version the last check found (downloading or downloaded), for the manual check's message.
+   *
+   * @returns Its version, or null when none was found.
+   */
+  foundVersion(): string | null;
+}
+
+/**
+ * What "Check for Updates…" found (Mac 1.8.1 / Windows 1.7.5).
+ * - `up-to-date`: this is the newest version.
+ * - `downloading`: a newer version is downloading; the restart question comes when it is ready.
+ * - `ready`: a newer version is downloaded; the Restart now / Later question is shown instead of a message.
+ * - `ready-later`: downloaded, but a call or Drive uploads are on: the question comes when they end.
+ * - `failed`: the check could not reach the release feed (offline, GitHub down).
+ * - `unavailable`: this app does not update itself (a development run, or a Microsoft Store install).
+ */
+export type ManualCheckOutcome =
+  'up-to-date' | 'downloading' | 'ready' | 'ready-later' | 'failed' | 'unavailable';
+
+/** A message box's text for a manual check. */
+export interface ManualCheckReply {
+  /** The bold first line. */
+  message: string;
+  /** The line under it. */
+  detail: string;
+}
+
+/**
+ * The message "Check for Updates…" shows for an outcome (Mac 1.8.1 / Windows 1.7.5).
+ *
+ * @param outcome  What the check found.
+ * @param versions The running version, and the newer one when there is one.
+ * @returns The message, or null for `ready` (the Restart now / Later question is shown instead).
+ * Called from: showManualCheck() in main.ts; tests
+ */
+export function manualCheckReply(
+  outcome: ManualCheckOutcome,
+  versions: { current: string; next?: string | null },
+): ManualCheckReply | null {
+  const next = versions.next ? ` ${versions.next}` : '';
+  switch (outcome) {
+    case 'ready':
+      return null;
+    case 'up-to-date':
+      return {
+        message: "You're up to date",
+        detail: `Paramount AI ${versions.current} is the newest version.`,
+      };
+    case 'downloading':
+      return {
+        message: `Downloading Paramount AI${next}`,
+        detail:
+          'It downloads in the background. When it is ready, Paramount AI asks you to restart (never during a call).',
+      };
+    case 'ready-later':
+      return {
+        message: `Paramount AI${next} is ready`,
+        detail:
+          'Paramount AI asks you to restart when your call ends and any Drive uploads have finished.',
+      };
+    case 'failed':
+      return {
+        message: 'Could not check for updates',
+        detail: 'Check your internet connection and try again.',
+      };
+    case 'unavailable':
+      return {
+        message: 'Updates are not checked here',
+        detail:
+          'This copy of Paramount AI does not update itself (a test run, or the Microsoft Store keeps it up to date).',
+      };
+  }
 }
 
 /**
@@ -192,8 +275,40 @@ export function startUpdater(options: UpdaterOptions): Updater {
     console.warn(`[kite] update check failed: ${error.name}`);
   });
 
+  // Mac 1.8.1 / Windows 1.7.5: the version a check found and is downloading (for "Check for Updates…").
+  let found: string | null = null;
+  autoUpdater.on('update-available', (info) => {
+    found = info.version;
+  });
+
   const check = () => void autoUpdater.checkForUpdates().catch(() => undefined);
   check();
   setInterval(check, CHECK_EVERY_MS);
-  return { uploadsIdle: maybeAsk };
+
+  /**
+   * "Check for Updates…": checks now (see Updater.checkNow).
+   *
+   * @returns What it found.
+   */
+  const checkNow = async (): Promise<ManualCheckOutcome> => {
+    if (state.downloaded) {
+      // Asked before and the user chose Later: a manual check asks again (outside a call and uploads).
+      state.asked = false;
+      state.uploading = options.uploadsBusy?.() ?? false;
+      if (nextUpdateStep(state) === 'wait') return 'ready-later';
+      maybeAsk();
+      return 'ready';
+    }
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      if (!result) return 'unavailable';
+      if (!result.isUpdateAvailable) return 'up-to-date';
+      found = result.updateInfo.version;
+      // autoDownload is on, so the download has started; 'update-downloaded' asks as usual.
+      return 'downloading';
+    } catch {
+      return 'failed';
+    }
+  };
+  return { uploadsIdle: maybeAsk, checkNow, foundVersion: () => found };
 }

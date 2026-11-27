@@ -4,7 +4,8 @@
  * carries the progress; the icon's file is the .ico on Windows and the PNG elsewhere, from resources/tray
  * in an installed app; the menu's items run the right actions and the menu is rebuilt only on a change.
  * ADR-0055 (amended 26 Nov 2026): during a call the menu starts with "Turn click-through off", which runs its
- * action; the item goes when the call ends.
+ * action; the item goes when the call ends. Windows 1.7.5: "Check for Updates…" (only when the app updates itself,
+ * and not after an exit) runs its action.
  */
 import path from 'node:path';
 import type { MenuItemConstructorOptions } from 'electron';
@@ -48,6 +49,53 @@ describe('trayItems and trayTooltip', () => {
     expect(trayItems({ background: false, status: null }, false)).not.toContainEqual(
       expect.objectContaining({ action: 'click-through-off' }),
     );
+  });
+});
+
+describe('Check for Updates… in the tray (Windows 1.7.5)', () => {
+  it('shows only for an app that updates itself, under Open, and not after an exit', () => {
+    expect(trayItems({ background: false, status: null }, false, true)).toEqual([
+      { label: 'Open Paramount AI', action: 'open' },
+      { label: 'Check for Updates…', action: 'check-updates' },
+      { label: 'Quit Paramount AI', action: 'quit' },
+    ]);
+    expect(trayItems({ background: true, status: null }, false, true)).not.toContainEqual(
+      expect.objectContaining({ action: 'check-updates' }),
+    );
+    // During a call too, under "Turn click-through off".
+    expect(
+      trayItems({ background: false, status: null }, true, true).map((item) => item.action),
+    ).toEqual(['click-through-off', undefined, 'open', 'check-updates', 'quit']);
+  });
+
+  it('runs the check from the menu', () => {
+    const menus: MenuItemConstructorOptions[][] = [];
+    const checked = vi.fn();
+    installTray(
+      {
+        createTray: () =>
+          ({
+            setToolTip: () => undefined,
+            setContextMenu: () => undefined,
+            on: () => undefined,
+            destroy: () => undefined,
+          }) as never,
+        buildMenu: (template) => {
+          menus.push(template);
+          return null as never;
+        },
+        image: {} as never,
+        onOpen: vi.fn(),
+        onQuit: vi.fn(),
+        onQuitNow: vi.fn(),
+        onClickThroughOff: vi.fn(),
+        onCheckForUpdates: checked,
+      },
+      { background: false, status: null },
+    );
+    const item = menus[0]!.find((one) => one.label === 'Check for Updates…')!;
+    (item.click as () => void)();
+    expect(checked).toHaveBeenCalledOnce();
   });
 });
 

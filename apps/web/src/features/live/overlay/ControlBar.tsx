@@ -33,7 +33,7 @@
  */
 'use client';
 
-import { ASK_KITE_HOTKEY, DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
+import { hotkeyAccelerator, hotkeyLabel } from '@kite/shared';
 import { Clock } from 'lucide-react';
 import {
   useEffect,
@@ -219,8 +219,12 @@ function ChatButton({
       type="button"
       aria-label="Chat"
       aria-expanded={open}
-      aria-keyshortcuts={hotkeyLabel(ASK_KITE_HOTKEY, mac)}
-      data-tip={tipText(open ? 'Close chat' : 'Chat: type a question', ASK_KITE_HOTKEY, mac)}
+      aria-keyshortcuts={hotkeyLabel(hotkeyAccelerator('ask-kite', mac), mac)}
+      data-tip={tipText(
+        open ? 'Close chat' : 'Chat: type a question',
+        hotkeyAccelerator('ask-kite', mac),
+        mac,
+      )}
       data-chat-button=""
       data-releases-focus=""
       className={`${word ? `${PILL} gap-1.5` : ICON_BUTTON} ${open ? 'text-ui-text ring-1 ring-inset ring-ui-accent-fill' : ''}`}
@@ -292,8 +296,13 @@ function AutoAnswerToggle({
   );
 }
 
-/** Ctrl+Alt+X: Click-through on or off (v1.3.2). */
-const CLICK_THROUGH_ACCELERATOR = DEFAULT_GLOBAL_HOTKEYS['click-through'];
+/**
+ * Ctrl+Alt+X: Click-through on or off (v1.3.2); ⌃⌥X on a Mac since 1.8.1.
+ *
+ * @param mac True on a Mac.
+ * @returns The accelerator.
+ */
+const CLICK_THROUGH_ACCELERATOR = (mac: boolean) => hotkeyAccelerator('click-through', mac);
 
 /** The short label the Click-through toggle shows in place of a pointer (its full name is in the tooltip). */
 const CLICK_THROUGH_LABEL = 'W';
@@ -338,12 +347,12 @@ function ClickThroughToggle({
       role="switch"
       aria-checked={on}
       aria-label="Click-through"
-      aria-keyshortcuts={hotkeyLabel(CLICK_THROUGH_ACCELERATOR, mac)}
+      aria-keyshortcuts={hotkeyLabel(CLICK_THROUGH_ACCELERATOR(mac), mac)}
       data-tip={tipText(
         on
           ? 'Click-through: On (clicks go to the app behind)'
           : 'Click-through: Off (turn on to click the app behind the overlay)',
-        CLICK_THROUGH_ACCELERATOR,
+        CLICK_THROUGH_ACCELERATOR(mac),
         mac,
       )}
       data-click-through={on ? 'on' : 'off'}

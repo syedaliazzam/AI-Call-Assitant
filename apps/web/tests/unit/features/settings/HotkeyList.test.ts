@@ -10,7 +10,13 @@
  * ADR-0055 (amended 26 Nov 2026): a taken Click-through key says it cannot turn Click-through off, and gets a
  * warning of its own naming the key and the ways back (W on bar 1, the call window's button).
  */
-import { DEFAULT_GLOBAL_HOTKEYS, HOTKEY_ROWS, hotkeyLabel, type HotkeyStatus } from '@kite/shared';
+import {
+  DEFAULT_GLOBAL_HOTKEYS,
+  HOTKEY_ROWS,
+  hotkeyLabel,
+  macSystemNotes,
+  type HotkeyStatus,
+} from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/platform', () => ({ getPlatform: () => ({}) }));
@@ -114,16 +120,40 @@ describe('the keys a row shows (ADR-0095)', () => {
   });
 });
 
-describe('Settings on a Mac (ADR-0110)', () => {
-  it('lists the Mac keys, and a Mac app reporting them shows them as they are', () => {
+describe('Settings on a Mac (ADR-0110 amended 27 Nov 2026, Mac 1.8.1)', () => {
+  it('lists the Mac keys (Control for Ctrl), and a Mac 1.8.0 app reporting its own keys shows those', () => {
     const rows = hotkeyRowsFor(true, true, true);
     const clear = rows.find((row) => row.actions.includes('clear'))!;
-    expect(clear.accelerator).toBe('Control+Alt+Backspace');
-    const held: HotkeyStatus[] = [
+    expect(clear.accelerator).toBe('Control+Backspace');
+    const now: HotkeyStatus[] = [
+      { action: 'clear', accelerator: 'Control+Backspace', registered: true },
+    ];
+    expect(hotkeyLabel(rowKeys(clear, now, true), true)).toBe('⌃ ⌫');
+    // A Mac 1.8.0 app still holds ADR-0110's earlier keys until it updates: the row shows them.
+    const old: HotkeyStatus[] = [
       { action: 'clear', accelerator: 'Control+Alt+Backspace', registered: true },
     ];
-    expect(rowKeys(clear, held, true)).toBe('Control+Alt+Backspace');
-    expect(hotkeyLabel(rowKeys(clear, held, true), true)).toBe('⌃ ⌥ ⌫');
+    expect(hotkeyLabel(rowKeys(clear, old, true), true)).toBe('⌃ ⌥ ⌫');
+    // So does a Windows 1.7.4 app for show or hide (Ctrl+Alt+H until 1.7.5).
+    const toggle = hotkeyRowsFor(true, true, false).find((row) =>
+      row.actions.includes('overlay-toggle'),
+    )!;
+    const windows174: HotkeyStatus[] = [
+      { action: 'overlay-toggle', accelerator: 'CommandOrControl+Alt+H', registered: true },
+    ];
+    expect(rowKeys(toggle, windows174, false)).toBe('CommandOrControl+Alt+H');
+    expect(rowKeys(toggle, null, false)).toBe('CommandOrControl+Alt+Y');
+  });
+
+  it('notes the macOS shortcuts a row shares: Mission Control, Teams, text keys, VoiceOver', () => {
+    const rows = hotkeyRowsFor(true, true, true);
+    const notes = (action: string) =>
+      macSystemNotes(rows.find((row) => (row.actions as readonly string[]).includes(action))!);
+    expect(notes('prev').join(' ')).toMatch(/Mission Control/);
+    expect(notes('zoom-in').join(' ')).toMatch(/Teams/);
+    expect(notes('clear').join(' ')).toMatch(/edit text/);
+    expect(notes('overlay-toggle').join(' ')).toMatch(/VoiceOver/);
+    expect(notes('answer')).toEqual([]);
   });
 });
 

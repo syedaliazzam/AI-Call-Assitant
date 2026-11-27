@@ -11,6 +11,7 @@
  *          window's height up and down; on a right position it sits in the bottom left.
  *          ADR-0115: the question starts with a small, muted "Question:" label (Parakeet's convention); ADR-0123:
  *          "Your question:" when it is the user's own words.
+ *          Mac 1.8.1 / Windows 1.7.5: a screenshot answer shows its thumbnail, its screen and "Wrong screen?".
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (hotkeys, AnswerType), src/core/answer/format.ts,
  *             src/core/live/liveChannel.ts, src/features/answers (AnswerBody, AnswerTags),
@@ -35,6 +36,7 @@ import { AnswerTags } from '@/features/answers/AnswerTags';
 import { CollapseIcon, CopyIcon, FlagIcon, StopIcon, ThumbDownIcon, ThumbUpIcon } from '@/ui/icons';
 import { BUTTON, FOOTER_BUTTON, ICON_BUTTON, KeyChip, PILL, tipShortcut } from './parts';
 import { ResizeCorner, type WidthDrag } from './ResizeGrips';
+import { ScreenshotSource } from '../ScreenshotSource';
 
 /** Props for OverlayAnswer. */
 export interface OverlayAnswerProps {
@@ -213,6 +215,18 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
               {/* Batch D (P1-G): their audio was lost around this question; the answer still came. */}
               {answer.audioLost && (
                 <p className="mt-1 text-[13px] text-ui-muted">Part of their audio was lost.</p>
+              )}
+              {/* Mac 1.8.1 / Windows 1.7.5: the screenshot's thumbnail, its screen and "Wrong screen?". */}
+              {answer.mode === 'screenshot' && (
+                <div className="mt-1.5">
+                  <ScreenshotSource
+                    size="overlay"
+                    image={answer.preview}
+                    screen={answer.screen}
+                    busy={state?.capturing}
+                    onWrongScreen={() => onCommand({ type: 'wrong-screen', id: answer.id })}
+                  />
+                </div>
               )}
               {streaming && answer.text.trim() === '' ? (
                 <p role="status" className="mt-2 text-[15px] text-ui-muted">

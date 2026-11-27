@@ -57,6 +57,39 @@ export type ScreenshotFailure =
   /** Any other failure. */
   | 'failed';
 
+/**
+ * How the shell chose the screen it captured (Mac 1.8.1 / Windows 1.7.5).
+ * - `pointer`: the screen under the mouse pointer (the usual case).
+ * - `window`: the screen of the Paramount AI window that has the keyboard (the pointer could not be read).
+ * - `overlay`: the screen of the overlay (or the main window), as before 1.8.1.
+ * - `other`: "Wrong screen?": the next screen after the one asked to skip.
+ */
+export type ScreenshotPick = 'pointer' | 'window' | 'overlay' | 'other';
+
+/**
+ * The screen a desktop screenshot was taken from (Mac 1.8.1 / Windows 1.7.5). Absent from an older shell's
+ * result (Windows 1.7.4, Mac 1.8.0): the page then shows no screen number and no "Wrong screen?".
+ */
+export interface ScreenshotScreen {
+  /** The display's id (Electron's, as a string), to ask for another screen next time. */
+  id: string;
+  /** Its number, counting the screens from the left (then from the top): 1 for the leftmost. */
+  number: number;
+  /** How many screens the computer has. */
+  count: number;
+  /** How the screen was chosen. */
+  picked: ScreenshotPick;
+}
+
+/**
+ * What the page may ask of a desktop screenshot (Mac 1.8.1 / Windows 1.7.5). An older shell ignores it and
+ * captures the screen under its window.
+ */
+export interface ScreenshotRequest {
+  /** "Wrong screen?": capture the next screen after this display id (in ScreenshotScreen.number order). */
+  notDisplayId?: string;
+}
+
 /** What the desktop shell's captureScreenshot() returns. */
 export type DesktopScreenshot =
   | {
@@ -70,6 +103,8 @@ export type DesktopScreenshot =
       height: number;
       /** How long the capture took in the shell, in ms. */
       ms: number;
+      /** Mac 1.8.1 / Windows 1.7.5: the screen it came from. Absent from an older shell. */
+      screen?: ScreenshotScreen;
     }
   | {
       /** The capture failed. */

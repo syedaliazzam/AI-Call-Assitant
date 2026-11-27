@@ -107,7 +107,9 @@ export type AnswerTrigger =
   | 'voice-screenshot'
   // ADR-0123: the user's own spoken question: Ctrl+Enter on your own, and Ctrl+Shift+Space.
   | 'own-question'
-  | 'own-question-key';
+  | 'own-question-key'
+  // Mac 1.8.1 / Windows 1.7.5: "Wrong screen?" took the next screen and asked again on the card.
+  | 'screenshot-retake';
 
 /** One line of the other side (times are Unix ms). */
 export interface LineTiming {

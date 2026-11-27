@@ -122,19 +122,39 @@ const NEWEST = new URLSearchParams(window.location.search).get('rules') === 'new
 /** Batch D: when the last "Them" line ended (Unix ms), for turn()'s startAfterThemMs. */
 let lastThemEnd = Date.now();
 
+/**
+ * Mac 1.8.1 / Windows 1.7.5: `?screens=2` makes the bridge a shell that names the screen it took: two screens
+ * (ids '101' and '202'), the first unless the page asks for the one after another ("Wrong screen?"). Without it the
+ * bridge is an older shell (1.1.0 to 1.7.4), which names no screen and ignores the request.
+ */
+const SCREENS = Number(new URLSearchParams(window.location.search).get('screens') ?? '0');
+
 // Screenshots go through the desktop bridge's method, which a browser cannot be scripted to answer.
 // The same small image each time: the mocked server replies by what the test told it to expect.
 if (VIEW === 'desktop') {
   installBridge({
-    version: '1.1.0',
+    version: SCREENS > 0 ? '1.7.5' : '1.1.0',
     os: 'windows',
-    captureScreenshot: async () => {
+    captureScreenshot: async (request?: { notDisplayId?: string }) => {
       const canvas = new OffscreenCanvas(640, 360);
       const context = canvas.getContext('2d')!;
       context.fillRect(0, 0, 640, 360);
       const blob = await canvas.convertToBlob({ type: 'image/png' });
       const png = new Uint8Array(await blob.arrayBuffer());
-      return { ok: true as const, png, width: 640, height: 360, ms: 1 };
+      const shot = { ok: true as const, png, width: 640, height: 360, ms: 1 };
+      if (SCREENS < 1) return shot;
+      const ids = Array.from({ length: SCREENS }, (_, at) => String((at + 1) * 101));
+      const skip = ids.indexOf(request?.notDisplayId ?? '');
+      const at = skip === -1 ? 0 : (skip + 1) % ids.length;
+      return {
+        ...shot,
+        screen: {
+          id: ids[at]!,
+          number: at + 1,
+          count: ids.length,
+          picked: skip === -1 ? ('pointer' as const) : ('other' as const),
+        },
+      };
     },
   });
 }

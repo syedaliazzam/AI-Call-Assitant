@@ -17,6 +17,9 @@
  *          been quiet for ON_CALL_WINDOW_MS (or there is no other side), and Ctrl+Shift+Space always does
  *          (core/answer/ownQuestion.ts; amended 27 Nov 2026: any words, greetings included, joined since the
  *          last answer); those words are sent as the user's own question (mode 'chat').
+ *          Mac 1.8.1 / Windows 1.7.5: a screenshot card keeps a small preview and, from those desktop apps, which
+ *          screen it came from (in memory only); "Wrong screen?" (retakeScreen()) takes the next screen and asks
+ *          again on the same card.
  * Used by: src/features/live/LiveAnswers.tsx
  * Depends on: src/core/answer (context.ts, answerClient.ts, history.ts, warm.ts, keepWarm.ts,
  *             unavailable.ts),
@@ -34,6 +37,7 @@ import {
   type AnswerModel,
   type AnswerType,
   type AnswerUsage,
+  type ScreenshotScreen,
   type TargetChoice,
 } from '@kite/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -60,7 +64,7 @@ import {
 import { createSpeculativeHold, themWentOn, type AskedSpeech } from '@/core/answer/speculative';
 import { type PickedQuestion } from '@/core/transcript/questionKind';
 import { isOnline } from '@/core/net/online';
-import { prepareScreenshot } from '@/core/screenshot/prepare';
+import { makePreview, prepareScreenshot } from '@/core/screenshot/prepare';
 import { rateAnswer, reportAnswer, saveAnswer, setAnswerNote } from '@/core/storage/answers';
 import type { AnswerRating, Session, StoredAnswer, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
@@ -187,6 +191,17 @@ export interface AnswerEntry {
    * In memory only: never saved (toStored() leaves it out) and never logged.
    */
   thumbnail?: string;
+  /**
+   * Mac 1.8.1 / Windows 1.7.5: a small JPEG data URL of the screenshot (≤ 240 px), for the cards' thumbnails (the
+   * overlay's too: small enough to send with every update). In memory only: never saved or logged.
+   */
+  preview?: string;
+  /**
+   * Mac 1.8.1 / Windows 1.7.5: the screen the screenshot came from ("Screen 2"), when the desktop app says; with
+   * more than one screen the card offers "Wrong screen?". Absent in a browser and with an older desktop app. In
+   * memory only.
+   */
+  screen?: ScreenshotScreen;
   /** The question answered ('' when Claude was asked to answer the latest "Them" lines). */
   question: string;
   /**
@@ -530,6 +545,13 @@ export interface LiveAnswers {
   /** True while a screenshot is being taken and prepared. */
   capturing: boolean;
   /**
+   * Mac 1.8.1 / Windows 1.7.5: "Wrong screen?": takes the next screen (after the card's) and asks again on the same
+   * card, with the same question. Does nothing for a card without a screen or on a computer with one screen.
+   *
+   * @param id The screenshot card.
+   */
+  retakeScreen: (id: string) => void;
+  /**
    * ADR-0082 (Ctrl+Backspace, the answer panel's Clear, ⋮ Clear answers): cancels a streaming answer and
    * takes every answer asked until now off the screen (the overlay and the call window); they stay saved
    * for the session's review. New answers show as usual.
@@ -690,6 +712,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   );
   // ADR-0101: the card the last ask() put up (a voice question keeps it to show, cancel or extend).
   const lastAskedIdRef = useRef<string | null>(null);
+  /**
+   * Mac 1.8.1 / Windows 1.7.5: the newest prepared screenshot's screen, by its image, so a card asked from that image
+   * later (Ctrl+Alt+Enter: the capture comes first, the spoken question after) names its screen too.
+   */
+  const lastShotRef = useRef<{
+    image: string;
+    screen: ScreenshotScreen | null;
+  } | null>(null);
   // ADR-0123: the user's own spoken lines already answered as their question (line id → its card), and how to
   // end a press that waits for the user's own last words to finish (null when none waits).
   const ownAnsweredRef = useRef(new Map<string, string>());
@@ -884,6 +914,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         typed?: string;
         /** The prepared screenshot. */
         image?: string;
+        /** Mac 1.8.1 / Windows 1.7.5: its small preview, for the card (memory only). */
+        preview?: string;
+        /** Mac 1.8.1 / Windows 1.7.5: the screen it came from, when the desktop app says. */
+        screen?: ScreenshotScreen | null;
         /** When the user pressed the key. */
         pressedAt?: number;
         /** True when Kite answers by itself. */
@@ -1172,6 +1206,17 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         question:
           built.request.question ?? (mode === 'screenshot' ? DEFAULT_SCREENSHOT_QUESTION : ''),
         ...(image ? { thumbnail: image } : {}),
+        // Mac 1.8.1 / Windows 1.7.5: the preview (a re-answer keeps its card's) and the screen, given, or from the
+        // capture that made this image (Ctrl+Alt+Enter's capture comes back here as the image only).
+        ...(() => {
+          if (!image) return {};
+          const shot = lastShotRef.current?.image === image ? lastShotRef.current : null;
+          const screen = options.screen ?? shot?.screen ?? null;
+          return {
+            ...(options.preview ? { preview: options.preview } : {}),
+            ...(screen ? { screen } : {}),
+          };
+        })(),
         fromLines: built.selected?.lineIds.length ?? 0,
         ...(mode === 'answer'
           ? (() => {
@@ -1200,6 +1245,21 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ...(!replaces && options.rerunOf ? { rerunOf: options.rerunOf } : {}),
       };
       lastAskedIdRef.current = entry.id;
+      // Mac 1.8.1 / Windows 1.7.5: the card's small preview, made after this function has started the request
+      // (a task later), so it never delays the answer; the card shows the full image until it is ready.
+      if (image && !entry.preview) {
+        const cardId = entry.id;
+        setTimeout(() => {
+          void makePreview(image).then((preview) => {
+            if (!preview) return;
+            setEntries((current) =>
+              current.map((old) =>
+                old.id === cardId && old.thumbnail === image ? { ...old, preview } : old,
+              ),
+            );
+          });
+        }, 0);
+      }
       // ADR-0112: any other request cancels a silent retry still running (the runner stops it), so it is
       // no longer waited for.
       setRetryingId(options.emptyRetry === true ? entry.id : null);
@@ -1982,8 +2042,13 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         try {
           const capture = async () => {
             const capturedFrom = Date.now();
-            const png = await getPlatform().captureScreenshot();
-            return { prepared: await prepareScreenshot(png), capturedFrom, capturedAt: Date.now() };
+            const shot = await getPlatform().captureScreenshot();
+            return {
+              prepared: await prepareScreenshot(shot.image),
+              screen: shot.screen,
+              capturedFrom,
+              capturedAt: Date.now(),
+            };
           };
           let shot = await capture();
           const retaken = shot.prepared.blank;
@@ -2016,6 +2081,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           ask('screenshot', {
             ...(question ? { typed: question } : {}),
             image: prepared.dataUrl,
+            screen: shot.screen,
             pressedAt,
             trigger,
             traceId,
@@ -2063,12 +2129,16 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     setCapturing(true);
     setNotice(null);
     try {
-      let prepared = await prepareScreenshot(await getPlatform().captureScreenshot());
+      let shot = await getPlatform().captureScreenshot();
+      let prepared = await prepareScreenshot(shot.image);
       // ADR-0107: a page still drawing is taken once more, as for Ctrl+Shift+Enter.
       if (prepared.blank) {
         await new Promise((resolve) => setTimeout(resolve, BLANK_RETAKE_MS));
-        prepared = await prepareScreenshot(await getPlatform().captureScreenshot());
+        shot = await getPlatform().captureScreenshot();
+        prepared = await prepareScreenshot(shot.image);
       }
+      // Mac 1.8.1 / Windows 1.7.5: the card asked from this image later shows its preview and screen.
+      lastShotRef.current = { image: prepared.dataUrl, screen: shot.screen };
       // Sizes and times only; never the image.
       console.info('screenshot: prepared', {
         sessionId: session.id,
@@ -2090,6 +2160,60 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       setCapturing(false);
     }
   }, [session.id]);
+
+  /**
+   * Mac 1.8.1 / Windows 1.7.5: "Wrong screen?" on a screenshot card: takes the next screen after the card's (the
+   * desktop app picks it) and asks again on the same card, with the card's own question (a screen-only card stays
+   * screen-only). Needs a desktop app that names the screen (the card then has one) and more than one screen; does
+   * nothing otherwise, or while another capture runs.
+   *
+   * @param id The screenshot card.
+   * Called from: LiveAnswers.tsx (the call window's card and the overlay's "wrong-screen" command)
+   */
+  const retakeScreen = useCallback(
+    (id: string) => {
+      const entry = entries.find((candidate) => candidate.id === id);
+      const screen = entry?.screen;
+      if (!entry || entry.mode !== 'screenshot' || !screen || screen.count < 2) return;
+      if (capturingRef.current) return;
+      capturingRef.current = true;
+      setCapturing(true);
+      setNotice(null);
+      const pressedAt = performance.now();
+      void (async () => {
+        try {
+          const shot = await getPlatform().captureScreenshot({ notDisplayId: screen.id });
+          const prepared = await prepareScreenshot(shot.image);
+          // Numbers and sizes only; never the image.
+          console.info('screenshot: retaken on another screen', {
+            sessionId: session.id,
+            answerId: id,
+            screen: shot.screen ? `${shot.screen.number}/${shot.screen.count}` : null,
+            bytes: prepared.bytes,
+            ms: Math.round(performance.now() - pressedAt),
+          });
+          ask('screenshot', {
+            ...(entry.yours ? { typed: entry.question } : { screenOnly: true }),
+            image: prepared.dataUrl,
+            screen: shot.screen,
+            replaces: id,
+            pressedAt,
+            trigger: 'screenshot-retake',
+          });
+        } catch (error) {
+          setNotice(
+            error instanceof CaptureError
+              ? error.message
+              : 'Paramount AI could not take a screenshot. Try again.',
+          );
+        } finally {
+          capturingRef.current = false;
+          setCapturing(false);
+        }
+      })();
+    },
+    [ask, entries, session.id],
+  );
 
   const askAboutScreen = useCallback(
     (question: string, image: string) => {
@@ -2282,6 +2406,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ask('screenshot', {
           typed: entry.question,
           image: entry.thumbnail,
+          ...(entry.preview ? { preview: entry.preview } : {}),
+          ...(entry.screen ? { screen: entry.screen } : {}),
           answerType,
           trigger: 'reanswer',
         });
@@ -2411,6 +2537,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     capturing,
     clearAnswers,
     captureScreen,
+    retakeScreen,
     askAboutScreen,
     voiceAsk,
     voiceShow,

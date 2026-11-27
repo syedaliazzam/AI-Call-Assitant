@@ -7,7 +7,7 @@
  *          About, Hide, Hide Others, Show All and Quit (⌘Q goes through the usual exit, so Drive uploads
  *          finish first, ADR-0106); Edit (⌘C / ⌘V / ⌘X / ⌘A / ⌘Z only work in text boxes on a Mac when
  *          the menu has them); full screen; and the Window menu's Zoom and Bring All to Front. Windows and
- *          Linux keep Electron's default (unchanged).
+ *          Linux keep Electron's default (unchanged). Mac 1.8.1: "Check for Updates…" under About.
  *
  *          ADR-0120: no page zoom (⌘0 / ⌘+ / ⌘−). Those roles were Chromium's own zoom, which nothing in the
  *          app limits or follows: ⌘+ on the overlay shrank its page in CSS pixels, so the transcript and the
@@ -23,15 +23,23 @@ import type { MenuItemConstructorOptions, WebContents } from 'electron';
  * The application menu for macOS.
  *
  * @param appName The app's name ("Paramount AI"), the first menu's title.
+ * @param onCheckForUpdates Mac 1.8.1: "Check for Updates…", under About (the Mac convention). Absent: no item.
  * @returns The menu's template.
  * Called from: start() in main.ts (Menu.setApplicationMenu on macOS); tests
  */
-export function macMenuTemplate(appName: string): MenuItemConstructorOptions[] {
+export function macMenuTemplate(
+  appName: string,
+  onCheckForUpdates?: () => void,
+): MenuItemConstructorOptions[] {
   return [
     {
       label: appName,
       submenu: [
         { role: 'about' },
+        // Mac 1.8.1: no accelerator, so it takes no key from any window.
+        ...(onCheckForUpdates
+          ? [{ label: 'Check for Updates…', click: () => onCheckForUpdates() }]
+          : []),
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },

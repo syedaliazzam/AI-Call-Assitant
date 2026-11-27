@@ -4,7 +4,8 @@
  * (fitted at 0.8, then 0.6, then 75% and 50% at 0.6); prepareScreenshot() returns the first
  * JPEG under 1 MB as a data URL, falls back when too large, refuses bytes that are not a JPEG
  * (FF D8 FF), and throws CaptureError('failed') when the image cannot be read or stays too
- * large; the decoded image is always released; isJpeg() and jpegDataUrl().
+ * large; the decoded image is always released; isJpeg() and jpegDataUrl(). Mac 1.8.1 / Windows 1.7.5: makePreview()
+ * draws the card's small preview (made after the request, never delaying it).
  */
 import { fitWithin, SCREENSHOT_MAX_SIDE } from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
@@ -12,6 +13,9 @@ import {
   FALLBACK_QUALITY,
   JPEG_QUALITY,
   MAX_SCREENSHOT_BYTES,
+  PREVIEW_MAX_SIDE,
+  PREVIEW_QUALITY,
+  makePreview,
   encodingPlan,
   isJpeg,
   jpegDataUrl,
@@ -191,5 +195,28 @@ describe('shortHash without Web Crypto (ADR-0107)', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('makePreview (Mac 1.8.1 / Windows 1.7.5)', () => {
+  it('draws at most 240 px at quality 0.6 and returns a JPEG data URL; any failure gives ""', async () => {
+    const draw = vi.fn(async () => jpeg(500));
+    expect(await makePreview('data:image/jpeg;base64,AAAA', { draw })).toMatch(
+      /^data:image\/jpeg;base64,\/9j\//,
+    );
+    expect(draw).toHaveBeenCalledWith(
+      'data:image/jpeg;base64,AAAA',
+      PREVIEW_MAX_SIDE,
+      PREVIEW_QUALITY,
+    );
+    expect(PREVIEW_MAX_SIDE).toBe(240);
+    expect(await makePreview('x', { draw: async () => new Uint8Array([1, 2, 3]) })).toBe('');
+    expect(
+      await makePreview('x', {
+        draw: async () => {
+          throw new Error('no canvas');
+        },
+      }),
+    ).toBe('');
   });
 });

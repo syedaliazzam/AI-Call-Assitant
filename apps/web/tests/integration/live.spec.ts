@@ -2201,7 +2201,7 @@ test('ADR-0055 (amended 26 Nov 2026): Click-through on passes the whole overlay,
   // A Mac names its own key.
   await page.goto(overlayUrl('&position=top-center&ct=on&os=mac'));
   await expect(page.locator('[data-click-through-hint]')).toHaveText(
-    'Click-through on — press ⌘ ⌥ X to turn off',
+    'Click-through on — press ⌃ ⌥ X to turn off',
   );
 
   // On while another app holds the key: the bars keep their clicks (W turns it off), the rest passes.

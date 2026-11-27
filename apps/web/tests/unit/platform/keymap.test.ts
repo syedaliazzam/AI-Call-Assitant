@@ -5,8 +5,8 @@
  * listenForHotkeys() calls the handler, prevents the browser's default and stops listening.
  * The two Alt shortcuts: Ask Kite (ADR-0030) and the script bar (v1.0.2, ADR-0035); the overlay's
  * Transcript key, Ctrl+Alt+T (v1.3.0, ADR-0056), only outside text boxes and never for AltGr letters.
- * ADR-0110: on a Mac, Clear, Clear transcript, previous / next and zoom are ⌃⌥ keys (by the key's place),
- * and ⌘⌫, ⌘←/→ and ⌘= / - / 0 are left to the Mac.
+ * ADR-0110 (amended 27 Nov 2026, Mac 1.8.1): on a Mac the keys are the Windows keys with Control (⌃); with Option
+ * held a letter or = - 0 is read by the key's place; no ⌘ key is a shortcut any more.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { hotkeyFor, isTranscriptKey, listenForHotkeys, type KeyPress } from '@/platform/keymap';
@@ -41,62 +41,56 @@ describe('hotkeyFor', () => {
     expect(hotkeyFor(press('ArrowRight', ctrl), false)).toBe('next');
   });
 
-  it('maps the macOS defaults (⌘) and ignores Ctrl there', () => {
-    expect(hotkeyFor(press('Enter', { metaKey: true }), true)).toBe('answer');
-    expect(hotkeyFor(press('Enter', { metaKey: true, shiftKey: true }), true)).toBe('screenshot');
-    expect(hotkeyFor(press(' ', { metaKey: true, shiftKey: true }), true)).toBe('chat');
-    expect(hotkeyFor(press('Enter', { ctrlKey: true }), true)).toBeNull();
-    expect(hotkeyFor(press('Enter', { metaKey: true }), false)).toBeNull();
-  });
-
-  it('ADR-0110: on a Mac, ⌘⌫, ⌘←/→, ⌘= / - / 0 keep their Mac meaning; ⌃⌥ keys do Clear, prev/next, zoom', () => {
-    const cmd = { metaKey: true };
-    for (const key of ['Backspace', 'ArrowLeft', 'ArrowRight', '=', '-', '0']) {
-      expect(hotkeyFor(press(key, cmd), true)).toBeNull();
-      expect(hotkeyFor(press(key, { ...cmd, shiftKey: true }), true)).toBeNull();
+  it('Mac 1.8.1: maps the same keys with Control (⌃) and ignores ⌘ there', () => {
+    const ctrl = { ctrlKey: true };
+    expect(hotkeyFor(press('Enter', ctrl), true)).toBe('answer');
+    expect(hotkeyFor(press('Enter', { ...ctrl, shiftKey: true }), true)).toBe('screenshot');
+    expect(hotkeyFor(press(' ', { ...ctrl, shiftKey: true }), true)).toBe('chat');
+    expect(hotkeyFor(press('Backspace', ctrl), true)).toBe('clear');
+    expect(hotkeyFor(press('Backspace', { ...ctrl, shiftKey: true }), true)).toBe(
+      'clear-transcript',
+    );
+    expect(hotkeyFor(press('ArrowLeft', ctrl), true)).toBe('prev');
+    expect(hotkeyFor(press('ArrowRight', ctrl), true)).toBe('next');
+    expect(hotkeyFor(press('=', ctrl), true)).toBe('zoom-in');
+    expect(hotkeyFor(press('-', ctrl), true)).toBe('zoom-out');
+    expect(hotkeyFor(press('0', ctrl), true)).toBe('zoom-reset');
+    // Every ⌘ key keeps its Mac meaning (⌘↵, ⌘⌫, ⌘← / →, ⌘= / - / 0).
+    for (const key of ['Enter', 'Backspace', 'ArrowLeft', 'ArrowRight', '=', '-', '0']) {
+      expect(hotkeyFor(press(key, { metaKey: true }), true)).toBeNull();
     }
-    // Option changes the character on a Mac (⌥= types "≠"), so the place on the keyboard counts.
-    const ctrlOpt = { ctrlKey: true, altKey: true };
-    const at = (key: string, code: string, extra: Partial<KeyPress> = {}) =>
-      hotkeyFor(press(key, { ...ctrlOpt, code, ...extra }), true);
-    expect(at('Backspace', 'Backspace')).toBe('clear');
-    expect(at('Backspace', 'Backspace', { shiftKey: true })).toBe('clear-transcript');
-    expect(at('ArrowLeft', 'ArrowLeft')).toBe('prev');
-    expect(at('ArrowRight', 'ArrowRight')).toBe('next');
-    expect(at('≠', 'Equal')).toBe('zoom-in');
-    expect(at('±', 'Equal', { shiftKey: true })).toBe('zoom-in');
-    expect(at('–', 'Minus')).toBe('zoom-out');
-    expect(at('º', 'Digit0')).toBe('zoom-reset');
-    // Not with ⌘ too, not while typing (Option+arrows edit text), and not on Windows.
-    expect(at('ArrowLeft', 'ArrowLeft', { metaKey: true })).toBeNull();
-    const input = { tagName: 'TEXTAREA' } as unknown as EventTarget;
-    expect(at('Backspace', 'Backspace', { target: input })).toBeNull();
-    expect(hotkeyFor(press('ArrowLeft', { ...ctrlOpt, code: 'ArrowLeft' }), false)).toBeNull();
-    // Windows keeps Ctrl+← and Ctrl+Backspace.
-    expect(hotkeyFor(press('ArrowLeft', { ctrlKey: true }), false)).toBe('prev');
+    expect(hotkeyFor(press('Enter', { ...ctrl, metaKey: true }), true)).toBeNull();
   });
 
-  it('ADR-0110: ⌘⌥K and ⌘⌥S work by the key’s place when Option changes the letter', () => {
-    const cmdOpt = { metaKey: true, altKey: true };
-    expect(hotkeyFor(press('˚', { ...cmdOpt, code: 'KeyK' }), true)).toBe('ask-kite');
-    expect(hotkeyFor(press('ß', { ...cmdOpt, code: 'KeyS' }), true)).toBe('script-bar');
+  it('Mac 1.8.1: ⌃⌥ keys work by the key’s place when Option changes the letter', () => {
+    const ctrlOpt = { ctrlKey: true, altKey: true };
+    expect(hotkeyFor(press('˚', { ...ctrlOpt, code: 'KeyK' }), true)).toBe('ask-kite');
+    expect(hotkeyFor(press('ß', { ...ctrlOpt, code: 'KeyS' }), true)).toBe('script-bar');
+    expect(hotkeyFor(press('Enter', { ...ctrlOpt, code: 'Enter' }), true)).toBe('screenshot-send');
+    // ⌘⌥ (Mac 1.8.0's keys) no longer, and ⌃⌥ arrows are not previous / next any more.
+    expect(hotkeyFor(press('˚', { metaKey: true, altKey: true, code: 'KeyK' }), true)).toBeNull();
+    expect(hotkeyFor(press('ArrowLeft', { ...ctrlOpt, code: 'ArrowLeft' }), true)).toBeNull();
+    // Never while typing.
+    const input = { tagName: 'TEXTAREA' } as unknown as EventTarget;
+    expect(hotkeyFor(press('ArrowLeft', { ctrlKey: true, target: input }), true)).toBeNull();
+    expect(hotkeyFor(press('˚', { ...ctrlOpt, code: 'KeyK', target: input }), true)).toBeNull();
   });
 
   it('maps Ask Kite, the one shortcut with Alt, but never while typing (ADR-0030)', () => {
     expect(hotkeyFor(press('k', { ctrlKey: true, altKey: true }), false)).toBe('ask-kite');
     expect(hotkeyFor(press('K', { ctrlKey: true, altKey: true }), false)).toBe('ask-kite');
-    expect(hotkeyFor(press('k', { metaKey: true, altKey: true }), true)).toBe('ask-kite');
+    expect(hotkeyFor(press('k', { ctrlKey: true, altKey: true }), true)).toBe('ask-kite');
     expect(hotkeyFor(press('k', { altKey: true }), false)).toBeNull();
     expect(hotkeyFor(press('j', { ctrlKey: true, altKey: true }), false)).toBeNull();
     const input = { tagName: 'INPUT' } as unknown as EventTarget;
     expect(hotkeyFor(press('k', { ctrlKey: true, altKey: true, target: input }), false)).toBeNull();
   });
 
-  it('maps the script bar (Ctrl+Alt+S, ⌘⌥S), not with Shift, not the AltGr letter (ADR-0035)', () => {
+  it('maps the script bar (Ctrl+Alt+S, ⌃⌥S), not with Shift, not the AltGr letter (ADR-0035)', () => {
     expect(hotkeyFor(press('s', { ctrlKey: true, altKey: true }), false)).toBe('script-bar');
     expect(hotkeyFor(press('S', { ctrlKey: true, altKey: true }), false)).toBe('script-bar');
-    expect(hotkeyFor(press('s', { metaKey: true, altKey: true }), true)).toBe('script-bar');
-    expect(hotkeyFor(press('s', { ctrlKey: true, altKey: true }), true)).toBeNull();
+    expect(hotkeyFor(press('s', { ctrlKey: true, altKey: true }), true)).toBe('script-bar');
+    expect(hotkeyFor(press('s', { metaKey: true, altKey: true }), true)).toBeNull();
     expect(
       hotkeyFor(press('s', { ctrlKey: true, altKey: true, shiftKey: true }), false),
     ).toBeNull();
@@ -127,12 +121,10 @@ describe('hotkeyFor in the chat bar (spec S14)', () => {
     const keys = { ctrlKey: true, altKey: true };
     expect(hotkeyFor(press('Enter', keys), false)).toBe('screenshot-send');
     expect(hotkeyFor(press('Enter', { ...keys, target: input }), false)).toBe('screenshot-send');
-    expect(hotkeyFor(press('Enter', { metaKey: true, altKey: true }), true)).toBe(
-      'screenshot-send',
-    );
-    // Not with Shift, and not on the other platform's modifier.
+    expect(hotkeyFor(press('Enter', keys), true)).toBe('screenshot-send');
+    // Not with Shift, and not with ⌘ (Mac 1.8.0's key).
     expect(hotkeyFor(press('Enter', { ...keys, shiftKey: true }), false)).toBeNull();
-    expect(hotkeyFor(press('Enter', keys), true)).toBeNull();
+    expect(hotkeyFor(press('Enter', { metaKey: true, altKey: true }), true)).toBeNull();
   });
 
   it('Chat works from the box, so it can be pressed twice; no other key does', () => {
@@ -175,12 +167,14 @@ describe('listenForHotkeys', () => {
 });
 
 describe('isTranscriptKey (v1.3.0, ADR-0056)', () => {
-  it('is Ctrl+Alt+T on Windows and ⌘⌥T on macOS', () => {
+  it('is Ctrl+Alt+T on Windows and ⌃⌥T on macOS (Mac 1.8.1)', () => {
     expect(isTranscriptKey(press('t', { ctrlKey: true, altKey: true }), false)).toBe(true);
     expect(isTranscriptKey(press('T', { ctrlKey: true, altKey: true }), false)).toBe(true);
     // macOS: Option changes the letter, so the key's place counts.
-    const mac = { ...press('†', { metaKey: true, altKey: true }), code: 'KeyT' } as KeyPress;
+    const mac = { ...press('†', { ctrlKey: true, altKey: true }), code: 'KeyT' } as KeyPress;
     expect(isTranscriptKey(mac, true)).toBe(true);
+    const old = { ...press('†', { metaKey: true, altKey: true }), code: 'KeyT' } as KeyPress;
+    expect(isTranscriptKey(old, true)).toBe(false);
   });
 
   it('is not Shift, the other modifier, a repeat, a text box or an AltGr letter', () => {
