@@ -19,6 +19,9 @@ import type {
   OverlayMode,
   OverlayPreset,
   OverlayResizeStep,
+  ScreenshotPick,
+  ScreenshotRequest,
+  ScreenshotScreen,
   ShareProtectionState,
   WindowControlAction,
 } from '@kite/shared';
@@ -106,6 +109,34 @@ export function desktopMacPermissions(bridge: KiteDesktopApi): MacPermissionsHos
     openSettings: (kind) => openMacPrivacySettings(kind),
     relaunch: () => relaunchApp(),
   };
+}
+
+/** How a Mac 1.8.1 / Windows 1.7.5 shell may say it chose the screen. */
+const SCREEN_PICKS: readonly ScreenshotPick[] = ['pointer', 'window', 'overlay', 'other'];
+
+/**
+ * Mac 1.8.1 / Windows 1.7.5: the screen a shell screenshot came from, checked. An older shell (Windows 1.7.4, Mac
+ * 1.8.0) sends none: null, and the page then shows no screen number and no "Wrong screen?".
+ *
+ * @param value The result's `screen` field.
+ * @returns The screen, or null when absent or malformed.
+ * Called from: captureScreenshot() below; tests
+ */
+export function screenOf(value: unknown): ScreenshotScreen | null {
+  const screen = value as Partial<ScreenshotScreen> | null | undefined;
+  if (
+    !screen ||
+    typeof screen.id !== 'string' ||
+    screen.id.length > 20 ||
+    !Number.isInteger(screen.number) ||
+    !Number.isInteger(screen.count) ||
+    screen.number! < 1 ||
+    screen.number! > screen.count! ||
+    !SCREEN_PICKS.includes(screen.picked as ScreenshotPick)
+  ) {
+    return null;
+  }
+  return { id: screen.id, number: screen.number!, count: screen.count!, picked: screen.picked! };
 }
 
 /** The desktop Platform, plus details about the shell that only exist on desktop. */
@@ -205,24 +236,33 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
       return { stream, source: 'system-loopback' as const };
     },
 
-    /** Day 5: the shell captures the current display with desktopCapturer. */
     /**
-     * A screenshot of the display the Kite window is on, taken by the shell already scaled to
-     * ≤ 1,568 px (apps/desktop/src/screenshot.ts).
+     * Day 5: a screenshot taken by the shell already scaled to ≤ 1,568 px (apps/desktop/src/screenshot.ts). Mac
+     * 1.8.1 / Windows 1.7.5: the display under the mouse pointer, and which screen it was; an older shell takes the
+     * display under its window, ignores the request and names no screen (feature-detected by the result).
      *
-     * @returns The PNG as a Blob (in memory only).
+     * @param request "Wrong screen?": the screen not to take (sent only when given, so a call without it is the
+     *                same as before).
+     * @returns The PNG as a Blob (in memory only), and its screen or null.
      * @throws CaptureError: 'not-supported' (a desktop app from before Day 5),
      *         'permission-denied' (macOS Screen Recording), or 'failed'.
      */
-    async captureScreenshot() {
+    async captureScreenshot(request?: ScreenshotRequest) {
       if (!bridge.captureScreenshot) {
         throw new CaptureError(
           'not-supported',
           'This version of the Paramount AI desktop app cannot take screenshots. Install the latest version.',
         );
       }
-      const result = await bridge.captureScreenshot();
-      if (result.ok) return new Blob([result.png.slice()], { type: 'image/png' });
+      const result = await (request
+        ? bridge.captureScreenshot(request)
+        : bridge.captureScreenshot());
+      if (result.ok) {
+        return {
+          image: new Blob([result.png.slice()], { type: 'image/png' }),
+          screen: screenOf(result.screen),
+        };
+      }
       if (result.code === 'permission-denied') {
         throw new CaptureError(
           'permission-denied',

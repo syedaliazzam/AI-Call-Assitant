@@ -278,7 +278,7 @@ describe('ControlBar (bar 1)', () => {
     expect(html).toContain('aria-label="Overlay menu"');
     // A Mac names its own key.
     expect(bar1(on, () => undefined, undefined, true, true)).toContain(
-      'Click-through on — press ⌘ ⌥ X to turn off',
+      'Click-through on — press ⌃ ⌥ X to turn off',
     );
   });
 

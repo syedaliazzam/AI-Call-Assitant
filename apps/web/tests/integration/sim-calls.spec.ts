@@ -215,10 +215,11 @@ test.afterAll(async () => {
  * Opens the call, and a clock for its lines: each one a few seconds after the last, ending now.
  *
  * @param view The view ('call' or 'desktop').
+ * @param query Extra address parameters (Mac 1.8.1 / Windows 1.7.5: '&screens=2' for a shell that names screens).
  * @returns say(), which adds a line; press(), which waits for the answer panel to be free.
  */
-async function openCall(view: 'call' | 'desktop' = 'call') {
-  await page.goto(`${origin}/?view=${view}`);
+async function openCall(view: 'call' | 'desktop' = 'call', query = '') {
+  await page.goto(`${origin}/?view=${view}${query}`);
   await expect(page.getByRole('button', { name: 'Answer', exact: true }).first()).toBeVisible();
   await page.locator('body').click();
   let ago = 110;
@@ -411,6 +412,46 @@ test('b) coding round: a problem on screen gets the coding shape, from the scree
   });
   expect(order.every((at) => at >= 0)).toBe(true);
   expect([...order].sort((a, b) => a - b)).toEqual(order);
+});
+
+test('Mac 1.8.1 / Windows 1.7.5: the card names the screen; "Wrong screen?" takes the next one on the same card', async () => {
+  const { say } = await openCall('desktop', '&screens=2');
+  nextScreen = 'slide';
+  await say('them', 'WHAT DO YOU MAKE OF WHAT IS ON THE SCREEN');
+  await page.keyboard.press('Control+Shift+Enter');
+  await expect(cards()).toHaveCount(1);
+  const card = cards().first();
+  await expect(card.getByRole('heading', { name: 'Answer line' })).toContainText(
+    'Renewal is on 1 December',
+  );
+  await expect(card.getByRole('img', { name: 'Screenshot this answer is about' })).toBeVisible();
+  await expect(card.locator('[data-screen-name]')).toHaveText('Screen 1 of 2');
+  nextScreen = 'table';
+  await card.getByRole('button', { name: /Wrong screen/ }).click();
+  // Asked again on the same card, screen-only like the first, from the other screen.
+  await expect(cards()).toHaveCount(1);
+  await expect(cards().first().locator('[data-screen-name]')).toHaveText('Screen 2 of 2');
+  await expect(cards().first().getByRole('heading', { name: 'Answer line' })).toContainText(
+    'Tickets fell every week',
+  );
+  expect(received.map((request) => request.mode)).toEqual(['screenshot', 'screenshot']);
+  expect(received[1]!.screenOnly).toBe(true);
+  expect(received[1]!.image).toMatch(/^data:image\/jpeg;base64,/);
+});
+
+test('an older desktop app (1.7.4 / 1.8.0): the screenshot card shows the thumbnail, no screen and no "Wrong screen?"', async () => {
+  const { say } = await openCall('desktop');
+  nextScreen = 'slide';
+  await say('them', 'WHAT DO YOU MAKE OF WHAT IS ON THE SCREEN');
+  await page.keyboard.press('Control+Shift+Enter');
+  await expect(cards()).toHaveCount(1);
+  const card = cards().first();
+  await expect(card.getByRole('heading', { name: 'Answer line' })).toContainText(
+    'Renewal is on 1 December',
+  );
+  await expect(card.getByRole('img', { name: 'Screenshot this answer is about' })).toBeVisible();
+  await expect(card.locator('[data-screen-name]')).toHaveCount(0);
+  await expect(card.getByRole('button', { name: /Wrong screen/ })).toHaveCount(0);
 });
 
 test('c) screens: each kind in its own shape, never merged', async () => {

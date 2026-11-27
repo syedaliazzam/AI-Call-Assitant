@@ -117,6 +117,15 @@ describe('openLiveChannel', () => {
   });
 });
 
+describe('"Wrong screen?" (Mac 1.8.1 / Windows 1.7.5)', () => {
+  it('accepts a wrong-screen command with an answer id only', () => {
+    expect(isCommand({ type: 'wrong-screen', id: 'a1' })).toBe(true);
+    expect(isCommand({ type: 'wrong-screen' })).toBe(false);
+    expect(isCommand({ type: 'wrong-screen', id: 7 })).toBe(false);
+    expect(isCommand({ type: 'wrong-screen', id: 'x'.repeat(65) })).toBe(false);
+  });
+});
+
 describe('isCommand and isState', () => {
   it('accepts answer preferences only with known values', () => {
     const style = { format: 'bullets', length: 'short', tone: 'technical' };

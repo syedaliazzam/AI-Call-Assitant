@@ -59,7 +59,7 @@ declare global {
 async function shoot(): Promise<ScreenshotHarnessResult> {
   const startedAt = performance.now();
   try {
-    const png = await browserPlatform.captureScreenshot();
+    const { image: png } = await browserPlatform.captureScreenshot();
     const prepared = await prepareScreenshot(png);
     const base64 = prepared.dataUrl.slice('data:image/jpeg;base64,'.length);
     const head = atob(base64.slice(0, 8));

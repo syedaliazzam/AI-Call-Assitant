@@ -22,7 +22,7 @@
 'use client';
 
 import {
-  DEFAULT_GLOBAL_HOTKEYS,
+  hotkeyAccelerator,
   hotkeyLabel,
   OVERLAY_GRID,
   type OverlayPreset,
@@ -293,7 +293,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
             checked={state?.clickThrough ?? false}
             disabled={!state}
             // ADR-0055 (amended 26 Nov 2026): the whole overlay passes clicks; only the shortcut turns it off here.
-            info={`Every click and key on the whole overlay, the bars too, goes to the app behind, so you can work in it with the panels open. Turn it off with ${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS['click-through'], props.mac ?? false)} (bar 1 says so).`}
+            info={`Every click and key on the whole overlay, the bars too, goes to the app behind, so you can work in it with the panels open. Turn it off with ${hotkeyLabel(hotkeyAccelerator('click-through', props.mac ?? false), props.mac ?? false)} (bar 1 says so).`}
             onChange={(on) => props.onClickThrough?.(on)}
           />
         )}

@@ -4,7 +4,9 @@
  *          web app (in-page shortcuts) and the labels on buttons and in Settings agree. Two kinds:
  *          global ones work from any app (desktop app, during a call); focused ones work only
  *          while Kite has focus, because system-wide they would break typing in other apps.
- *          The map follows docs/design/parakeet-parity.md (the team's current tool).
+ *          The map follows docs/design/parakeet-parity.md (the team's current tool). Mac 1.8.1 / Windows 1.7.5
+ *          (ADR-0110 amended 27 Nov 2026, ADR-0127): a Mac uses the same keys as Windows with Control (⌃) for Ctrl, as
+ *          ParakeetAI does; show or hide the overlay is Ctrl+Alt+Y (⌃⌥Y) instead of Ctrl+Alt+H (Meet's raise hand).
  * Used by: apps/web/src/platform (types.ts, desktop.ts, keymap.ts), apps/web/src/features/live,
  *          apps/web/src/features/settings, apps/desktop/src/hotkeys.ts, apps/desktop/src/preload.ts
  * Depends on: nothing (types and constants only)
@@ -175,7 +177,10 @@ export const DEFAULT_GLOBAL_HOTKEYS: Readonly<Record<CallHotkey, string>> = {
   'zoom-in': 'CommandOrControl+=',
   'zoom-out': 'CommandOrControl+-',
   'zoom-reset': 'CommandOrControl+0',
-  'overlay-toggle': 'CommandOrControl+Alt+H',
+  // ADR-0127 (Windows 1.7.5, Mac 1.8.1): Ctrl+Alt+Y, used by none of Zoom, Meet and Teams on Windows or (as ⌃⌥Y)
+  // on a Mac. Until then Ctrl+Alt+H, which is Google Meet's raise hand on Windows. As AltGr+Y it types a character
+  // only on the French (Standard AZERTY) layout; Settings → Hotkeys reports a key it cannot hold.
+  'overlay-toggle': 'CommandOrControl+Alt+Y',
   // v1.0.2 (ADR-0035): the script bar. Registered only during a call, like the others. On layouts
   // where Ctrl+Alt types a letter (AltGr; Polish: AltGr+S types "ś") it can clash, and on macOS
   // ⌘⌥S is "Save All" in some apps; Settings → Hotkeys reports a shortcut another app holds.
@@ -202,36 +207,92 @@ export const DEFAULT_GLOBAL_HOTKEYS: Readonly<Record<CallHotkey, string>> = {
 };
 
 /**
- * ADR-0110 (desktop 1.8.0 and the web app on a Mac): the keys that differ on macOS. With "CommandOrControl"
- * these would be ⌘←/→ (start and end of the line), ⌘⌫ (delete to the line's start), ⌘= / ⌘- / ⌘0 (every app's
- * zoom), ⌘⇧ with arrows (select to the line's or document's edge) and ⌘⌥H ("Hide Others" in every app):
- * text-editing and window keys every Mac app uses, which a call would take from them. On a Mac they use ⌃⌥
- * (Control+Option) instead, and the jumps between the six positions ⌃⌘ with arrows. ⌃⌥ is also VoiceOver's
- * key (VO); a VoiceOver user can set VO to Caps Lock, or Settings → Hotkeys shows the key another app holds.
- * Every other key is the same as on Windows, with ⌘ for Ctrl. Reviewed 25 Nov 2026 (ADR-0110 amendment): with ⌃
- * for Ctrl instead, these would take Mission Control (⌃←/→) or text keys, so they stay; the whole table is pinned
- * in apps/web/tests/unit/shared/hotkeys.test.ts.
+ * A Windows key as a Mac holds it (ADR-0110 amended 27 Nov 2026, Mac 1.8.1): Control (⌃) for Ctrl, Option (⌥)
+ * for Alt, as ParakeetAI does on a Mac. "CommandOrControl" would be ⌘ on a Mac, so it is written out as Control.
+ *
+ * @param accelerator A Windows accelerator ("CommandOrControl+Alt+K").
+ * @returns The same keys with Control ("Control+Alt+K"); other accelerators unchanged.
+ * Called from: MAC_GLOBAL_HOTKEYS, hotkeyAccelerator(), hotkeyRows(); apps/desktop/src/main.ts; tests
  */
-export const MAC_HOTKEY_CHANGES: Readonly<Partial<Record<CallHotkey, string>>> = {
-  'clear-transcript': 'Control+Alt+Shift+Backspace',
-  clear: 'Control+Alt+Backspace',
-  prev: 'Control+Alt+Left',
-  next: 'Control+Alt+Right',
-  'zoom-in': 'Control+Alt+=',
-  'zoom-out': 'Control+Alt+-',
-  'zoom-reset': 'Control+Alt+0',
-  'overlay-toggle': 'Control+Alt+H',
-  'overlay-spot-left': 'Control+Command+Left',
-  'overlay-spot-right': 'Control+Command+Right',
-  'overlay-row-top': 'Control+Command+Up',
-  'overlay-row-bottom': 'Control+Command+Down',
-};
+export function macKeys(accelerator: string): string {
+  return accelerator.replace('CommandOrControl', 'Control');
+}
 
-/** ADR-0110: the global shortcuts on a Mac (DEFAULT_GLOBAL_HOTKEYS with MAC_HOTKEY_CHANGES). */
-export const MAC_GLOBAL_HOTKEYS: Readonly<Record<CallHotkey, string>> = {
-  ...DEFAULT_GLOBAL_HOTKEYS,
-  ...MAC_HOTKEY_CHANGES,
-};
+/**
+ * The global shortcuts on a Mac (ADR-0110 amended 27 Nov 2026; desktop Mac 1.8.1 and the web app on a Mac): every
+ * Windows key with Control (⌃) for Ctrl, so the two systems share one table.
+ *
+ * Mac 1.8.0 held a different set (ADR-0110 as of 19 Nov 2026: ⌘ for Answer, Screenshot and the voice keys, ⌃⌥ for
+ * Clear, previous / next and zoom, ⌃⌘ arrows for the jumps). A 1.8.0 app keeps holding its own keys until it
+ * updates; Settings → Hotkeys shows the keys the app reports holding (rowKeys()).
+ *
+ * The macOS keys these take (Settings → Hotkeys says so, MAC_SYSTEM_CLASHES): ⌃← / ⌃→ move between desktops
+ * (Mission Control) and ⌃⌫ / ⌃⇧ with ← → edit text. ⌃⌥ is also VoiceOver's key (VO), while VoiceOver is on.
+ */
+export const MAC_GLOBAL_HOTKEYS: Readonly<Record<CallHotkey, string>> = Object.fromEntries(
+  Object.entries(DEFAULT_GLOBAL_HOTKEYS).map(([action, keys]) => [action, macKeys(keys)]),
+) as Record<CallHotkey, string>;
+
+/**
+ * A macOS shortcut one of Paramount AI's Mac keys also is (ADR-0110 amended 27 Nov 2026): Settings → Hotkeys shows
+ * the note on that row on a Mac, since macOS does not report these as taken.
+ */
+export interface MacSystemClash {
+  /** The Paramount AI shortcuts it concerns. */
+  actions: readonly (GlobalHotkey | 'transcript')[];
+  /** What happens and what to do, for the row. */
+  note: string;
+}
+
+/**
+ * ADR-0110 (amended 27 Nov 2026): the macOS defaults the Mac keys share (Apple's "Mac keyboard shortcuts", read
+ * 27 Nov 2026), and the one meeting-app key: Microsoft Teams' ⌃0 (reset zoom). Zoom and Google Meet use none of
+ * the Mac keys (Meet's Mac keys are ⌃⌘, Zoom's ⌘⇧, ⌃⇧ letters and ⌃⌥⌘); apps/web/tests/unit/shared/hotkeys.test.ts
+ * checks it.
+ */
+export const MAC_SYSTEM_CLASHES: readonly MacSystemClash[] = [
+  {
+    actions: ['prev', 'next'],
+    note: 'macOS uses ⌃ ← and ⌃ → to move between desktops (Mission Control), so it may take these first. To use them, turn off "Move left a space" and "Move right a space" in System Settings › Keyboard › Keyboard Shortcuts › Mission Control, or use the ← → buttons on the answer panel.',
+  },
+  {
+    actions: ['zoom-in', 'zoom-out', 'zoom-reset'],
+    note: 'Microsoft Teams on a Mac uses ⌃ 0 to reset its own zoom; during a call ⌃ 0 resets the overlay’s zoom instead.',
+  },
+  {
+    actions: ['clear', 'overlay-spot-left', 'overlay-spot-right'],
+    note: 'In text boxes of other apps, these keys also edit text (⌃ ⌫ deletes, ⌃ ⇧ ← → selects to the line’s edge); during a call they go to Paramount AI instead.',
+  },
+  {
+    actions: [
+      'screenshot-send',
+      'script-bar',
+      'click-through',
+      'record',
+      'overlay-toggle',
+      'ask-kite',
+      'transcript',
+      'overlay-up',
+      'overlay-down',
+      'overlay-left',
+      'overlay-right',
+    ],
+    note: '⌃ ⌥ is VoiceOver’s key. With VoiceOver on, VoiceOver gets these first; VoiceOver Utility › General can use Caps Lock as its key instead.',
+  },
+];
+
+/**
+ * The macOS defaults a Settings row shares (ADR-0110 amended 27 Nov 2026).
+ *
+ * @param row The row.
+ * @returns The notes for it (empty for most rows).
+ * Called from: apps/web/src/features/settings/HotkeyList.tsx (on a Mac); tests
+ */
+export function macSystemNotes(row: Pick<HotkeyRow, 'actions'>): string[] {
+  return MAC_SYSTEM_CLASHES.filter((clash) =>
+    clash.actions.some((action) => row.actions.includes(action)),
+  ).map((clash) => clash.note);
+}
 
 /**
  * The global shortcuts for this computer (ADR-0110).
@@ -358,14 +419,14 @@ export function hotkeyRows(mac: boolean): readonly HotkeyRow[] {
     },
     {
       label: 'Screenshot and voice question (Esc cancels)',
-      accelerator: SCREENSHOT_SEND_HOTKEY,
+      accelerator: keys['screenshot-send'],
       scope: 'global',
       actions: ['screenshot-send'],
     },
     {
       label: 'Previous or next answer',
       accelerator: keys.prev,
-      keysOverride: mac ? 'Control+Alt+Left / Right' : 'CommandOrControl+Left / Right',
+      keysOverride: mac ? 'Control+Left / Right' : 'CommandOrControl+Left / Right',
       scope: 'global',
       actions: ['prev', 'next'],
     },
@@ -384,7 +445,7 @@ export function hotkeyRows(mac: boolean): readonly HotkeyRow[] {
     {
       label: 'Zoom the overlay in, out, or back to 100 %',
       accelerator: keys['zoom-in'],
-      keysOverride: mac ? 'Control+Alt+= / - / 0' : 'CommandOrControl+= / - / 0',
+      keysOverride: mac ? 'Control+= / - / 0' : 'CommandOrControl+= / - / 0',
       scope: 'global',
       actions: ['zoom-in', 'zoom-out', 'zoom-reset'],
     },
@@ -418,7 +479,7 @@ export function hotkeyRows(mac: boolean): readonly HotkeyRow[] {
       label:
         'Move overlay to the next position (← → in its row, ↑ ↓ top or bottom row; during a call only)',
       accelerator: keys['overlay-row-top'],
-      keysOverride: mac ? 'Control+Command+Arrows' : 'CommandOrControl+Shift+Arrows',
+      keysOverride: mac ? 'Control+Shift+Arrows' : 'CommandOrControl+Shift+Arrows',
       scope: 'global',
       actions: ['overlay-spot-left', 'overlay-spot-right', 'overlay-row-top', 'overlay-row-bottom'],
       shells: 'positions',
@@ -426,7 +487,7 @@ export function hotkeyRows(mac: boolean): readonly HotkeyRow[] {
     {
       label: 'Nudge overlay',
       accelerator: keys['overlay-up'],
-      keysOverride: 'CommandOrControl+Alt+Shift+Arrows',
+      keysOverride: mac ? 'Control+Alt+Shift+Arrows' : 'CommandOrControl+Alt+Shift+Arrows',
       scope: 'global',
       actions: ['overlay-up', 'overlay-down', 'overlay-left', 'overlay-right'],
       shells: 'positions',
@@ -443,13 +504,13 @@ export function hotkeyRows(mac: boolean): readonly HotkeyRow[] {
     {
       // ADR-0122: during a call with the overlay open, the same key opens the overlay's chat bar.
       label: 'Open Ask AI (during a call: the chat bar under the bars)',
-      accelerator: ASK_KITE_HOTKEY,
+      accelerator: hotkeyAccelerator('ask-kite', mac),
       scope: 'global',
       actions: ['ask-kite'],
     },
     {
       label: 'Transcript on or off (while the bars have focus)',
-      accelerator: TRANSCRIPT_HOTKEY,
+      accelerator: hotkeyAccelerator('transcript', mac),
       scope: 'focused',
       actions: ['transcript'],
       shells: 'positions',
@@ -523,10 +584,11 @@ export type KeycapHotkey = GlobalHotkey | keyof typeof FOCUSED_HOTKEYS | 'chat-s
  * Called from: apps/web/src/ui/KeyCap.tsx, apps/web/src/features/settings/HotkeyList.tsx; tests
  */
 export function hotkeyAccelerator(hotkey: KeycapHotkey, mac = false): string {
-  if (hotkey === 'ask-kite') return ASK_KITE_HOTKEY;
+  // ADR-0110 (amended 27 Nov 2026): on a Mac, Control (⌃) for Ctrl here too.
+  if (hotkey === 'ask-kite') return mac ? macKeys(ASK_KITE_HOTKEY) : ASK_KITE_HOTKEY;
   if (hotkey === 'voice-cancel') return VOICE_CANCEL_HOTKEY;
   if (hotkey === 'chat-send') return CHAT_SEND_KEY;
-  if (hotkey === 'transcript') return TRANSCRIPT_HOTKEY;
+  if (hotkey === 'transcript') return mac ? macKeys(TRANSCRIPT_HOTKEY) : TRANSCRIPT_HOTKEY;
   if (hotkey in FOCUSED_HOTKEYS) return focusedHotkeys(mac)[hotkey as FocusedHotkey];
   return globalHotkeys(mac)[hotkey as CallHotkey];
 }

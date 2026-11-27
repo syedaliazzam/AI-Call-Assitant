@@ -159,6 +159,19 @@ describe('the exposed bridge', () => {
     ]);
   });
 
+  it('captureScreenshot sends nothing, or only a display id string for "Wrong screen?" (Mac 1.8.1 / Windows 1.7.5)', async () => {
+    const [, api] = exposeCalls[0]!;
+    const { CAPTURE_SCREENSHOT_CHANNEL } = await import('../../src/channels');
+    await api.captureScreenshot();
+    await api.captureScreenshot({ notDisplayId: '2779098405', extra: 'dropped' });
+    await api.captureScreenshot({ notDisplayId: 5 });
+    expect(ipcRenderer.invoke.mock.calls).toEqual([
+      [CAPTURE_SCREENSHOT_CHANNEL, undefined],
+      [CAPTURE_SCREENSHOT_CHANNEL, { notDisplayId: '2779098405' }],
+      [CAPTURE_SCREENSHOT_CHANNEL, undefined],
+    ]);
+  });
+
   it('setHotkeysEnabled sends only a boolean on its channel', async () => {
     const [, api] = exposeCalls[0]!;
     await api.setHotkeysEnabled(true);

@@ -15,7 +15,7 @@
  */
 'use client';
 
-import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
+import { hotkeyAccelerator, hotkeyLabel } from '@kite/shared';
 import { forwardRef, useEffect, useState, type CSSProperties, type Ref } from 'react';
 import type { CompactCommand, CompactRecording } from '@/core/live/liveChannel';
 import { callClock } from '@/features/live/callClock';
@@ -146,14 +146,14 @@ export function RecPill({
           ? `Recording, ${elapsed}${visibleInRecording ? `, ${VISIBLE_IN_RECORDING_TEXT}` : ''}. Stop recording`
           : 'Start recording'
       }
-      aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.record, mac)}
+      aria-keyshortcuts={hotkeyLabel(hotkeyAccelerator('record', mac), mac)}
       {...(pageTip
         ? // 1.6.3 (ADR-0075): bar 1's tooltip, "Stop recording · Ctrl+Alt+R".
           {
-            'data-tip': `${on ? 'Stop recording' : 'Start recording'} · ${tipShortcut(DEFAULT_GLOBAL_HOTKEYS.record, mac)}`,
+            'data-tip': `${on ? 'Stop recording' : 'Start recording'} · ${tipShortcut(hotkeyAccelerator('record', mac), mac)}`,
           }
         : {
-            title: `${on ? 'Stop recording' : 'Start recording'} (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.record, mac)})`,
+            title: `${on ? 'Stop recording' : 'Start recording'} (${hotkeyLabel(hotkeyAccelerator('record', mac), mac)})`,
           })}
     >
       <span

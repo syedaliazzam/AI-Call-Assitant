@@ -41,6 +41,7 @@ import {
   type DriveUploadRequest,
   type RecordingOpenRequest,
   type RecordingTrack,
+  type ScreenshotRequest,
   type WindowControlAction,
 } from '@kite/shared';
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
@@ -229,8 +230,15 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
   // Only a boolean crosses to the main process.
   setHotkeysEnabled: (on: boolean) => ipcRenderer.invoke(SET_HOTKEYS_CHANNEL, on === true),
   onHotkey,
-  // No arguments cross to the main process; the image comes back in memory only.
-  captureScreenshot: () => ipcRenderer.invoke(CAPTURE_SCREENSHOT_CHANNEL),
+  // The image comes back in memory only. Mac 1.8.1 / Windows 1.7.5: only a display id string crosses, for
+  // "Wrong screen?" (main checks it again); nothing else of the page's object is passed on.
+  captureScreenshot: (request?: ScreenshotRequest) =>
+    ipcRenderer.invoke(
+      CAPTURE_SCREENSHOT_CHANNEL,
+      typeof request?.notDisplayId === 'string'
+        ? { notDisplayId: request.notDisplayId }
+        : undefined,
+    ),
   // Only a string id (checked again by the shell) or a boolean crosses to the main process.
   openCompactView: (sessionId: string) =>
     ipcRenderer.invoke(OPEN_COMPACT_CHANNEL, String(sessionId)),

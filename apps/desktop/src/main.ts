@@ -33,6 +33,7 @@ import {
   DESKTOP_PROTOCOL,
   RECORDING_SCHEME,
   globalHotkeys,
+  hotkeyAccelerator,
   isSessionId,
   PAGES_WINDOW_PATH,
   parseDesktopLink,
@@ -76,7 +77,13 @@ import { APP_NAME, loadConfig, pinnedDataFolder, type DesktopConfig } from './co
 const APP_USER_MODEL_ID = 'co.paramountintelligence.kite';
 import { linkFromArgv, routeDesktopLink, shouldRegisterProtocol } from './links';
 import { createHomeWindow, isPanelSize, type HomeWindow } from './home';
-import { startUpdater, TEST_FEED_FILE, testUpdateFeed, type Updater } from './updater';
+import {
+  manualCheckReply,
+  startUpdater,
+  TEST_FEED_FILE,
+  testUpdateFeed,
+  type Updater,
+} from './updater';
 import { installHotkeys, isKiteSender, type HotkeyController } from './hotkeys';
 import { installMacPermissions, logMacPermissions, type MacPermissionDeps } from './macPermissions';
 import { appIconPath } from './icon';
@@ -185,6 +192,26 @@ let systemEnding = false;
  * effect with the next desktop composition (protection.ts), a frame or two; the rest is margin.
  */
 const PROTECTION_SETTLE_MS = 120;
+
+/**
+ * Mac 1.8.1 / Windows 1.7.5: "Check for Updates…" (the Mac app menu, the Windows tray). Checks now and shows
+ * what it found in a message box over the focused Paramount AI window; a downloaded update gets the usual Restart
+ * now / Later question instead (never during a call or while Drive uploads are left). Logs the outcome only.
+ *
+ * Called from: the Mac menu's and the tray's "Check for Updates…" (start())
+ */
+async function checkForUpdatesNow(): Promise<void> {
+  const outcome = updater ? await updater.checkNow() : 'unavailable';
+  console.info(`[kite] manual update check: ${outcome}`);
+  const reply = manualCheckReply(outcome, {
+    current: app.getVersion(),
+    next: updater?.foundVersion() ?? null,
+  });
+  if (!reply) return;
+  const box = { type: 'info' as const, title: 'Paramount AI', ...reply, buttons: ['OK'] };
+  const parent = BrowserWindow.getFocusedWindow();
+  await (parent ? dialog.showMessageBox(parent, box) : dialog.showMessageBox(box));
+}
 
 /**
  * Whether a value from the page is a window action.
@@ -611,7 +638,10 @@ function start(): void {
     // 1.8.0 (ADR-0111): on a Mac the app menu's shortcuts reach every window, the overlay too; this menu has
     // no reload, close, minimise or developer tools. Windows keeps Electron's default.
     if (process.platform === 'darwin') {
-      Menu.setApplicationMenu(Menu.buildFromTemplate(macMenuTemplate(APP_NAME)));
+      // Mac 1.8.1: with "Check for Updates…" under About.
+      Menu.setApplicationMenu(
+        Menu.buildFromTemplate(macMenuTemplate(APP_NAME, () => void checkForUpdatesNow())),
+      );
     }
     // v1.3.1 (ADR-0059): the streaming speech model ships in the installer. Its exact addresses are
     // answered from the bundle (checked against SHA-256 first); anything missing or damaged still
@@ -665,8 +695,12 @@ function start(): void {
       // 1.6.4 (ADR-0082): Ctrl+Shift+Space is the voice question, so it no longer gives the overlay the
       // keyboard (v1.1.0 to 1.6.3 it did, for typing in the chat box): the meeting keeps it.
       allowedOrigin: config.allowedOrigin,
-      // 1.8.0 (ADR-0110): a Mac's keys leave its text-editing and window keys to other apps.
+      // Mac 1.8.1 (ADR-0110 amended 27 Nov 2026): a Mac holds the Windows keys with Control (⌃) for Ctrl.
       accelerators: globalHotkeys(process.platform === 'darwin'),
+      ownKeys: {
+        askKite: hotkeyAccelerator('ask-kite', process.platform === 'darwin'),
+        transcript: hotkeyAccelerator('transcript', process.platform === 'darwin'),
+      },
       // ADR-0055 (amended 26 Nov 2026): the tray offers "Turn click-through off" during a call.
       onCallChange: (on) => appTray?.setCall(on),
     });
@@ -708,8 +742,8 @@ function start(): void {
     };
     installMacPermissions(ipcMain, macPermissionDeps, config.allowedOrigin);
     logMacPermissions(macPermissionDeps);
-    // Screenshot answers (Day 5): in memory only. During a call: the display under the overlay
-    // (v1.1.0: the main window is minimised then, maybe on another display).
+    // Screenshot answers (Day 5): in memory only. Mac 1.8.1 / Windows 1.7.5: the display under the mouse
+    // pointer, or the next one for "Wrong screen?"; before that, the display under the overlay.
     installScreenshot({
       desktopCapturer,
       screen,
@@ -717,6 +751,8 @@ function start(): void {
       platform: process.platform,
       ipcMain,
       getWindow: () => compact?.window() ?? mainWindow ?? home?.window() ?? null,
+      // Mac 1.8.1 / Windows 1.7.5: a fallback when the pointer cannot be read (screenshot.ts pickDisplay()).
+      getFocusedWindow: () => BrowserWindow.getFocusedWindow(),
       allowedOrigin: config.allowedOrigin,
       // v1.1.0 (ADR-0043): the answer should be about what is behind Kite, not about Kite. With
       // protection on, its windows are already left out, so nothing changes.
@@ -920,6 +956,11 @@ function start(): void {
           compact?.setClickThrough(false);
           mainWindow?.webContents.send(HOTKEY_CHANNEL, 'click-through-off');
         },
+        // Windows 1.7.5: "Check for Updates…" in the tray (the Mac has it in the app menu). Not for a Microsoft
+        // Store install, which the Store updates.
+        ...(process.platform === 'win32' && !process.windowsStore
+          ? { onCheckForUpdates: () => void checkForUpdatesNow() }
+          : {}),
       },
       control.view(),
     );

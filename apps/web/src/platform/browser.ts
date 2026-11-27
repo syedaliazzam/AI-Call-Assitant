@@ -210,7 +210,7 @@ export const browserPlatform: Platform = {
    * A screenshot of the tab or screen the user is sharing for the call: one frame of the
    * share's video track, scaled to ≤ 1,568 px (media.ts startFrameSource()).
    *
-   * @returns The frame as a PNG Blob (in memory only).
+   * @returns The frame as a PNG Blob (in memory only); no screen (the user chose what to share).
    * @throws CaptureError('no-share') when nothing is being shared (or the share ended), or
    *         'failed' when no frame could be read.
    */
@@ -219,7 +219,7 @@ export const browserPlatform: Platform = {
     if (!track || track.readyState !== 'live') throw new CaptureError('no-share', NO_SHARE_MESSAGE);
     try {
       if (!frames) throw new Error('no frame source');
-      return await frames.grab();
+      return { image: await frames.grab(), screen: null };
     } catch {
       throw new CaptureError(
         'failed',

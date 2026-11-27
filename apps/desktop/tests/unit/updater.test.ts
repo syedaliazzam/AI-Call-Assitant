@@ -3,18 +3,24 @@
  * when an update has downloaded, no call is live and the user has not been asked yet; during a
  * call it waits. 1.7.2 (ADR-0106): it also waits while Drive uploads are left. 1.8.0 (ADR-0109):
  * testUpdateFeed() accepts only an http:// feed on this computer, and startUpdater() uses it.
+ * Mac 1.8.1 / Windows 1.7.5: "Check for Updates…" (checkNow()) says up to date, downloading, failed or not available
+ * here; a downloaded update asks again, but waits while a call is on; manualCheckReply() has the words.
  */
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('electron', () => ({ app: { getVersion: () => '1.8.0' }, dialog: {} }));
+vi.mock('electron', () => ({ app: { getVersion: () => '1.8.0' }, dialog: dialogs }));
 const updater = vi.hoisted(() => ({
   setFeedURL: vi.fn(),
   on: vi.fn(),
-  checkForUpdates: vi.fn(() => Promise.resolve(null)),
+  quitAndInstall: vi.fn(),
+  checkForUpdates: vi.fn((): Promise<unknown> => Promise.resolve(null)),
+}));
+const dialogs = vi.hoisted(() => ({
+  showMessageBox: vi.fn(() => Promise.resolve({ response: 1 })),
 }));
 vi.mock('electron-updater', () => ({ autoUpdater: updater }));
 
-const { CHECK_EVERY_MS, nextUpdateStep, startUpdater, testUpdateFeed } =
+const { CHECK_EVERY_MS, manualCheckReply, nextUpdateStep, startUpdater, testUpdateFeed } =
   await import('../../src/updater');
 
 describe('testUpdateFeed (ADR-0109)', () => {
@@ -91,5 +97,88 @@ describe('nextUpdateStep', () => {
 
   it('checks every 6 hours', () => {
     expect(CHECK_EVERY_MS).toBe(21_600_000);
+  });
+});
+
+describe('Check for Updates… (Mac 1.8.1 / Windows 1.7.5)', () => {
+  /**
+   * Starts an updater with fakes and returns it with its event handlers.
+   *
+   * @returns The updater, the handlers by event name, and the call-active IPC handler.
+   */
+  const start = () => {
+    vi.useFakeTimers();
+    updater.on.mockClear();
+    const ipcOn = vi.fn();
+    const started = startUpdater({
+      ipcMain: { on: ipcOn } as never,
+      allowedOrigin: 'https://kite.example',
+      getWindow: () => null,
+    });
+    const handlers = new Map<string, (info: { version: string }) => void>(
+      updater.on.mock.calls.map(([name, fn]) => [name as string, fn as never]),
+    );
+    const callActive = ipcOn.mock.calls[0]![1] as (event: unknown, on: boolean) => void;
+    vi.useRealTimers();
+    return { started, handlers, callActive };
+  };
+
+  it('says up to date, downloading (with the version), failed, or not available here', async () => {
+    const { started } = start();
+    updater.checkForUpdates.mockResolvedValueOnce({
+      isUpdateAvailable: false,
+      updateInfo: { version: '1.8.0' },
+    });
+    expect(await started.checkNow()).toBe('up-to-date');
+    updater.checkForUpdates.mockResolvedValueOnce({
+      isUpdateAvailable: true,
+      updateInfo: { version: '1.8.1' },
+    });
+    expect(await started.checkNow()).toBe('downloading');
+    expect(started.foundVersion()).toBe('1.8.1');
+    updater.checkForUpdates.mockRejectedValueOnce(new Error('offline'));
+    expect(await started.checkNow()).toBe('failed');
+    updater.checkForUpdates.mockResolvedValueOnce(null);
+    expect(await started.checkNow()).toBe('unavailable');
+  });
+
+  it('asks Restart now / Later again for a downloaded update, but not during a call', async () => {
+    const { started, handlers, callActive } = start();
+    const senderFrame = { url: 'https://kite.example/live/s1', parent: null };
+    callActive({ senderFrame }, true);
+    dialogs.showMessageBox.mockClear();
+    handlers.get('update-downloaded')!({ version: '1.8.1' });
+    expect(dialogs.showMessageBox).not.toHaveBeenCalled();
+    expect(await started.checkNow()).toBe('ready-later');
+    expect(dialogs.showMessageBox).not.toHaveBeenCalled();
+    // The call ends: the question comes (Later is answered in this fake), and a manual check asks again.
+    callActive({ senderFrame }, false);
+    expect(dialogs.showMessageBox).toHaveBeenCalledTimes(1);
+    expect(await started.checkNow()).toBe('ready');
+    expect(dialogs.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(updater.checkForUpdates).not.toHaveBeenCalledWith(expect.anything());
+  });
+
+  it('has the words for each outcome, and none for the restart question', () => {
+    expect(manualCheckReply('up-to-date', { current: '1.8.1' })).toEqual({
+      message: "You're up to date",
+      detail: 'Paramount AI 1.8.1 is the newest version.',
+    });
+    expect(manualCheckReply('downloading', { current: '1.7.4', next: '1.7.5' })?.message).toBe(
+      'Downloading Paramount AI 1.7.5',
+    );
+    expect(manualCheckReply('downloading', { current: '1.7.4' })?.detail).toMatch(
+      /never during a call/,
+    );
+    expect(manualCheckReply('ready-later', { current: '1.8.0', next: '1.8.1' })?.detail).toMatch(
+      /when your call ends/,
+    );
+    expect(manualCheckReply('failed', { current: '1.8.1' })?.message).toBe(
+      'Could not check for updates',
+    );
+    expect(manualCheckReply('unavailable', { current: '1.8.1' })?.message).toBe(
+      'Updates are not checked here',
+    );
+    expect(manualCheckReply('ready', { current: '1.8.1' })).toBeNull();
   });
 });

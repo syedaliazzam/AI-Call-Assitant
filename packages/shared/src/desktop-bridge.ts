@@ -32,7 +32,7 @@ import type {
   RecordingTrack,
   RecordingWriteResult,
 } from './recording';
-import type { DesktopScreenshot } from './screenshot';
+import type { DesktopScreenshot, ScreenshotRequest } from './screenshot';
 
 /** Operating system the desktop app is running on. */
 export type DesktopOs = 'mac' | 'windows' | 'linux';
@@ -70,14 +70,17 @@ export interface KiteDesktopApi {
    */
   onHotkey?: (handler: (action: HotkeyAction) => void) => () => void;
   /**
-   * Day 5: takes a screenshot of the display the Kite window is on (the primary display if
-   * that cannot be told), already scaled so its longest side is at most 1,568 px. Never stored
-   * or logged by the shell. Optional: a desktop app installed before Day 5 does not have it.
+   * Day 5: takes a screenshot, already scaled so its longest side is at most 1,568 px. Never stored or logged by
+   * the shell. Until Windows 1.7.4 / Mac 1.8.0: the display the Kite window is on (they ignore the request and
+   * return no `screen`). Mac 1.8.1 / Windows 1.7.5: the display under the mouse pointer, or for "Wrong screen?"
+   * the next one after `request.notDisplayId`; the result names the screen. Optional: a desktop app installed
+   * before Day 5 does not have it.
    *
-   * @returns The PNG and its size, or why it failed (for example macOS Screen Recording
-   *          permission missing).
+   * @param request Mac 1.8.1 / Windows 1.7.5: which screen not to take (absent: the one under the pointer).
+   * @returns The PNG and its size (and from 1.8.1 / 1.7.5 its screen), or why it failed (for example macOS
+   *          Screen Recording permission missing).
    */
-  captureScreenshot?: () => Promise<DesktopScreenshot>;
+  captureScreenshot?: (request?: ScreenshotRequest) => Promise<DesktopScreenshot>;
   /**
    * Day 5: opens (or brings back) the compact live window for a session: frameless, always on
    * top, shown without taking focus from the meeting, at its last position and size.

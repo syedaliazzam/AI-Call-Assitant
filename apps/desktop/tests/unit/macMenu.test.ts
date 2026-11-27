@@ -4,7 +4,8 @@
  * Window menu's Zoom and Bring All to Front; it has no reload, force reload, developer tools, close window or
  * minimise, whose shortcuts would reach the frameless overlay on a Mac, and (ADR-0120) no page zoom, whose
  * ⌘0 / ⌘+ / ⌘− were Chromium's own zoom and made the overlay's panels stack; a page Chromium zoomed is put
- * back to 100 % when it loads (resetPageZoomOnLoad).
+ * back to 100 % when it loads (resetPageZoomOnLoad). Mac 1.8.1: "Check for Updates…" sits under About, has no
+ * shortcut, and runs the check.
  */
 import type { MenuItemConstructorOptions } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
@@ -35,6 +36,22 @@ function accelerators(items: readonly MenuItemConstructorOptions[]): string[] {
     ...(Array.isArray(item.submenu) ? accelerators(item.submenu) : []),
   ]);
 }
+
+describe('Check for Updates… (Mac 1.8.1)', () => {
+  it('sits under About with no shortcut, and runs the check', () => {
+    const check = vi.fn();
+    const items = macMenuTemplate('Paramount AI', check)[0]!
+      .submenu as MenuItemConstructorOptions[];
+    expect(items[0]!.role).toBe('about');
+    expect(items[1]!.label).toBe('Check for Updates…');
+    expect(items[1]!.accelerator).toBeUndefined();
+    (items[1]!.click as () => void)();
+    expect(check).toHaveBeenCalledOnce();
+    // Without a check (tests, a build that does not update itself) there is no item.
+    const plain = macMenuTemplate('Paramount AI')[0]!.submenu as MenuItemConstructorOptions[];
+    expect(plain.map((item) => item.label)).not.toContain('Check for Updates…');
+  });
+});
 
 describe('macMenuTemplate', () => {
   const template = macMenuTemplate('Paramount AI');

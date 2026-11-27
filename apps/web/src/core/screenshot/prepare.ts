@@ -24,6 +24,16 @@ export const FALLBACK_QUALITY = 0.6;
 /** Largest JPEG sent, in bytes (about 1 MB; the request limit is 4 MB). */
 export const MAX_SCREENSHOT_BYTES = 1_000_000;
 
+/**
+ * Mac 1.8.1 / Windows 1.7.5: the longest side of the small preview shown on the answer card, in pixels. Small, so
+ * the overlay's state message (sent on every streamed word) stays a few kilobytes. Made by makePreview() after
+ * the answer request has gone, so it never delays the answer.
+ */
+export const PREVIEW_MAX_SIDE = 240;
+
+/** Mac 1.8.1 / Windows 1.7.5: the preview's JPEG quality (0–1). */
+export const PREVIEW_QUALITY = 0.6;
+
 /** One encoding attempt: the size to draw and the JPEG quality. */
 export interface EncodeAttempt extends PixelSize {
   /** JPEG quality, 0–1. */
@@ -240,4 +250,65 @@ export async function prepareScreenshot(
     decoded.close?.();
   }
   throw new CaptureError('failed', 'Paramount AI could not prepare the screenshot. Try again.');
+}
+
+/**
+ * Mac 1.8.1 / Windows 1.7.5: draws an image smaller (the answer card's preview). The browser's in the app; a fake in
+ * tests.
+ */
+export interface PreviewCodec {
+  /**
+   * Draws the image at most `max` pixels on its long side and encodes it as JPEG.
+   *
+   * @param dataUrl The prepared screenshot (a JPEG data URL).
+   * @param max     The longest side, in pixels.
+   * @param quality JPEG quality, 0–1.
+   * @returns The JPEG bytes.
+   */
+  draw: (dataUrl: string, max: number, quality: number) => Promise<Uint8Array>;
+}
+
+/**
+ * The browser's preview codec: the image decoded from its data URL (an <img>, which the page's image policy already
+ * allows for the thumbnails), drawn on an OffscreenCanvas, encoded as JPEG.
+ *
+ * @returns The codec.
+ * Called from: makePreview() (default)
+ */
+export function browserPreviewCodec(): PreviewCodec {
+  return {
+    draw: async (dataUrl, max, quality) => {
+      const image = new Image();
+      image.src = dataUrl;
+      await image.decode();
+      const size = fitWithin({ width: image.naturalWidth, height: image.naturalHeight }, max);
+      const canvas = new OffscreenCanvas(size.width, size.height);
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('no 2d context');
+      context.drawImage(image, 0, 0, size.width, size.height);
+      const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality });
+      return new Uint8Array(await blob.arrayBuffer());
+    },
+  };
+}
+
+/**
+ * Mac 1.8.1 / Windows 1.7.5: the answer card's small preview of a screenshot (≤ PREVIEW_MAX_SIDE px). Called after
+ * the answer request has gone, so it never delays an answer; a failure just leaves the card without it.
+ *
+ * @param dataUrl The prepared screenshot (a JPEG data URL). Never logged.
+ * @param codec   The drawing (default: the browser's).
+ * @returns A small JPEG data URL, or '' when it could not be made.
+ * Called from: useLiveAnswers.ts ask(); tests
+ */
+export async function makePreview(
+  dataUrl: string,
+  codec: PreviewCodec = browserPreviewCodec(),
+): Promise<string> {
+  try {
+    const bytes = await codec.draw(dataUrl, PREVIEW_MAX_SIDE, PREVIEW_QUALITY);
+    return isJpeg(bytes) ? jpegDataUrl(bytes) : '';
+  } catch {
+    return '';
+  }
 }

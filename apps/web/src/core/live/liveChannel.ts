@@ -9,6 +9,7 @@
  *          (ADR-0041): also the transcript's bubbles, the audio levels and the stacked overlay's
  *          commands. Desktop 1.5.0 (ADR-0068): the meeting recording's state and its Rec pill's commands.
  *          ADR-0094: the answer model in use (and whether Smart is allowed), and the overlay's model switch.
+ *          Mac 1.8.1 / Windows 1.7.5: a screenshot answer's small preview and screen, and "Wrong screen?".
  * Used by: src/features/live/LiveAnswers.tsx (publishes, takes commands),
  *          src/features/live/CompactLive.tsx (shows, sends commands)
  * Depends on: the browser's BroadcastChannel (injectable for tests)
@@ -26,6 +27,7 @@ import {
   type AnswerType,
   type RecordingDisplay,
   type RecordingKind,
+  type ScreenshotScreen,
   type TargetChoice,
 } from '@kite/shared';
 import type { CallNotice } from './callNotice';
@@ -131,6 +133,16 @@ export interface CompactAnswer {
    * as the call window's does). Absent otherwise.
    */
   audioLost?: boolean;
+  /**
+   * Mac 1.8.1 / Windows 1.7.5: a screenshot answer's small preview (a JPEG data URL of at most 240 px, a few
+   * kilobytes). In memory only, never saved. Absent for other answers.
+   */
+  preview?: string;
+  /**
+   * Mac 1.8.1 / Windows 1.7.5: the screen a screenshot answer came from, when the desktop app says ("Screen 2 of 3").
+   * With more than one screen the overlay card offers "Wrong screen?". Absent in a browser and with an older app.
+   */
+  screen?: Pick<ScreenshotScreen, 'number' | 'count'>;
 }
 
 /**
@@ -496,6 +508,14 @@ export interface ChatTargetCommand {
   target: TargetChoice;
 }
 
+/** Mac 1.8.1 / Windows 1.7.5: "Wrong screen?" on a screenshot answer: take the next screen, ask again on the card. */
+export interface WrongScreenCommand {
+  /** Command type. */
+  type: 'wrong-screen';
+  /** The screenshot answer's id. */
+  id: string;
+}
+
 /** Answers again in another shape, from the answer card's menu. */
 export interface ReanswerCommand {
   /** Command type. */
@@ -535,6 +555,7 @@ export type CompactCommand =
   | StyleCommand
   | ChatTargetCommand
   | ReanswerCommand
+  | WrongScreenCommand
   | ScriptBarCommand
   | ClickThroughCommand
   | DictateCommand
@@ -674,6 +695,9 @@ export function isCommand(value: unknown): value is CompactCommand {
   }
   if (command.type === 'chat-target') {
     return ['auto', 'call', 'kite'].includes(String((value as { target?: unknown }).target));
+  }
+  if (command.type === 'wrong-screen') {
+    return typeof command.id === 'string' && command.id.length <= 64;
   }
   if (command.type === 'reanswer') {
     return (

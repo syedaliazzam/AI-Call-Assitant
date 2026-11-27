@@ -92,6 +92,14 @@ export interface HotkeyController {
   check(): HotkeyStatus[];
 }
 
+/** Mac 1.8.1: the keys of the two shortcuts held outside the call set (ADR-0110 amended 27 Nov 2026). */
+export interface OwnKeys {
+  /** Ask Kite's keys (held for as long as the app runs). */
+  askKite: string;
+  /** Transcript's keys (never held; Settings checks no other app holds them). */
+  transcript: string;
+}
+
 /**
  * Creates the global-shortcut controller.
  *
@@ -99,6 +107,8 @@ export interface HotkeyController {
  * @param send           Carries out a shortcut (the page's actions go to the page, the overlay's
  *                       to the overlay window).
  * @param accelerators   The shortcuts (default DEFAULT_GLOBAL_HOTKEYS).
+ * @param own            Ask Kite's and Transcript's keys (Mac 1.8.1: with Control on a Mac; default the Windows
+ *                       keys).
  * @returns The controller.
  * Called from: installHotkeys(); tests
  */
@@ -106,6 +116,10 @@ export function createHotkeys(
   globalShortcut: Pick<GlobalShortcut, 'register' | 'unregister'>,
   send: (action: GlobalHotkey) => void,
   accelerators: Readonly<Record<CallHotkey, string>> = DEFAULT_GLOBAL_HOTKEYS,
+  own: OwnKeys = {
+    askKite: ASK_KITE_HOTKEY,
+    transcript: TRANSCRIPT_HOTKEY,
+  },
 ): HotkeyController {
   /** The Ask Kite shortcut, once the app has asked for it. */
   let askKite: HotkeyStatus | null = null;
@@ -183,17 +197,17 @@ export function createHotkeys(
     enableAskKite() {
       let ok = false;
       try {
-        ok = globalShortcut.register(ASK_KITE_HOTKEY, () => send('ask-kite'));
+        ok = globalShortcut.register(own.askKite, () => send('ask-kite'));
       } catch {
         // An accelerator the OS cannot register at all counts as unavailable.
         ok = false;
       }
-      askKite = { action: 'ask-kite', accelerator: ASK_KITE_HOTKEY, registered: ok };
+      askKite = { action: 'ask-kite', accelerator: own.askKite, registered: ok };
       return askKite;
     },
     releaseAll() {
       disable();
-      if (askKite?.registered) globalShortcut.unregister(ASK_KITE_HOTKEY);
+      if (askKite?.registered) globalShortcut.unregister(own.askKite);
       askKite = null;
     },
     check() {
@@ -202,13 +216,13 @@ export function createHotkeys(
       const tryTranscript = (): HotkeyStatus => {
         let ok = false;
         try {
-          ok = globalShortcut.register(TRANSCRIPT_HOTKEY, () => undefined);
+          ok = globalShortcut.register(own.transcript, () => undefined);
         } catch {
           // An accelerator the OS cannot register at all counts as unavailable.
           ok = false;
         }
-        if (ok) globalShortcut.unregister(TRANSCRIPT_HOTKEY);
-        return { action: 'transcript', accelerator: TRANSCRIPT_HOTKEY, registered: ok };
+        if (ok) globalShortcut.unregister(own.transcript);
+        return { action: 'transcript', accelerator: own.transcript, registered: ok };
       };
       // 1.6.4 (ADR-0082): Ctrl+Alt+Enter is one of the call shortcuts, so it is in the statuses.
       if (on) return [...statuses, tryTranscript(), ...always];
@@ -261,6 +275,11 @@ export interface HotkeyDeps {
    */
   accelerators?: Readonly<Record<CallHotkey, string>>;
   /**
+   * Mac 1.8.1 (ADR-0110 amended 27 Nov 2026): Ask Kite's and Transcript's keys (hotkeyAccelerator(…, true) on a
+   * Mac); the Windows keys when absent.
+   */
+  ownKeys?: OwnKeys;
+  /**
    * ADR-0055 (amended 26 Nov 2026): told when the page turns the call's shortcuts on (a call started) or off
    * (it ended), so the tray offers "Turn click-through off" only during a call. Optional in tests.
    */
@@ -287,6 +306,7 @@ export function installHotkeys(deps: HotkeyDeps): HotkeyController {
       }
     },
     deps.accelerators,
+    deps.ownKeys,
   );
   const askKite = controller.enableAskKite();
   if (!askKite.registered) console.info('desktop: Ask Kite shortcut taken by another app');

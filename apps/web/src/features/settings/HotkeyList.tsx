@@ -11,6 +11,8 @@
  *          with Paramount AI in front (the page handles it) or not at all; on a Mac a note says macOS may not
  *          report a shortcut another app holds. ADR-0055 (amended 26 Nov 2026): when another app holds the
  *          Click-through key, a warning says it is the one way to turn Click-through off from the overlay.
+ *          Mac 1.8.1 (ADR-0110 amended 27 Nov 2026): the Mac keys are the Windows keys with ⌃; on a Mac each row that
+ *          shares a macOS shortcut (⌃ ← / → Mission Control, ⌃ ⌫ text, ⌃ ⌥ VoiceOver) says so (macSystemNotes()).
  * Used by: src/features/settings/Settings.tsx
  * Depends on: @kite/shared (hotkeyRows), src/platform, src/ui/KeyCap.tsx, src/ui/useIsMac.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3; docs/design/parakeet-parity.md
@@ -22,6 +24,7 @@ import {
   hotkeyAccelerator,
   hotkeyLabel,
   hotkeyRows,
+  macSystemNotes,
   type HotkeyRow,
   type HotkeyStatus,
 } from '@kite/shared';
@@ -153,7 +156,7 @@ export function clickThroughClashWarning(keys: string): string {
  * (a window tool, VoiceOver) uses the same keys, so "In use by another app" may never show there.
  */
 export const MAC_CLASH_NOTE =
-  'On a Mac, macOS may not tell Paramount AI that another app uses the same keys, so a clash may not show here. If a key does nothing during a call, check window tools such as Rectangle or Magnet (they use ⌃ ⌥ with arrows) and VoiceOver (⌃ ⌥).';
+  'On a Mac, macOS may not tell Paramount AI that another app uses the same keys, so a clash may not show here. If a key does nothing during a call, check window tools such as Rectangle or Magnet and VoiceOver (⌃ ⌥). The notes under a row name the macOS shortcuts it shares.';
 
 /**
  * Never changes after load (the platform is fixed for the page's life).
@@ -232,6 +235,16 @@ export function HotkeyList() {
               </td>
               <td className="py-2 text-ui-muted">
                 {rowWhere(row, desktop)}
+                {mac &&
+                  macSystemNotes(row).map((note) => (
+                    <span
+                      key={note}
+                      data-mac-note=""
+                      className="mt-1 block text-[12px] text-ui-muted"
+                    >
+                      {note}
+                    </span>
+                  ))}
                 {rowHasConflict(row, statuses) && (
                   <span className="ml-2 text-ui-danger">
                     In use by another app: {conflictEffect(row)}

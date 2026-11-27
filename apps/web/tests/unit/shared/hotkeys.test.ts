@@ -2,10 +2,10 @@
  * Tests packages/shared/src/hotkeys.ts (v1.0.2, ADR-0035): no two Kite shortcuts share keys — the
  * call shortcuts, the focused ones and Ask Kite together — so adding the script bar (Ctrl+Alt+S)
  * cannot shadow another Kite shortcut; every global shortcut has a Settings row, and the script
- * bar is a page action the shell forwards (like Answer), not an overlay action. ADR-0110: the Mac keys
- * never hold a Mac text-editing or window key, change nothing else, never collide, and show ⌃ ⌥ / ⌃ ⌘.
- * Reviewed 25 Nov 2026: the whole table pinned on both systems; no Mac key takes a macOS system key or a
- * Zoom, Meet or Teams key; on Windows only the known Ctrl+Alt+H / Meet clash; which keys the page also handles.
+ * bar is a page action the shell forwards (like Answer), not an overlay action. ADR-0110 (amended 27 Nov 2026,
+ * Mac 1.8.1): the Mac keys are the Windows keys with Control (⌃), never ⌘; the whole table pinned on both systems;
+ * show or hide is Ctrl+Alt+Y (ADR-0127), free in Zoom, Meet and Teams on both; the known clashes are pinned (macOS
+ * defaults with the notes Settings shows; the Windows meeting keys found 27 Nov 2026); which keys the page handles.
  */
 import {
   ASK_KITE_HOTKEY,
@@ -22,7 +22,9 @@ import {
   keycapParts,
   HOTKEY_ROWS,
   MAC_GLOBAL_HOTKEYS,
-  MAC_HOTKEY_CHANGES,
+  MAC_SYSTEM_CLASHES,
+  macKeys,
+  macSystemNotes,
   PAGE_HANDLED_HOTKEYS,
   SCREENSHOT_SEND_HOTKEY,
   TRANSCRIPT_HOTKEY,
@@ -77,7 +79,7 @@ describe('Kite shortcuts', () => {
       'zoom-reset': 'CommandOrControl+0',
       record: 'CommandOrControl+Alt+R',
       'click-through': 'CommandOrControl+Alt+X',
-      'overlay-toggle': 'CommandOrControl+Alt+H',
+      'overlay-toggle': 'CommandOrControl+Alt+Y',
     });
     for (const [action, keys] of Object.entries(FOCUSED_HOTKEYS)) {
       expect(DEFAULT_GLOBAL_HOTKEYS[action as keyof typeof FOCUSED_HOTKEYS]).toBe(keys);
@@ -144,103 +146,88 @@ describe('moving the overlay (ADR-0095)', () => {
   });
 });
 
-describe('the Mac keys (ADR-0110)', () => {
-  /** The Mac's text-editing and window keys a call must never take. */
-  const MAC_EDITING_KEYS = [
-    'CommandOrControl+Left',
-    'CommandOrControl+Right',
-    'CommandOrControl+Backspace',
-    'CommandOrControl+=',
-    'CommandOrControl+-',
-    'CommandOrControl+0',
-    'CommandOrControl+Shift+Left',
-    'CommandOrControl+Shift+Right',
-    'CommandOrControl+Shift+Up',
-    'CommandOrControl+Shift+Down',
-    'CommandOrControl+Alt+H',
-  ];
-
-  it('never holds a Mac text-editing or window key', () => {
-    const mac = Object.values(globalHotkeys(true));
-    for (const key of MAC_EDITING_KEYS) expect(mac).not.toContain(key);
-  });
-
-  it('changes only those keys, and keeps every other one as on Windows', () => {
+describe('the Mac keys (ADR-0110 amended 27 Nov 2026, Mac 1.8.1)', () => {
+  it('are the Windows keys with Control (⌃) for Ctrl, and never use ⌘', () => {
     for (const action of GLOBAL_HOTKEYS) {
-      if (action in MAC_HOTKEY_CHANGES) continue;
-      expect(MAC_GLOBAL_HOTKEYS[action]).toBe(DEFAULT_GLOBAL_HOTKEYS[action]);
+      expect(MAC_GLOBAL_HOTKEYS[action], action).toBe(macKeys(DEFAULT_GLOBAL_HOTKEYS[action]));
+      expect(MAC_GLOBAL_HOTKEYS[action], action).not.toMatch(/Command/);
     }
     expect(globalHotkeys(false)).toBe(DEFAULT_GLOBAL_HOTKEYS);
+    expect(globalHotkeys(true)).toBe(MAC_GLOBAL_HOTKEYS);
+    expect(hotkeyAccelerator('ask-kite', true)).toBe('Control+Alt+K');
+    expect(hotkeyAccelerator('transcript', true)).toBe('Control+Alt+T');
+    expect(hotkeyAccelerator('voice-cancel', true)).toBe('Escape');
   });
 
   it('has no two Mac shortcuts on the same keys', () => {
     const keys = [
       ...Object.values(MAC_GLOBAL_HOTKEYS),
-      ASK_KITE_HOTKEY,
-      TRANSCRIPT_HOTKEY,
+      hotkeyAccelerator('ask-kite', true),
+      hotkeyAccelerator('transcript', true),
       VOICE_CANCEL_HOTKEY,
     ];
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('shows ⌃ ⌥ and ⌃ ⌘ on a Mac and Ctrl elsewhere', () => {
-    expect(hotkeyAccelerator('clear', true)).toBe('Control+Alt+Backspace');
-    expect(hotkeyAccelerator('clear')).toBe('CommandOrControl+Backspace');
-    expect(keycapParts(hotkeyAccelerator('prev', true), true)).toEqual(['⌃', '⌥', '←']);
-    expect(keycapParts(hotkeyAccelerator('overlay-row-top', true), true)).toEqual(['⌃', '⌘', '↑']);
-    expect(keycapParts(hotkeyAccelerator('answer', true), true)).toEqual(['⌘', '↵']);
-    expect(hotkeyLabel('Control+Alt+Shift+Backspace', true)).toBe('⌃ ⌥ ⇧ ⌫');
-    expect(hotkeyLabel('Control+Command+Left', true)).toBe('⌃ ⌘ ←');
-    expect(hotkeyLabel('Control+Alt+Left', false)).toBe('Ctrl+Alt+←');
-    expect(focusedHotkeys(true).next).toBe('Control+Alt+Right');
+  it('shows ⌃ and ⌥ on a Mac and Ctrl elsewhere', () => {
+    expect(keycapParts(hotkeyAccelerator('answer', true), true)).toEqual(['⌃', '↵']);
+    expect(keycapParts(hotkeyAccelerator('prev', true), true)).toEqual(['⌃', '←']);
+    expect(keycapParts(hotkeyAccelerator('overlay-toggle', true), true)).toEqual(['⌃', '⌥', 'Y']);
+    expect(hotkeyLabel(hotkeyAccelerator('clear-transcript', true), true)).toBe('⌃ ⇧ ⌫');
+    expect(hotkeyLabel(hotkeyAccelerator('ask-kite', true), true)).toBe('⌃ ⌥ K');
+    expect(hotkeyLabel(hotkeyAccelerator('clear'), false)).toBe('Ctrl+⌫');
+    expect(focusedHotkeys(true).next).toBe('Control+Right');
     expect(focusedHotkeys(false)).toEqual(FOCUSED_HOTKEYS);
   });
 
-  it('lists the Mac keys in Settings on a Mac, and the same rows', () => {
+  it('lists the Mac keys in Settings on a Mac, with the same rows', () => {
     const mac = hotkeyRows(true);
     expect(mac.map((row) => row.label)).toEqual(HOTKEY_ROWS.map((row) => row.label));
-    expect(mac.find((row) => row.actions.includes('prev'))?.keysOverride).toBe(
-      'Control+Alt+Left / Right',
-    );
-    expect(mac.find((row) => row.actions.includes('overlay-row-top'))?.keysOverride).toBe(
-      'Control+Command+Arrows',
-    );
-    expect(mac.find((row) => row.actions.includes('answer'))?.accelerator).toBe(
-      'CommandOrControl+Enter',
-    );
+    const row = (action: string) => mac.find((one) => one.actions.includes(action as never))!;
+    expect(row('prev').keysOverride).toBe('Control+Left / Right');
+    expect(row('zoom-in').keysOverride).toBe('Control+= / - / 0');
+    expect(row('overlay-row-top').keysOverride).toBe('Control+Shift+Arrows');
+    expect(row('overlay-up').keysOverride).toBe('Control+Alt+Shift+Arrows');
+    expect(row('answer').accelerator).toBe('Control+Enter');
+    expect(row('screenshot-send').accelerator).toBe('Control+Alt+Enter');
+    expect(row('ask-kite').accelerator).toBe('Control+Alt+K');
+    expect(row('transcript').accelerator).toBe('Control+Alt+T');
+    // No row on a Mac shows ⌘ (the 'classic' row is for desktop apps before 1.3.0, which never existed on a Mac).
+    for (const one of mac.filter((candidate) => candidate.shells !== 'classic')) {
+      expect(one.keysOverride ?? one.accelerator).not.toMatch(/Command/);
+    }
   });
 });
 
-describe('the key table, Windows and Mac (ADR-0110, reviewed 25 Nov 2026)', () => {
+describe('the key table, Windows and Mac (ADR-0110 amended 27 Nov 2026, ADR-0127)', () => {
   /**
-   * Every call shortcut, Windows then Mac. The Mac keys are the Windows keys with ⌘ for Ctrl, except the
-   * deliberate differences of ADR-0110, where ⌘ would take a Mac text-editing, Finder or window key, plain ⌃
-   * a Mission Control key, and ⌘ = / - / 0 the meeting app's (or Chrome's) zoom.
+   * Every call shortcut: Windows, then Mac (Mac 1.8.1 and the web app on a Mac). The Mac 1.8.0 keys they replace are
+   * in ADR-0110's amendment of 27 Nov 2026.
    */
   const TABLE: Readonly<Record<string, readonly [string, string]>> = {
-    answer: ['CommandOrControl+Enter', 'CommandOrControl+Enter'],
-    screenshot: ['CommandOrControl+Shift+Enter', 'CommandOrControl+Shift+Enter'],
-    chat: ['CommandOrControl+Shift+Space', 'CommandOrControl+Shift+Space'],
-    'screenshot-send': ['CommandOrControl+Alt+Enter', 'CommandOrControl+Alt+Enter'],
-    'clear-transcript': ['CommandOrControl+Shift+Backspace', 'Control+Alt+Shift+Backspace'],
-    clear: ['CommandOrControl+Backspace', 'Control+Alt+Backspace'],
-    prev: ['CommandOrControl+Left', 'Control+Alt+Left'],
-    next: ['CommandOrControl+Right', 'Control+Alt+Right'],
-    'zoom-in': ['CommandOrControl+=', 'Control+Alt+='],
-    'zoom-out': ['CommandOrControl+-', 'Control+Alt+-'],
-    'zoom-reset': ['CommandOrControl+0', 'Control+Alt+0'],
-    'overlay-toggle': ['CommandOrControl+Alt+H', 'Control+Alt+H'],
-    'script-bar': ['CommandOrControl+Alt+S', 'CommandOrControl+Alt+S'],
-    'click-through': ['CommandOrControl+Alt+X', 'CommandOrControl+Alt+X'],
-    record: ['CommandOrControl+Alt+R', 'CommandOrControl+Alt+R'],
-    'overlay-spot-left': ['CommandOrControl+Shift+Left', 'Control+Command+Left'],
-    'overlay-spot-right': ['CommandOrControl+Shift+Right', 'Control+Command+Right'],
-    'overlay-row-top': ['CommandOrControl+Shift+Up', 'Control+Command+Up'],
-    'overlay-row-bottom': ['CommandOrControl+Shift+Down', 'Control+Command+Down'],
-    'overlay-up': ['CommandOrControl+Alt+Shift+Up', 'CommandOrControl+Alt+Shift+Up'],
-    'overlay-down': ['CommandOrControl+Alt+Shift+Down', 'CommandOrControl+Alt+Shift+Down'],
-    'overlay-left': ['CommandOrControl+Alt+Shift+Left', 'CommandOrControl+Alt+Shift+Left'],
-    'overlay-right': ['CommandOrControl+Alt+Shift+Right', 'CommandOrControl+Alt+Shift+Right'],
+    answer: ['CommandOrControl+Enter', 'Control+Enter'],
+    screenshot: ['CommandOrControl+Shift+Enter', 'Control+Shift+Enter'],
+    chat: ['CommandOrControl+Shift+Space', 'Control+Shift+Space'],
+    'screenshot-send': ['CommandOrControl+Alt+Enter', 'Control+Alt+Enter'],
+    'clear-transcript': ['CommandOrControl+Shift+Backspace', 'Control+Shift+Backspace'],
+    clear: ['CommandOrControl+Backspace', 'Control+Backspace'],
+    prev: ['CommandOrControl+Left', 'Control+Left'],
+    next: ['CommandOrControl+Right', 'Control+Right'],
+    'zoom-in': ['CommandOrControl+=', 'Control+='],
+    'zoom-out': ['CommandOrControl+-', 'Control+-'],
+    'zoom-reset': ['CommandOrControl+0', 'Control+0'],
+    'overlay-toggle': ['CommandOrControl+Alt+Y', 'Control+Alt+Y'],
+    'script-bar': ['CommandOrControl+Alt+S', 'Control+Alt+S'],
+    'click-through': ['CommandOrControl+Alt+X', 'Control+Alt+X'],
+    record: ['CommandOrControl+Alt+R', 'Control+Alt+R'],
+    'overlay-spot-left': ['CommandOrControl+Shift+Left', 'Control+Shift+Left'],
+    'overlay-spot-right': ['CommandOrControl+Shift+Right', 'Control+Shift+Right'],
+    'overlay-row-top': ['CommandOrControl+Shift+Up', 'Control+Shift+Up'],
+    'overlay-row-bottom': ['CommandOrControl+Shift+Down', 'Control+Shift+Down'],
+    'overlay-up': ['CommandOrControl+Alt+Shift+Up', 'Control+Alt+Shift+Up'],
+    'overlay-down': ['CommandOrControl+Alt+Shift+Down', 'Control+Alt+Shift+Down'],
+    'overlay-left': ['CommandOrControl+Alt+Shift+Left', 'Control+Alt+Shift+Left'],
+    'overlay-right': ['CommandOrControl+Alt+Shift+Right', 'Control+Alt+Shift+Right'],
   };
 
   /**
@@ -259,108 +246,157 @@ describe('the key table, Windows and Mac (ADR-0110, reviewed 25 Nov 2026)', () =
       .sort()
       .join('+');
 
-  it('pins every call shortcut on both systems; only ADR-0110 keys differ', () => {
+  it('pins every call shortcut on both systems', () => {
     expect(Object.keys(TABLE).sort()).toEqual([...GLOBAL_HOTKEYS].sort());
     for (const action of GLOBAL_HOTKEYS) {
       const [windows, mac] = TABLE[action]!;
       expect(DEFAULT_GLOBAL_HOTKEYS[action], action).toBe(windows);
       expect(MAC_GLOBAL_HOTKEYS[action], action).toBe(mac);
     }
-    const differ = GLOBAL_HOTKEYS.filter((action) => TABLE[action]![0] !== TABLE[action]![1]);
-    expect(differ.sort()).toEqual(Object.keys(MAC_HOTKEY_CHANGES).sort());
     expect(ASK_KITE_HOTKEY).toBe('CommandOrControl+Alt+K');
     expect(TRANSCRIPT_HOTKEY).toBe('CommandOrControl+Alt+T');
   });
 
   /**
-   * macOS's own shortcuts (Apple's "Mac keyboard shortcuts": Spotlight, input sources, Mission Control,
-   * screenshots, the Character Viewer) and the meeting apps' Mac shortcuts as their makers publish them (Zoom,
-   * Google Meet in Chrome, Microsoft Teams; read 25 Nov 2026). A call's global shortcut would take them.
+   * macOS's own shortcuts (Apple's "Mac keyboard shortcuts" and Mission Control, input sources, Finder, Focus keys)
+   * and the meeting apps' Mac shortcuts as their makers publish them (Zoom Workplace, Google Meet in Chrome,
+   * Microsoft Teams; read 27 Nov 2026).
    */
-  const MAC_RESERVED = [
-    // Spotlight; input sources; the Character Viewer.
-    'Command+Space',
-    'Alt+Command+Space',
-    'Control+Space',
-    'Alt+Control+Space',
-    'Command+Control+Space',
-    // Mission Control, application windows, the spaces left and right.
-    'Control+Up',
-    'Control+Down',
-    'Control+Left',
-    'Control+Right',
-    // Screenshots.
-    'Command+Shift+3',
-    'Command+Shift+4',
-    'Command+Shift+5',
-    'Command+Shift+6',
-    // Zoom: mute, video, share, chat, view, record, full screen, meeting controls.
-    'Command+Shift+A',
-    'Command+Shift+V',
-    'Command+Shift+S',
-    'Command+Shift+H',
-    'Command+Shift+W',
-    'Command+Shift+R',
-    'Command+Shift+F',
-    'Alt+Command+Control+H',
-    // Google Meet in Chrome: microphone, camera, raise hand, chat, people; Chrome's zoom.
-    'Command+D',
-    'Command+E',
-    'Command+Control+H',
-    'Command+Control+C',
-    'Command+Control+P',
-    'Command+=',
-    'Command+-',
-    'Command+0',
-    // Microsoft Teams: mute, video, share, raise hand, decline.
-    'Command+Shift+M',
-    'Command+Shift+O',
-    'Command+Shift+E',
-    'Command+Shift+K',
-    'Command+Shift+D',
-  ].map((key) => pressed(key, true));
-
-  it('takes no macOS system key and no Zoom, Meet or Teams key on a Mac', () => {
-    const held = [...Object.values(MAC_GLOBAL_HOTKEYS), ASK_KITE_HOTKEY].map((key) =>
-      pressed(key, true),
-    );
-    for (const key of held) expect(MAC_RESERVED, key).not.toContain(key);
-  });
-
-  /** The meeting apps' Windows shortcuts (Zoom, Google Meet in Chrome, Microsoft Teams; read 25 Nov 2026). */
-  const WINDOWS_MEETING_KEYS = [
-    'Alt+A',
-    'Alt+V',
-    'Alt+S',
-    'Alt+H',
-    'Alt+R',
-    'Alt+F',
-    'Control+D',
-    'Control+E',
-    'Alt+Control+H',
-    'Alt+Control+C',
-    'Alt+Control+P',
-    'Control+Shift+M',
-    'Control+Shift+O',
-    'Control+Shift+E',
-    'Control+Shift+K',
-    'Control+Shift+A',
-    'Control+Shift+S',
-    'Control+Shift+D',
-    'Control+Shift+H',
-  ].map((key) => pressed(key, false));
+  const MAC_RESERVED: Readonly<Record<string, string>> = {
+    'Command+Space': 'Spotlight',
+    'Control+Space': 'previous input source',
+    'Alt+Control+Space': 'next input source',
+    'Command+Control+Space': 'Character Viewer',
+    'Control+Up': 'Mission Control',
+    'Control+Down': 'application windows',
+    'Control+Left': 'Mission Control: move a space left',
+    'Control+Right': 'Mission Control: move a space right',
+    'Command+Control+F': 'full screen',
+    'Command+Control+Q': 'lock screen',
+    'Control+Tab': 'next tab / Focus',
+    'Command+Shift+3': 'screenshot',
+    'Command+Shift+4': 'screenshot',
+    'Command+Shift+5': 'screenshot',
+    'Control+\\': 'Zoom: always show meeting controls',
+    'Control+P': 'Zoom: previous gallery page',
+    'Control+N': 'Zoom: next gallery page',
+    'Control+Shift+R': 'Zoom: remote control',
+    'Control+Shift+G': 'Zoom: stop remote control',
+    'Alt+Command+Control+H': 'Zoom: floating meeting controls',
+    'Alt+Control+Shift+V': 'Zoom: share log',
+    'Alt+Y': 'Zoom: raise hand',
+    'Command+Shift+A': 'Zoom: mute',
+    'Command+Shift+V': 'Zoom: video',
+    'Command+D': 'Meet: microphone',
+    'Command+E': 'Meet: camera',
+    'Command+Control+H': 'Meet: raise hand',
+    'Command+Control+C': 'Meet: chat',
+    'Command+Control+P': 'Meet: people',
+    'Command+Control+K': 'Meet: more tiles',
+    'Command+Control+X': 'Meet: reactions / Teams',
+    'Alt+Space': 'Teams: hold to unmute',
+    'Control+0': 'Teams: reset zoom',
+    'Control+L': 'Teams: chat options',
+    'Command+Shift+M': 'Teams: mute',
+    'Command+Shift+K': 'Teams: raise hand',
+  };
 
   /**
-   * A clash already known and left for the developer's decision (investigation of 25 Nov 2026, D-6): show or
-   * hide the overlay (Ctrl+Alt+H) is Google Meet's raise hand on Windows. Changing it needs a Windows release.
+   * The Mac keys that take one of those, each with the Settings note that says so (MAC_SYSTEM_CLASHES): Mission
+   * Control's ⌃← / ⌃→ (previous / next answer) and Teams' ⌃0 (zoom reset).
    */
-  const KNOWN_WINDOWS_CLASHES = [pressed('CommandOrControl+Alt+H', false)];
+  const KNOWN_MAC_CLASHES: Readonly<Record<string, string>> = {
+    prev: 'Control+Left',
+    next: 'Control+Right',
+    'zoom-reset': 'Control+0',
+  };
 
-  it('takes no Zoom, Meet or Teams key on Windows, except the one known clash', () => {
+  it('on a Mac takes only the known macOS and Teams keys, and Settings notes each one', () => {
+    const reserved = new Set(Object.keys(MAC_RESERVED).map((key) => pressed(key, true)));
+    const taken = Object.entries(MAC_GLOBAL_HOTKEYS)
+      .concat([['ask-kite', hotkeyAccelerator('ask-kite', true)]])
+      .filter(([, keys]) => reserved.has(pressed(keys, true)));
+    expect(Object.fromEntries(taken)).toEqual(KNOWN_MAC_CLASHES);
+    for (const action of Object.keys(KNOWN_MAC_CLASHES)) {
+      expect(macSystemNotes({ actions: [action as never] }).length, action).toBeGreaterThan(0);
+    }
+    // Every ⌃ ⌥ shortcut carries the VoiceOver note.
+    const voiceOver = MAC_SYSTEM_CLASHES.find((clash) => clash.note.includes('VoiceOver'))!;
+    for (const [action, keys] of Object.entries(MAC_GLOBAL_HOTKEYS)) {
+      if (keys.startsWith('Control+Alt+')) expect(voiceOver.actions, action).toContain(action);
+    }
+  });
+
+  /**
+   * The meeting apps' Windows shortcuts as their makers publish them (Zoom Workplace, Google Meet in Chrome,
+   * Microsoft Teams; read 27 Nov 2026).
+   */
+  const WINDOWS_MEETING_KEYS: Readonly<Record<string, string>> = {
+    'Alt+A': 'Zoom: mute',
+    'Alt+V': 'Zoom: video',
+    'Alt+S': 'Zoom: share',
+    'Alt+H': 'Zoom: chat',
+    'Alt+R': 'Zoom: record',
+    'Alt+Control+Shift+H': 'Zoom: floating meeting controls',
+    'Alt+Control+I': 'Zoom: add to chat / Meet: room info',
+    'Control+=': 'Zoom and Teams: zoom in',
+    'Control+-': 'Zoom and Teams: zoom out',
+    'Control+0': 'Teams: reset zoom',
+    'Control+D': 'Meet: microphone',
+    'Control+E': 'Meet: camera',
+    'Alt+Control+H': 'Meet: raise hand',
+    'Alt+Control+C': 'Meet: chat / Teams: chats',
+    'Alt+Control+P': 'Meet: people',
+    'Alt+Control+T': 'Meet: present / Teams: toast',
+    'Alt+Control+K': 'Meet: more tiles / Teams: mark read',
+    'Alt+Control+J': 'Meet: fewer tiles',
+    'Alt+Control+M': 'Meet: minimise video / Teams: mentions',
+    'Alt+Control+S': 'Meet: announce speaker (screen reader)',
+    'Alt+Control+X': 'Meet: announce reactions / Teams: strikethrough',
+    'Alt+Control+R': 'Teams: react',
+    'Alt+Control+Enter': 'Teams (chat)',
+    'Control+Space': 'Teams: hold to unmute',
+    'Control+Shift+Space': 'Teams: sharing toolbar',
+    'Control+Shift+M': 'Teams: mute',
+    'Control+Shift+O': 'Teams: video',
+    'Control+Shift+E': 'Teams: share',
+    'Control+Shift+K': 'Teams: raise hand',
+    'Control+Shift+H': 'Teams: end call',
+  };
+
+  /**
+   * Clashes on Windows that are already known (found 27 Nov 2026; keys unchanged since ADR-0082 / ADR-0095, the
+   * developer's call). ADR-0127 removed the one with Google Meet's raise hand (Ctrl+Alt+H → Ctrl+Alt+Y).
+   */
+  const KNOWN_WINDOWS_CLASHES = [
+    'CommandOrControl+Shift+Space',
+    'CommandOrControl+Alt+Enter',
+    'CommandOrControl+=',
+    'CommandOrControl+-',
+    'CommandOrControl+0',
+    'CommandOrControl+Alt+S',
+    'CommandOrControl+Alt+X',
+    'CommandOrControl+Alt+R',
+    'CommandOrControl+Alt+K',
+  ]
+    .map((key) => pressed(key, false))
+    .sort();
+
+  it('on Windows takes only the known meeting keys; show or hide (Ctrl+Alt+Y) takes none', () => {
+    const meeting = new Set(Object.keys(WINDOWS_MEETING_KEYS).map((key) => pressed(key, false)));
     const held = [...Object.values(DEFAULT_GLOBAL_HOTKEYS), ASK_KITE_HOTKEY].map((key) =>
       pressed(key, false),
     );
-    expect(held.filter((key) => WINDOWS_MEETING_KEYS.includes(key))).toEqual(KNOWN_WINDOWS_CLASHES);
+    expect(held.filter((key) => meeting.has(key)).sort()).toEqual(KNOWN_WINDOWS_CLASHES);
+    expect(meeting.has(pressed(DEFAULT_GLOBAL_HOTKEYS['overlay-toggle'], false))).toBe(false);
+    expect(meeting.has(pressed(macKeys(DEFAULT_GLOBAL_HOTKEYS['overlay-toggle']), true))).toBe(
+      false,
+    );
+    expect(
+      new Set(Object.keys(MAC_RESERVED).map((key) => pressed(key, true))).has(
+        pressed(MAC_GLOBAL_HOTKEYS['overlay-toggle'], true),
+      ),
+    ).toBe(false);
   });
 
   it('knows which shortcuts the page also handles (they still work with Paramount AI in front)', () => {

@@ -123,7 +123,7 @@ function WordsLine({
 }
 
 /**
- * ADR-0123: what Ctrl+Enter (⌘↵ on a Mac) answers right now, small and muted beside the words: "Them" while the
+ * ADR-0123: what Ctrl+Enter (⌃↵ on a Mac since 1.8.1) answers right now, small and muted beside the words: "Them" while the
  * other side has spoken in the last two minutes (their newest question), "You" otherwise (what the user said last
  * and has not had answered). Text only, no tooltip (a title is an unprotected window); screen readers get the sentence.
  *

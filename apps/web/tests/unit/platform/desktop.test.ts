@@ -21,6 +21,7 @@ import {
   createDesktopPlatform,
   desktopMacPermissions,
   DESKTOP_DISPLAY_OPTIONS,
+  screenOf,
 } from '@/platform/desktop';
 import { CaptureError } from '@/platform/errors';
 import { domError, fakeStream, fakeTrack, stubDisplayMedia } from './fakeMedia';
@@ -71,24 +72,33 @@ describe('createDesktopPlatform', () => {
     expect(await mac.getShareProtection()).toEqual({ on: false, supported: false });
   });
 
-  it('onHotkey listens for the in-page shortcuts with the OS modifier', () => {
+  it('onHotkey listens for the in-page shortcuts with Ctrl, Control (⌃) on a Mac since 1.8.1', () => {
     const target = new EventTarget();
     vi.stubGlobal('window', target);
     const onMac = vi.fn();
     const onWindows = vi.fn();
     const stops = [mac.onHotkey(onMac), windows.onHotkey(onWindows)];
-    target.dispatchEvent(
+    /**
+     * A keydown of ← with one modifier.
+     *
+     * @param meta True for ⌘ (the Windows key), false for Ctrl.
+     * @returns The event.
+     */
+    const left = (meta: boolean) =>
       Object.assign(new Event('keydown'), {
         key: 'ArrowLeft',
-        ctrlKey: true,
-        metaKey: false,
+        ctrlKey: !meta,
+        metaKey: meta,
         shiftKey: false,
         altKey: false,
         repeat: false,
-      }),
-    );
-    expect(onMac).not.toHaveBeenCalled();
+      });
+    target.dispatchEvent(left(false));
+    expect(onMac).toHaveBeenCalledWith('prev');
     expect(onWindows).toHaveBeenCalledWith('prev');
+    // ⌘← is the Mac's start of the line again.
+    target.dispatchEvent(left(true));
+    expect(onMac).toHaveBeenCalledTimes(1);
     for (const stop of stops) stop();
   });
 });
@@ -247,16 +257,52 @@ describe('desktop onHotkey with the Day 4 shell', () => {
 });
 
 describe('desktop captureScreenshot', () => {
-  it('returns the shell PNG as a Blob', async () => {
+  it('returns the shell PNG as a Blob; an older shell (1.7.4 / 1.8.0) names no screen', async () => {
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const capture = vi.fn(async () => ({ ok: true as const, png, width: 4, height: 1, ms: 5 }));
     const platform = createDesktopPlatform({
-      version: '1',
+      version: '1.7.4',
       os: 'windows',
-      captureScreenshot: async () => ({ ok: true, png, width: 4, height: 1, ms: 5 }),
+      captureScreenshot: capture,
     });
-    const blob = await platform.captureScreenshot();
-    expect(blob.type).toBe('image/png');
-    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(png);
+    const { image, screen } = await platform.captureScreenshot();
+    expect(image.type).toBe('image/png');
+    expect(new Uint8Array(await image.arrayBuffer())).toEqual(png);
+    expect(screen).toBeNull();
+    // Called exactly as before (no argument) when the page asks for no other screen.
+    expect(capture).toHaveBeenCalledWith();
+  });
+
+  it('Mac 1.8.1 / Windows 1.7.5: returns the screen, and asks for the next one for "Wrong screen?"', async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const screen = { id: '2779098405', number: 2, count: 2, picked: 'pointer' as const };
+    const capture = vi.fn(async (_request?: { notDisplayId?: string }) => ({
+      ok: true as const,
+      png,
+      width: 4,
+      height: 1,
+      ms: 5,
+      screen,
+    }));
+    const platform = createDesktopPlatform({
+      version: '1.7.5',
+      os: 'windows',
+      captureScreenshot: capture,
+    });
+    expect((await platform.captureScreenshot()).screen).toEqual(screen);
+    await platform.captureScreenshot({ notDisplayId: '2779098405' });
+    expect(capture).toHaveBeenLastCalledWith({ notDisplayId: '2779098405' });
+  });
+
+  it('screenOf() keeps only a well-formed screen', () => {
+    const good = { id: '1', number: 1, count: 2, picked: 'other' };
+    expect(screenOf(good)).toEqual(good);
+    expect(screenOf(undefined)).toBeNull();
+    expect(screenOf({ ...good, number: 3 })).toBeNull();
+    expect(screenOf({ ...good, number: 0 })).toBeNull();
+    expect(screenOf({ ...good, picked: 'guess' })).toBeNull();
+    expect(screenOf({ ...good, id: 1 })).toBeNull();
+    expect(screenOf({ ...good, id: 'x'.repeat(21) })).toBeNull();
   });
 
   it('maps the shell failures and an old shell to typed errors', async () => {

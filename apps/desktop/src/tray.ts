@@ -7,6 +7,7 @@
  *          "Quit now". The app is never hidden from the tray, the taskbar, the Dock or the process list
  *          (CLAUDE.md). ADR-0055 (amended 26 Nov 2026; desktop 1.8.0 on a Mac, the next Windows release): during a
  *          call it also offers "Turn click-through off", since the whole overlay passes clicks while it is on.
+ *          Windows 1.7.5 (first Windows release with that item): also "Check for Updates…".
  * Used by: src/main.ts; tests/unit/tray.test.ts
  * Depends on: electron (types only), src/drive/background.ts (BackgroundView), src/config.ts (APP_NAME)
  * Architecture: docs/decisions/ADR-0106-background-upload-on-exit.md
@@ -17,10 +18,13 @@ import { APP_NAME } from './config';
 import type { BackgroundView } from './drive/background';
 
 /** What a tray menu item does. */
-export type TrayAction = 'open' | 'quit' | 'quit-now' | 'click-through-off';
+export type TrayAction = 'open' | 'quit' | 'quit-now' | 'click-through-off' | 'check-updates';
 
 /** ADR-0055 (amended 26 Nov 2026): the tray's way to turn the overlay's Click-through off during a call. */
 export const CLICK_THROUGH_OFF_LABEL = 'Turn click-through off';
+
+/** Windows 1.7.5: the tray's way to check for a new version now (the Mac has it in the app menu). */
+export const CHECK_UPDATES_LABEL = 'Check for Updates…';
 
 /** One line of the tray menu, before it becomes an Electron menu item. */
 export interface TrayItem {
@@ -38,10 +42,12 @@ export interface TrayItem {
  * @param view The state (background or not, and the progress line).
  * @param call ADR-0055 (amended 26 Nov 2026): true while a call is on (its shortcuts are held): the menu then
  *             starts with "Turn click-through off".
+ * @param updates Windows 1.7.5: true when this app updates itself: the menu offers "Check for Updates…" (not
+ *                after an exit, when the app only finishes its uploads).
  * @returns The menu's lines, top first.
  * Called from: installTray() update(); tests
  */
-export function trayItems(view: BackgroundView, call = false): TrayItem[] {
+export function trayItems(view: BackgroundView, call = false, updates = false): TrayItem[] {
   const items: TrayItem[] = [];
   if (call)
     items.push(
@@ -50,6 +56,8 @@ export function trayItems(view: BackgroundView, call = false): TrayItem[] {
     );
   if (view.status) items.push({ label: view.status }, { separator: true });
   items.push({ label: `Open ${APP_NAME}`, action: 'open' });
+  if (updates && !view.background)
+    items.push({ label: CHECK_UPDATES_LABEL, action: 'check-updates' });
   items.push(
     view.background
       ? { label: 'Quit now', action: 'quit-now' }
@@ -146,6 +154,10 @@ export interface TrayDeps {
   onQuitNow(): void;
   /** ADR-0055 (amended 26 Nov 2026): "Turn click-through off" (during a call). */
   onClickThroughOff(): void;
+  /**
+   * Windows 1.7.5: "Check for Updates…". Absent: the menu has no such item (the Mac has it in the app menu).
+   */
+  onCheckForUpdates?: (() => void) | undefined;
 }
 
 /** The installed tray. */
@@ -177,6 +189,7 @@ export function installTray(deps: TrayDeps, view: BackgroundView): AppTray {
     quit: deps.onQuit,
     'quit-now': deps.onQuitNow,
     'click-through-off': deps.onClickThroughOff,
+    'check-updates': () => deps.onCheckForUpdates?.(),
   };
   // Windows: a click on the icon opens the app (the menu is on a right-click). macOS shows the menu.
   tray.on('click', () => deps.onOpen());
@@ -192,13 +205,15 @@ export function installTray(deps: TrayDeps, view: BackgroundView): AppTray {
     tray.setToolTip(trayTooltip(next));
     tray.setContextMenu(
       deps.buildMenu(
-        trayItems(next, call).map((item): MenuItemConstructorOptions => {
-          if (item.separator) return { type: 'separator' };
-          const action = item.action;
-          return action
-            ? { label: item.label!, click: () => run[action]() }
-            : { label: item.label!, enabled: false };
-        }),
+        trayItems(next, call, deps.onCheckForUpdates !== undefined).map(
+          (item): MenuItemConstructorOptions => {
+            if (item.separator) return { type: 'separator' };
+            const action = item.action;
+            return action
+              ? { label: item.label!, click: () => run[action]() }
+              : { label: item.label!, enabled: false };
+          },
+        ),
       ),
     );
   };

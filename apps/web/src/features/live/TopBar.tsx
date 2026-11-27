@@ -13,7 +13,7 @@
  */
 'use client';
 
-import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel, type TargetChoice } from '@kite/shared';
+import { hotkeyAccelerator, hotkeyLabel, type TargetChoice } from '@kite/shared';
 import { useEffect, useState } from 'react';
 import type { CompactCommand, CompactRecording } from '@/core/live/liveChannel';
 import { MenuIcon, MicIcon } from '@/ui/icons';
@@ -200,7 +200,7 @@ export function TopBar(props: TopBarProps) {
         className={`${BUTTON_BASE} bg-ui-primary text-ui-on-primary hover:bg-ui-primary-hover`}
         onClick={props.onAnswer}
         disabled={props.answering || props.ending}
-        title={`Answer the latest question (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.answer, mac)})`}
+        title={`Answer the latest question (${hotkeyLabel(hotkeyAccelerator('answer', mac), mac)})`}
       >
         Answer <KeyChip hotkey="answer" onPrimary />
       </button>
@@ -209,7 +209,7 @@ export function TopBar(props: TopBarProps) {
         className={BUTTON}
         onClick={props.onScreenshot}
         disabled={props.capturing || props.ending}
-        title={`Answer from a screenshot (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.screenshot, mac)})`}
+        title={`Answer from a screenshot (${hotkeyLabel(hotkeyAccelerator('screenshot', mac), mac)})`}
       >
         {props.capturing ? 'Screenshot…' : 'Screenshot'} <KeyChip hotkey="screenshot" />
       </button>
