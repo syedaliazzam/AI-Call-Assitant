@@ -25,7 +25,9 @@ Web only. No change to the desktop shell, the bridge, the server or stored data;
 
 ## Consequences
 
-- Settings, Help, the key-caps and the tooltips show the same keys for the same computer and app version. An app that has not updated (Mac 1.8.0, Windows 1.7.4) shows its own release's keys everywhere until it updates; after the update it shows the new ones, with no web change.
+- Settings, Help, the key-caps and the tooltips read keys by one rule, so on one page they never disagree.
+- **Where the held keys show (found in the production run, 27 Nov 2026).** A desktop app with account sync (every account, ADR-0092) shows only the call in its own windows. Settings and Help open in the system browser (ADR-0055, `features/shell/desktopPages.ts`), which has no desktop bridge. So the keys an older app holds (Mac 1.8.0, Windows 1.7.4) appear in its own windows: the call bars' key-caps and tooltips, the notices, the Click-through hint and the Connect card. Settings and Help in the browser show the current table's keys for that computer, which is what the browser did before this change too. Both older apps update themselves to 1.8.1 / 1.7.5, whose keys are the table's. If the browser should ever name an older app's keys, the desktop app would have to publish what it holds (for example as a synced preference). That would be a separate decision.
+- `heldRowKeys()` still applies the held keys in Settings whenever Settings renders where the bridge exists, and it is unit-tested against the released apps' tables.
 - Outside a call, the first screen that shows a key in the desktop app asks the app which keys it holds. The app answers as Settings → Hotkeys always made it answer: it tries each call key and releases it straight away. Inside a call it answers from what it holds. Once per page load.
 - Until the app answers (a fraction of a second), and during the server render, screens show the table's keys for the computer. Before hydration that is the Windows set, as before.
 - `/help` is now a client component (it needs the computer). Its text is still rendered as text only.
@@ -41,5 +43,5 @@ Web only. No change to the desktop shell, the bridge, the server or stored data;
 ## Validation
 
 - Unit: `tests/unit/shared/heldKeys.test.ts` (reports rebuilt from the released Mac 1.8.0, Windows 1.6.5 / 1.7.4 tables and today's; single keys, every group row, Transcript stays the table's), `tests/unit/ui/shownKeys.test.ts` (table before a report, held after, a newer report wins), `tests/unit/features/settings/HotkeyList.test.ts` (the switch's report only for this computer's set; the same rows in both sets; Mac 1.8.0's ⌃ ⌥ group rows), `tests/unit/features/help/guideKeys.test.ts` (Mac words, groups, non-keys untouched; every bold key in the table; the marker, no table, no ⌘ ⌥ X).
-- Production end-to-end (`tests/e2e-prod/duplicate-and-keys.spec.ts`): Chrome on Windows opens Settings → Hotkeys on the Windows set, the switch shows ⌃ symbols, and Help shows the same list; the desktop app (this checkout's shell, Windows) shows the keys it holds.
+- Production end-to-end (`tests/e2e-prod/duplicate-and-keys.spec.ts`, passed 27 Nov 2026 on `dpl_Asy8JV5oWehdRsyykUfdEGugwCug`): Chrome on Windows opens Settings → Hotkeys on the Windows set, the switch shows ⌃ symbols, and Help shows the same list. In the desktop app (this checkout's shell, Windows), the Connect card's Rec key comes from the store and the shell reports the keys it holds (25 statuses).
 - On a real Mac (developer): Settings opens on the Mac set; the bars' tooltips say ⌃.
